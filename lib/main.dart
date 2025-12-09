@@ -148,7 +148,7 @@ class MyApp extends StatelessWidget {
         return MaterialApp(
           useInheritedMediaQuery: true, // مهم لتناسق القياسات
           debugShowCheckedModeBanner: false,
-          title: 'Real Estate Owner',
+          title: 'Darvoo',
           locale: const Locale('ar'),
           supportedLocales: const [Locale('ar'), Locale('en')],
           localizationsDelegates: const [
