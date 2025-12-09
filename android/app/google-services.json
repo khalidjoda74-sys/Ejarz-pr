@@ -1,0 +1,67 @@
+{
+  "project_info": {
+    "project_number": "142850470461",
+    "project_id": "darvoo",
+    "storage_bucket": "darvoo.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:142850470461:android:713464ae047721fbb97054",
+        "android_client_info": {
+          "package_name": "com.darvoo.owner"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8cMGGXNhk9kS11amer1kI0nqax8mrXy0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:142850470461:android:26d6b4f8c01f5a68b97054",
+        "android_client_info": {
+          "package_name": "com.example.admin_panel"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8cMGGXNhk9kS11amer1kI0nqax8mrXy0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:142850470461:android:2440557478851c37b97054",
+        "android_client_info": {
+          "package_name": "com.example.darvoo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8cMGGXNhk9kS11amer1kI0nqax8mrXy0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
