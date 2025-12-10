@@ -2,7 +2,7 @@ name: darvoo
 description: "Real Estate Owner App"
 publish_to: 'none'
 
-version: 1.0.0+2
+version: 1.0.0+3
 
 
 environment:
@@ -94,9 +94,15 @@ flutter_native_splash:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: assets/icons/app_icon.png
+
+  # 👇 هذه هي الصورة التي ستُستخدم كأيقونة للتطبيق (iOS وأندرويد القديم)
+  image_path: assets/icons/icon_foreground.png
+
+  # 👇 هذه للأندرويد الحديث (Adaptive Icons)
   adaptive_icon_foreground: assets/icons/icon_foreground.png
   adaptive_icon_background: "#FFFFFF"
-  # إعدادات خاصة لـ iOS فقط
-  background_color_ios: "#FFFFFF"   # لون الخلفية خلف الأيقونة
-  remove_alpha_ios: true            # يحذف الشفافية ويملأ الخلفية بهذا اللون
+
+  # 👇 إعدادات خاصة لـ iOS
+  background_color_ios: "#FFFFFF"
+  remove_alpha_ios: true
+
