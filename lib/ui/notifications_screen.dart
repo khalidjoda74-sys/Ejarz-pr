@@ -38,6 +38,8 @@ import 'tenants_screen.dart' as tenants_ui show TenantsScreen;
 import 'widgets/app_bottom_nav.dart';
 import 'widgets/app_menu_button.dart';
 import 'widgets/app_side_drawer.dart';
+import '../widgets/darvoo_app_bar.dart';
+
 
 
 // ==============================
@@ -960,8 +962,9 @@ for (final m in _maintenance!.values) {
               backgroundColor: const Color(0xFF0B1220), // أو const Color(0xFF0B1220) لو تبيه أسود ثابت
                 elevation: 0,
                 centerTitle: true,
-                automaticallyImplyLeading: false,
-                leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
                 title: Text(
                   'التنبيهات',
                   style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w800),
@@ -1015,8 +1018,9 @@ for (final m in _maintenance!.values) {
               backgroundColor: const Color(0xFF0B1220), // أو const Color(0xFF0B1220) لو تبيه أسود ثابت
               elevation: 0,
               centerTitle: true,
-              automaticallyImplyLeading: false,
-              leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
               title: Text(
                 'التنبيهات',
                 style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w800),

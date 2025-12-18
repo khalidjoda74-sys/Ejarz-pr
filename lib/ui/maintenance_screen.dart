@@ -28,6 +28,8 @@ import '../data/services/user_scope.dart';
 import '../data/services/hive_service.dart';
 import '../data/services/office_client_guard.dart';
 import '../data/constants/boxes.dart';   // أو المسار الصحيح حسب مكان الملف
+import '../widgets/darvoo_app_bar.dart';
+
 
 
 
@@ -714,8 +716,9 @@ void _openMaintenanceById(String id) {
           
           elevation: 0,
           centerTitle: true,
-          automaticallyImplyLeading: false,
-          leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
           title: Text('الصيانة',
               style: GoogleFonts.cairo(
                   color: Colors.white,
@@ -2321,8 +2324,9 @@ if (m.isInBox) {
           
           elevation: 0,
           centerTitle: true,
-          automaticallyImplyLeading: false,
-          leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
           title: Text('تفاصيل الصيانة',
               style: GoogleFonts.cairo(
                   color: Colors.white,
@@ -3067,8 +3071,9 @@ class _AddOrEditMaintenanceScreenState
           
           elevation: 0,
           centerTitle: true,
-          automaticallyImplyLeading: false,
-          leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
           title: Text(isEdit ? 'تعديل طلب' : 'طلب صيانة جديد',
               style: GoogleFonts.cairo(
                   color: Colors.white,

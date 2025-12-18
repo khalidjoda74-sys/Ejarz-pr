@@ -13,6 +13,8 @@ import '../data/services/user_scope.dart';
 import '../data/constants/boxes.dart';   // أو المسار الصحيح حسب مكان الملف
 import '../data/services/offline_sync_service.dart';
 import 'dart:async' show unawaited;
+import '../widgets/darvoo_app_bar.dart';
+
 
 
 
@@ -797,8 +799,9 @@ void _openPropertyDetailsById(String id) {
           
           elevation: 0,
           centerTitle: true,
-          automaticallyImplyLeading: false,
-          leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
           title: Text('العقارات', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 20.sp)),
           actions: [
             IconButton(
@@ -1607,8 +1610,9 @@ if (mounted) setState(() {});
           
           elevation: 0,
           centerTitle: true,
-          automaticallyImplyLeading: false,
-          leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
           title: Text('تفاصيل العقار', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w800)),
           actions: [
             if (item.parentBuildingId == null) // إظهار الزر للعقار/العمارة فقط، وليس للوحدة
@@ -2605,8 +2609,9 @@ Widget _field({
           
           elevation: 0,
           centerTitle: true,
-          automaticallyImplyLeading: false,
-          leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
           title: Text(isEdit ? 'تعديل عقار' : 'إضافة عقار',
               style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w800)),
         ),
@@ -3303,8 +3308,9 @@ void initState() {
           
           elevation: 0,
           centerTitle: true,
-          automaticallyImplyLeading: false,
-          leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
           title: Text('إضافة وحدات', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w800)),
         ),
         body: Stack(

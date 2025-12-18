@@ -30,6 +30,8 @@ import 'widgets/app_side_drawer.dart';
 import '../models/tenant.dart';
 import '../models/property.dart';
 import '../utils/ksa_time.dart';
+import '../widgets/darvoo_app_bar.dart';
+
 
 // ✅ أسماء الصناديق per-uid عبر user_scope بنفس نمط الشاشات الأخرى
 String invoicesBoxName()  => scope.boxName(bx.kInvoicesBox);
@@ -710,8 +712,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             
             elevation: 0,
             centerTitle: true,
-            automaticallyImplyLeading: false,
-            leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
             title: Text('الفواتير', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 20.sp)),
           ),
           body: const Center(child: CircularProgressIndicator()),
@@ -748,8 +751,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           
           elevation: 0,
           centerTitle: true,
-          automaticallyImplyLeading: false,
-          leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
           title: Text('الفواتير', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 20.sp)),
           actions: [
             IconButton(
@@ -1125,8 +1129,9 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
           
           elevation: 0,
           centerTitle: true,
-          automaticallyImplyLeading: false,
-          leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
           title: Text('تفاصيل الفاتورة', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w800)),
           actions: [
           IconButton(
@@ -1446,8 +1451,9 @@ drawer: Builder(
           
           appBar: AppBar(
              elevation: 0, centerTitle: true,
-            automaticallyImplyLeading: false,
-            leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
             title: Text('سجل فواتير العقد', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w800)),
           ),
           body: const Center(child: CircularProgressIndicator()),
@@ -1487,8 +1493,9 @@ drawer: Builder(
         
         appBar: AppBar(
            elevation: 0, centerTitle: true,
-          automaticallyImplyLeading: false,
-          leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
           title: Text('سجل فواتير العقد', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w800)),
         ),
         body: Stack(

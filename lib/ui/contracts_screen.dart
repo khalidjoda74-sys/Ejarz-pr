@@ -14,6 +14,8 @@ import '../data/services/office_client_guard.dart';
 import '../data/services/user_scope.dart';
 import '../data/constants/boxes.dart';   // أو المسار الصحيح حسب مكان الملف
 import '../utils/contract_utils.dart';
+import '../widgets/darvoo_app_bar.dart';
+
 
 
 
@@ -1686,8 +1688,9 @@ _cfgContractAnnualDays     = _asInt(m['notif_contract_annual_days'],     _cfgAnn
           
           elevation: 0,
           centerTitle: true,
-          automaticallyImplyLeading: false,
-          leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
           title: Text('العقود', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 20.sp)),
 actions: [
   IconButton(
@@ -2538,8 +2541,9 @@ Color? nextColor;
           
           elevation: 0,
           centerTitle: true,
-          automaticallyImplyLeading: false,
-          leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
           title: Text('تفاصيل العقد', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w800)),
           actions: [
 IconButton(
@@ -4300,8 +4304,9 @@ void _ensureCycleFitsTerm() {
           
           elevation: 0,
           centerTitle: true,
-          automaticallyImplyLeading: false,
-          leading: const AppMenuButton(iconColor: Colors.white),
+automaticallyImplyLeading: false,
+leading: darvooLeading(context, iconColor: Colors.white),
+
           title: Text(isEdit ? 'تعديل عقد' : 'إضافة عقد', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w800)),
         ),
         body: Stack(

@@ -12,6 +12,8 @@ import 'package:hive/hive.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hijri/hijri_calendar.dart';
 import '../utils/contract_utils.dart';
+import '../widgets/darvoo_app_bar.dart';
+
 
 
 
@@ -219,6 +221,11 @@ Future<void> _ensureBoxes() async {
           ),
 appBar: AppBar(
   // ...
+  automaticallyImplyLeading: false,
+  leading: Navigator.of(context).canPop()
+      ? const BackButton(color: Colors.white)
+      : const SizedBox.shrink(),
+
   centerTitle: true,
   title: Text(
     'التقارير',
@@ -229,6 +236,7 @@ appBar: AppBar(
   ),
   actions: const [],
 ),
+
 
 body: Stack(
 

@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 
 
+
 // Firebase
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -1356,47 +1357,64 @@ Row(
                           }
 
 
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // مقبض
-                              Container(
-                                width: 42.w,
-                                height: 5.h,
-                                margin: EdgeInsets.only(bottom: 12.h),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(8.r),
-                                ),
-                              ),
+                         return Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+    // أعلى النافذة: زر رجوع + مقبض بالوسط
+    Row(
+      children: [
+        IconButton(
+          tooltip: 'رجوع',
+          onPressed: () => Navigator.of(context).pop(), // يغلق الـBottomSheet
+          icon: Icon(
+            Theme.of(context).platform == TargetPlatform.iOS
+                ? Icons.arrow_back_ios_new_rounded
+                : Icons.arrow_back_rounded,
+            color: const Color(0xFF0F172A),
+          ),
+        ),
+        const Spacer(),
+        Container(
+          width: 42.w,
+          height: 5.h,
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(8.r),
+          ),
+        ),
+        const Spacer(),
+      ],
+    ),
+    SizedBox(height: 12.h),
 
-                              // عنوان
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 40.w,
-                                    height: 40.w,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFEFF4FF),
-                                      borderRadius: BorderRadius.circular(12.r),
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: const Icon(Icons.settings_rounded, color: _primary),
-                                  ),
-                                  SizedBox(width: 10.w),
-                                  Expanded(
-                                    child: Text(
-                                      'الإعدادات',
-                                      style: GoogleFonts.tajawal(
-                                        fontSize: 18.sp,
-                                        fontWeight: FontWeight.w900,
-                                        color: const Color(0xFF0F172A),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              SizedBox(height: 10.h),
+    // عنوان
+    Row(
+      children: [
+        Container(
+          width: 40.w,
+          height: 40.w,
+          decoration: BoxDecoration(
+            color: const Color(0xFFEFF4FF),
+            borderRadius: BorderRadius.circular(12.r),
+          ),
+          alignment: Alignment.center,
+          child: const Icon(Icons.settings_rounded, color: _primary),
+        ),
+        SizedBox(width: 10.w),
+        Expanded(
+          child: Text(
+            'الإعدادات',
+            style: GoogleFonts.tajawal(
+              fontSize: 18.sp,
+              fontWeight: FontWeight.w900,
+              color: const Color(0xFF0F172A),
+            ),
+          ),
+        ),
+      ],
+    ),
+    SizedBox(height: 10.h),
+
 
                               // 🔴 التنبيه الأحمر المختصر
                             
@@ -2374,7 +2392,7 @@ onTap: () {
               Padding(
                 padding: EdgeInsets.only(bottom: 12.h),
                 child: Text(
-                  'الإصدار 1.0.0',
+                  'الإصدار 1.0.2',
                   style: GoogleFonts.tajawal(
                     fontSize: 12.sp,
                     color: Colors.black.withOpacity(0.45),
