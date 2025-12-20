@@ -384,7 +384,7 @@ void _showAboutDialog(BuildContext context) {
           ),
           padding: EdgeInsets.all(12.w),
           child: Text(
-            'دارفو — منصة لإدارة العقارات والعقود والفواتير بسهولة وكفاءة، مع مزايا للمالِك والمكتب والعميل لمتابعة كل شيء في مكان واحد.',
+            'دارفو تطبيق لإدارة العقارات والعقود بسهولة وكفاءة، مخصص للمالكين والمكاتب العقارية لمتابعة الأملاك والمستأجرين والدفعات والتقارير في مكان واحد.',
             style: GoogleFonts.tajawal(fontSize: 14.sp, height: 1.6, fontWeight: FontWeight.w700, color: const Color(0xFF4C1D95)),
             textAlign: TextAlign.right,
           ),
@@ -796,7 +796,7 @@ ListTile(
                 Padding(
                   padding: EdgeInsets.only(bottom: 12.h),
                   child: Text(
-                    'الإصدار 1.0.0',
+                    'الإصدار 1.0.3',
                     style: GoogleFonts.tajawal(
                       fontSize: 12.sp,
                       color: Colors.black.withOpacity(0.45),
