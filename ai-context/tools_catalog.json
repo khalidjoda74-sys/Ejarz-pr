@@ -1,0 +1,523 @@
+[
+  {
+    "name": "app.help",
+    "description": "شرح كيفية استخدام التطبيق أو جزء منه دون تعديل البيانات.",
+    "category": "system",
+    "operationType": "system",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "app.help"
+    ],
+    "supported": true
+  },
+  {
+    "name": "app.module_help",
+    "description": "شرح مختصر لوحدة محددة داخل التطبيق.",
+    "category": "system",
+    "operationType": "system",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "app.help"
+    ],
+    "supported": true
+  },
+  {
+    "name": "app.capabilities",
+    "description": "عرض ما يستطيع المساعد فعله داخل هذا الحساب.",
+    "category": "system",
+    "operationType": "system",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "app.help"
+    ],
+    "supported": true
+  },
+  {
+    "name": "app.explain_workflow",
+    "description": "شرح سير عمل مثل إضافة عقد أو تسجيل دفعة أو فتح شاشة.",
+    "category": "system",
+    "operationType": "system",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "app.help"
+    ],
+    "supported": true
+  },
+  {
+    "name": "properties.search",
+    "description": "البحث عن العقارات والوحدات وعرض النتائج المطابقة.",
+    "category": "properties",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "properties.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "properties.get",
+    "description": "عرض تفاصيل عقار محدد وخدماته وإعداداته.",
+    "category": "properties",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "properties.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "properties.create",
+    "description": "تهيئة أو إنشاء عقار جديد بعد التحقق من الحقول الإلزامية.",
+    "category": "properties",
+    "operationType": "write",
+    "riskLevel": "high",
+    "requiresConfirmation": true,
+    "requiredPermissions": [
+      "properties.create"
+    ],
+    "supported": true
+  },
+  {
+    "name": "properties.update",
+    "description": "تعديل بيانات عقار موجود بعد التأكيد.",
+    "category": "properties",
+    "operationType": "write",
+    "riskLevel": "high",
+    "requiresConfirmation": true,
+    "requiredPermissions": [
+      "properties.update"
+    ],
+    "supported": true
+  },
+  {
+    "name": "units.search",
+    "description": "البحث عن الوحدات داخل العمائر.",
+    "category": "units",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "units.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "units.available",
+    "description": "عرض الوحدات الشاغرة أو المتاحة.",
+    "category": "units",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "units.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "tenants.search",
+    "description": "البحث عن المستأجرين والعملاء ومقدمي الخدمة.",
+    "category": "tenants",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "tenants.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "tenants.get",
+    "description": "عرض تفاصيل عميل أو مستأجر محدد.",
+    "category": "tenants",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "tenants.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "tenants.create",
+    "description": "تهيئة أو إنشاء مستأجر أو عميل جديد بعد التأكيد.",
+    "category": "tenants",
+    "operationType": "write",
+    "riskLevel": "high",
+    "requiresConfirmation": true,
+    "requiredPermissions": [
+      "tenants.create"
+    ],
+    "supported": true
+  },
+  {
+    "name": "tenants.update",
+    "description": "تعديل بيانات عميل أو مستأجر موجود.",
+    "category": "tenants",
+    "operationType": "write",
+    "riskLevel": "high",
+    "requiresConfirmation": true,
+    "requiredPermissions": [
+      "tenants.update"
+    ],
+    "supported": true
+  },
+  {
+    "name": "contracts.search",
+    "description": "البحث عن العقود وعرض حالتها.",
+    "category": "contracts",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "contracts.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "contracts.get",
+    "description": "عرض تفاصيل عقد ودفعاته المرتبطة.",
+    "category": "contracts",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "contracts.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "contracts.create",
+    "description": "تهيئة أو إنشاء عقد إيجار بعد التحقق من التوفر والتواريخ والمبالغ والصلاحيات.",
+    "category": "contracts",
+    "operationType": "write",
+    "riskLevel": "critical",
+    "requiresConfirmation": true,
+    "requiredPermissions": [
+      "contracts.create"
+    ],
+    "supported": true
+  },
+  {
+    "name": "contracts.update",
+    "description": "تعديل أو تجديد عقد قائم بعد التأكيد.",
+    "category": "contracts",
+    "operationType": "write",
+    "riskLevel": "critical",
+    "requiresConfirmation": true,
+    "requiredPermissions": [
+      "contracts.update"
+    ],
+    "supported": true
+  },
+  {
+    "name": "contracts.terminate",
+    "description": "إنهاء عقد إيجار قائم بعد تأكيد قوي.",
+    "category": "contracts",
+    "operationType": "deleteAction",
+    "riskLevel": "critical",
+    "requiresConfirmation": true,
+    "requiredPermissions": [
+      "contracts.terminate"
+    ],
+    "supported": true
+  },
+  {
+    "name": "contracts.expiring",
+    "description": "عرض العقود القريبة من الانتهاء.",
+    "category": "contracts",
+    "operationType": "report",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "contracts.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "invoices.search",
+    "description": "البحث عن الفواتير والسندات والمتأخرات.",
+    "category": "invoices",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "invoices.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "invoices.get",
+    "description": "عرض فاتورة محددة وسجل السداد المرتبط بها.",
+    "category": "invoices",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "invoices.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "invoices.create",
+    "description": "إنشاء فاتورة لعقد محدد بعد التأكيد.",
+    "category": "invoices",
+    "operationType": "write",
+    "riskLevel": "high",
+    "requiresConfirmation": true,
+    "requiredPermissions": [
+      "invoices.create"
+    ],
+    "supported": true
+  },
+  {
+    "name": "payments.search",
+    "description": "قراءة عمليات السداد المتاحة في التطبيق.",
+    "category": "payments",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "payments.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "payments.get",
+    "description": "عرض عملية سداد محددة إن كانت مدعومة.",
+    "category": "payments",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "payments.view"
+    ],
+    "supported": false
+  },
+  {
+    "name": "payments.create",
+    "description": "تسجيل دفعة على فاتورة أو عقد بعد التأكيد.",
+    "category": "payments",
+    "operationType": "write",
+    "riskLevel": "critical",
+    "requiresConfirmation": true,
+    "requiredPermissions": [
+      "payments.create"
+    ],
+    "supported": true
+  },
+  {
+    "name": "maintenance.search",
+    "description": "البحث عن طلبات الصيانة.",
+    "category": "maintenance",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "maintenance.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "maintenance.get",
+    "description": "عرض تفاصيل طلب صيانة محدد.",
+    "category": "maintenance",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "maintenance.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "maintenance.create_ticket",
+    "description": "إنشاء طلب صيانة بعد التحقق والتأكيد.",
+    "category": "maintenance",
+    "operationType": "write",
+    "riskLevel": "high",
+    "requiresConfirmation": true,
+    "requiredPermissions": [
+      "maintenance.create"
+    ],
+    "supported": true
+  },
+  {
+    "name": "maintenance.update_status",
+    "description": "تحديث حالة طلب صيانة بعد التأكيد.",
+    "category": "maintenance",
+    "operationType": "write",
+    "riskLevel": "high",
+    "requiresConfirmation": true,
+    "requiredPermissions": [
+      "maintenance.update"
+    ],
+    "supported": true
+  },
+  {
+    "name": "reports.arrears_summary",
+    "description": "تقرير المتأخرات للفترة المطلوبة.",
+    "category": "reports",
+    "operationType": "report",
+    "riskLevel": "medium",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "reports.view",
+      "reports.financial"
+    ],
+    "supported": true
+  },
+  {
+    "name": "reports.owner_statement",
+    "description": "كشف مالك محسوب من بيانات النظام.",
+    "category": "reports",
+    "operationType": "report",
+    "riskLevel": "medium",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "reports.view",
+      "reports.financial"
+    ],
+    "supported": false
+  },
+  {
+    "name": "reports.tenant_statement",
+    "description": "كشف مستأجر عن الفواتير والسداد.",
+    "category": "reports",
+    "operationType": "report",
+    "riskLevel": "medium",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "reports.view",
+      "reports.financial"
+    ],
+    "supported": true
+  },
+  {
+    "name": "reports.occupancy_rate",
+    "description": "تقرير نسبة الإشغال.",
+    "category": "reports",
+    "operationType": "report",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "reports.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "reports.rent_collection",
+    "description": "تقرير تحصيل الإيجارات.",
+    "category": "reports",
+    "operationType": "report",
+    "riskLevel": "medium",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "reports.view",
+      "reports.financial"
+    ],
+    "supported": true
+  },
+  {
+    "name": "reports.income_expense",
+    "description": "تقرير الإيرادات والمصروفات.",
+    "category": "reports",
+    "operationType": "report",
+    "riskLevel": "medium",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "reports.view",
+      "reports.financial"
+    ],
+    "supported": true
+  },
+  {
+    "name": "reports.contracts_expiring",
+    "description": "تقرير العقود القريبة من الانتهاء.",
+    "category": "reports",
+    "operationType": "report",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "reports.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "reports.vacant_units",
+    "description": "تقرير الوحدات الشاغرة.",
+    "category": "reports",
+    "operationType": "report",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "reports.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "reports.maintenance_summary",
+    "description": "تقرير ملخص الصيانة.",
+    "category": "reports",
+    "operationType": "report",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "reports.view"
+    ],
+    "supported": true
+  },
+  {
+    "name": "app.open_screen",
+    "description": "فتح شاشة داخل التطبيق عند الحاجة.",
+    "category": "system",
+    "operationType": "system",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "app.navigate"
+    ],
+    "supported": true
+  },
+  {
+    "name": "notifications.get",
+    "description": "عرض تنبيهات النظام الحالية.",
+    "category": "system",
+    "operationType": "read",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "app.help"
+    ],
+    "supported": true
+  },
+  {
+    "name": "notifications.open_target",
+    "description": "فتح العنصر المرتبط بالتنبيه.",
+    "category": "system",
+    "operationType": "system",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "app.navigate"
+    ],
+    "supported": true
+  },
+  {
+    "name": "notifications.mark_read",
+    "description": "تعليم تنبيه كمقروء.",
+    "category": "system",
+    "operationType": "write",
+    "riskLevel": "low",
+    "requiresConfirmation": false,
+    "requiredPermissions": [
+      "app.help"
+    ],
+    "supported": true
+  }
+]

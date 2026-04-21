@@ -1,0 +1,120 @@
+name: darvoo
+description: "Real Estate Owner App"
+publish_to: 'none'
+
+version: 1.0.3+7
+
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ===== UI =====
+  cupertino_icons: ^1.0.8
+  flutter_screenutil: ^5.9.0
+  google_fonts: ^6.2.1
+  characters: ^1.3.0         # لاستخدام package:characters
+  fl_chart: ^0.68.0          # ✅ لإضافة PieChart / charts
+
+  # ===== الترجمة واللغات =====
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2               # متوافق مع flutter_localizations
+  hijri: ^3.0.0               # ✅ لعرض التاريخ الهجري
+
+  # ===== التخزين المحلي (Hive) =====
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # ===== الوقت من الإنترنت (لتوحيد توقيت السعودية) =====
+  ntp: ^2.0.0
+
+  # ===== Firebase =====
+  firebase_core: ^3.15.2
+  cloud_firestore: ^5.0.0
+  firebase_auth: ^5.7.0
+  cloud_functions: ^5.6.2
+  firebase_storage: ^12.3.3
+
+  # ===== الروابط والتخزين البسيط =====
+  url_launcher: ^6.3.0
+  share_plus: ^10.1.2
+  shared_preferences: ^2.3.2     # ✅ إصدار مستقر ومتوافق
+  permission_handler: ^12.0.1
+  file_picker: ^8.1.2
+  path_provider: ^2.1.4
+  pdf: ^3.11.1
+  printing: ^5.13.4
+
+  # ===== OpenAI API =====
+  http: ^1.2.1
+
+  # ===== معرّفات فريدة لكل العناصر =====
+  uuid: ^4.4.0
+
+  # ===== الاتصال/اللااتصال للشبكة (للـ offline-first) =====
+  connectivity_plus: ^6.0.5
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.13
+
+  flutter_local_notifications: any
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+  # ===== أدوات التوليد لـ Hive =====
+
+  # ✅ مولّد شاشة البداية (Splash) لأندرويد/iOS
+  flutter_launcher_icons: ^0.13.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    # شعار التطبيق/السبلاش للاستخدام داخل Flutter (اختياري).
+    # ضع النسخ الأعلى دقة بنفس الاسم داخل:
+    # assets/images/2.0x/app_logo.png
+    # assets/images/3.0x/app_logo.png
+    - assets/images/app_logo.png
+    - assets/images/darfo_ai_bot_icon.png
+    - assets/fonts/
+
+# ===== إعداد flutter_native_splash (مهم: على نفس مستوى 'flutter:') =====
+flutter_native_splash:
+  android: true
+  ios: true
+  web: false
+
+  # الوضع العادي
+  color: "#FFFFFF"                      # خلفية بيضاء
+  image: assets/images/app_logo.png     # PNG مربّع (256–512px)
+
+  # إعدادات خاصة لأندرويد 12+ (تشمل أندرويد 15)
+  android_12:
+    color: "#FFFFFF"
+    image: assets/images/app_logo.png
+
+  # (اختياري للوضع الداكن)
+  # color_dark: "#000000"
+  # image_dark: assets/images/app_logo_dark.png
+
+# ===== إعداد أيقونة التطبيق (Android/iOS) =====
+flutter_launcher_icons:
+  android: true
+  ios: true
+
+  # 👇 هذه هي الصورة التي ستُستخدم كأيقونة للتطبيق (iOS وأندرويد القديم)
+  image_path: assets/icons/icon_foreground.png
+
+  # 👇 هذه للأندرويد الحديث (Adaptive Icons)
+  adaptive_icon_foreground: assets/icons/icon_foreground.png
+  adaptive_icon_background: "#FFFFFF"
+
+  # 👇 إعدادات خاصة لـ iOS
+  background_color_ios: "#FFFFFF"
+  remove_alpha_ios: true
+
