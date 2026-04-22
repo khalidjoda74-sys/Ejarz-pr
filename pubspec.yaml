@@ -15,7 +15,7 @@ dependencies:
   # ===== UI =====
   cupertino_icons: ^1.0.8
   flutter_screenutil: ^5.9.0
-  google_fonts: ^6.2.1
+  google_fonts: 6.2.1
   characters: ^1.3.0         # لاستخدام package:characters
   fl_chart: ^0.68.0          # ✅ لإضافة PieChart / charts
 
