@@ -61,6 +61,15 @@
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
 
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>نحتاج الوصول إلى الصور لكي يتمكن المستخدم من اختيار صور العقارات أو الصورة الشخصية ورفعها داخل التطبيق.</string>
+
+		<key>NSCameraUsageDescription</key>
+		<string>نحتاج الوصول إلى الكاميرا لكي يتمكن المستخدم من التقاط صور العقارات أو الصورة الشخصية ورفعها داخل التطبيق.</string>
+
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>نحتاج حفظ الصور في المعرض عند قيام المستخدم بتنزيل أو حفظ الصور من داخل التطبيق.</string>
+
 		<key>UIStatusBarHidden</key>
 		<false/>
 	</dict>
