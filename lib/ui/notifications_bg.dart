@@ -7,9 +7,8 @@
 // ملاحظات:
 // - يجب أن تكون Adapters مسجّلة قبل فتح الصناديق (أنت مسجّلها في main).
 // - في عزل الخلفية (WorkManager) نعمل initialize للـ FlutterLocalNotificationsPlugin محلياً.
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
@@ -97,6 +96,7 @@ String _sharedUtilityRemindTitle(String type, int days) {
   return 'لديك فاتورة كهرباء مشتركة $after';
 }
 
+// ignore: unused_element
 String _sharedUtilitySubtitle(DateTime due) {
   return 'موعد الفاتورة: ${_fmtYmd(due)}';
 }
@@ -210,7 +210,7 @@ class NotificationsBg {
     const initAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initIOS = DarwinInitializationSettings();
     const init = InitializationSettings(android: initAndroid, iOS: initIOS);
-    await _local.initialize(init);
+    await _local.initialize(settings: init);
     // إنشاء القناة على أندرويد
     final androidImpl = _local.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
@@ -446,9 +446,7 @@ class NotificationsBg {
     // الخدمات المشتركة: مياه / كهرباء
     for (final entry in services.toMap().entries) {
       try {
-        final raw = entry.value;
-        if (raw is! Map) continue;
-        final cfg = Map<String, dynamic>.from(raw);
+        final cfg = Map<String, dynamic>.from(entry.value);
         final type = (cfg['serviceType'] ?? '').toString().trim();
         if (!_isSharedUtilityService(type, cfg)) continue;
         final due = _serviceDueDate(cfg);
@@ -560,10 +558,10 @@ class NotificationsBg {
       final id = k.hashCode & 0x7fffffff;
 
       await _local.show(
-        id,
-        n.title,
-        n.body,
-        const NotificationDetails(
+        id: id,
+        title: n.title,
+        body: n.body,
+        notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
             'daily_local',
             'التنبيهات المحلية اليومية',
@@ -584,6 +582,3 @@ class NotificationsBg {
     }
   }
 }
-
-
-

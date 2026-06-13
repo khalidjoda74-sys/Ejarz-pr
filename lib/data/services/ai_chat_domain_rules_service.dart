@@ -717,7 +717,8 @@ class AiChatDomainRulesService {
   static List<Map<String, dynamic>> propertyPerUnitRequiredFields() {
     return <Map<String, dynamic>>[
       _issue('rentalMode', 'نمط التأجير', 'نمط التأجير مطلوب'),
-      _issue('totalUnits', 'عدد الوحدات', 'عدد الوحدات مطلوب في العمارة بنمط الوحدات'),
+      _issue('totalUnits', 'عدد الوحدات',
+          'عدد الوحدات مطلوب في العمارة بنمط الوحدات'),
     ];
   }
 
@@ -780,7 +781,8 @@ class AiChatDomainRulesService {
     return <Map<String, dynamic>>[
       _issue('propertyName', 'العقار', 'العقار مطلوب'),
       _issue('serviceType', 'نوع الخدمة الدورية', 'نوع الخدمة الدورية مطلوب'),
-      _issue('scheduledDate', 'تاريخ الدورة القادمة', 'تاريخ الدورة القادمة مطلوب'),
+      _issue('scheduledDate', 'تاريخ الدورة القادمة',
+          'تاريخ الدورة القادمة مطلوب'),
     ];
   }
 
@@ -814,7 +816,8 @@ class AiChatDomainRulesService {
 
   static List<Map<String, dynamic>> reportsOfficeVoucherRequiredFields() {
     return <Map<String, dynamic>>[
-      _issue('isExpense', 'نوع العملية', 'تحديد هل العملية مصروف مكتب أم إيراد عمولة مطلوب'),
+      _issue('isExpense', 'نوع العملية',
+          'تحديد هل العملية مصروف مكتب أم إيراد عمولة مطلوب'),
       _issue('amount', 'المبلغ', 'المبلغ مطلوب'),
       _issue('transactionDate', 'تاريخ العملية', 'تاريخ العملية مطلوب'),
     ];
@@ -846,7 +849,8 @@ class AiChatDomainRulesService {
       _issue('ownerQuery', 'المالك', 'تحديد المالك مطلوب'),
       _issue('category', 'نوع الخصم/التسوية', 'نوع الخصم/التسوية مطلوب'),
       _issue('amount', 'المبلغ', 'المبلغ مطلوب'),
-      _issue('adjustmentDate', 'تاريخ الخصم/التسوية', 'تاريخ الخصم/التسوية مطلوب'),
+      _issue(
+          'adjustmentDate', 'تاريخ الخصم/التسوية', 'تاريخ الخصم/التسوية مطلوب'),
     ];
   }
 
@@ -858,19 +862,23 @@ class AiChatDomainRulesService {
     ];
   }
 
-  static List<Map<String, dynamic>> reportsOwnerBankAccountEditRequiredFields() {
+  static List<Map<String, dynamic>>
+      reportsOwnerBankAccountEditRequiredFields() {
     return <Map<String, dynamic>>[
       _issue('ownerQuery', 'المالك', 'تحديد المالك مطلوب'),
-      _issue('accountQuery', 'الحساب البنكي', 'تحديد الحساب البنكي المطلوب مطلوب'),
+      _issue(
+          'accountQuery', 'الحساب البنكي', 'تحديد الحساب البنكي المطلوب مطلوب'),
       _issue('bankName', 'اسم البنك', 'اسم البنك مطلوب'),
       _issue('accountNumber', 'رقم الحساب', 'رقم الحساب مطلوب'),
     ];
   }
 
-  static List<Map<String, dynamic>> reportsOwnerBankAccountDeleteRequiredFields() {
+  static List<Map<String, dynamic>>
+      reportsOwnerBankAccountDeleteRequiredFields() {
     return <Map<String, dynamic>>[
       _issue('ownerQuery', 'المالك', 'تحديد المالك مطلوب'),
-      _issue('accountQuery', 'الحساب البنكي', 'تحديد الحساب البنكي المطلوب مطلوب'),
+      _issue(
+          'accountQuery', 'الحساب البنكي', 'تحديد الحساب البنكي المطلوب مطلوب'),
     ];
   }
 
@@ -933,10 +941,12 @@ class AiChatDomainRulesService {
       missing.add(_missing('documentType', 'نوع الوثيقة', 'نوع الوثيقة مطلوب'));
     }
     if (parsedDocumentNumber == null) {
-      missing.add(_missing('documentNumber', 'رقم الوثيقة', 'رقم الوثيقة مطلوب'));
+      missing
+          .add(_missing('documentNumber', 'رقم الوثيقة', 'رقم الوثيقة مطلوب'));
     }
     if (parsedDocumentDate == null) {
-      missing.add(_missing('documentDate', 'تاريخ الوثيقة', 'تاريخ الوثيقة مطلوب'));
+      missing.add(
+          _missing('documentDate', 'تاريخ الوثيقة', 'تاريخ الوثيقة مطلوب'));
     }
     if (parsedDocumentAttachments.isEmpty) {
       missing.add(
@@ -950,7 +960,8 @@ class AiChatDomainRulesService {
       );
     }
 
-    if (normalizedType == PropertyType.building && normalizedRentalMode == null) {
+    if (normalizedType == PropertyType.building &&
+        normalizedRentalMode == null) {
       missing.add(_missing('rentalMode', 'نمط التأجير', 'نمط التأجير مطلوب'));
     }
 
@@ -964,7 +975,8 @@ class AiChatDomainRulesService {
         normalizedRentalMode == RentalMode.perUnit &&
         parsedTotalUnits == null) {
       missing.add(
-        _missing('totalUnits', 'عدد الوحدات', 'عدد الوحدات مطلوب للعمارة بنمط الوحدات'),
+        _missing('totalUnits', 'عدد الوحدات',
+            'عدد الوحدات مطلوب للعمارة بنمط الوحدات'),
       );
     }
 
@@ -1010,7 +1022,9 @@ class AiChatDomainRulesService {
     }
     if (normalizedType == PropertyType.building &&
         normalizedRentalMode == RentalMode.perUnit) {
-      if (parsedTotalUnits == null || parsedTotalUnits < 1 || parsedTotalUnits > 500) {
+      if (parsedTotalUnits == null ||
+          parsedTotalUnits < 1 ||
+          parsedTotalUnits > 500) {
         return const AiChatValidationResult<AiChatPropertyDraft>.error(
           'عدد وحدات العمارة يجب أن يكون بين 1 و500.',
         );
@@ -1044,9 +1058,9 @@ class AiChatDomainRulesService {
 
     return AiChatValidationResult<AiChatPropertyDraft>.success(
       AiChatPropertyDraft(
-        name: normalizedName!,
+        name: normalizedName,
         type: normalizedType!,
-        address: normalizedAddress!,
+        address: normalizedAddress,
         rentalMode: normalizedType == PropertyType.building
             ? normalizedRentalMode
             : null,
@@ -1062,7 +1076,7 @@ class AiChatDomainRulesService {
             : parsedPrice,
         currency: parsedCurrency,
         description: buildPropertyDescription(
-          type: normalizedType!,
+          type: normalizedType,
           baths: parsedBaths,
           halls: parsedHalls,
           apartmentFloor: parsedApartmentFloor,
@@ -1196,16 +1210,19 @@ class AiChatDomainRulesService {
 
     final missing = <AiChatValidationIssue>[];
     if (parsedStartDate == null) {
-      missing.add(_missing('startDate', 'تاريخ البداية', 'تاريخ البداية مطلوب'));
+      missing
+          .add(_missing('startDate', 'تاريخ البداية', 'تاريخ البداية مطلوب'));
     }
     if (parsedEndDate == null) {
       missing.add(_missing('endDate', 'تاريخ النهاية', 'تاريخ النهاية مطلوب'));
     }
     if (parsedRentAmount == null) {
-      missing.add(_missing('rentAmount', 'قيمة الإيجار', 'قيمة الإيجار مطلوبة'));
+      missing
+          .add(_missing('rentAmount', 'قيمة الإيجار', 'قيمة الإيجار مطلوبة'));
     }
     if (parsedTotalAmount == null) {
-      missing.add(_missing('totalAmount', 'إجمالي العقد', 'إجمالي العقد مطلوب'));
+      missing
+          .add(_missing('totalAmount', 'إجمالي العقد', 'إجمالي العقد مطلوب'));
     }
 
     if (parsedTerm == ContractTerm.daily) {
@@ -1256,7 +1273,7 @@ class AiChatDomainRulesService {
           'ساعة الخروج يجب أن تكون بين 0 و23.',
         );
       }
-      if ((parsedRentAmount! - parsedTotalAmount!).abs() > 0.0001) {
+      if ((parsedRentAmount - parsedTotalAmount).abs() > 0.0001) {
         return const AiChatValidationResult<AiChatContractDraft>.error(
           'في العقد اليومي يجب أن تتطابق قيمة الإيجار مع إجمالي العقد.',
         );
@@ -1268,7 +1285,8 @@ class AiChatDomainRulesService {
           'دورة السداد غير متوافقة مع مدة العقد ${contractTermLabel(parsedTerm)}.',
         );
       }
-      if (parsedCycle == PaymentCycle.annual && parsedCycleYears > parsedTermYears) {
+      if (parsedCycle == PaymentCycle.annual &&
+          parsedCycleYears > parsedTermYears) {
         return const AiChatValidationResult<AiChatContractDraft>.error(
           'سنوات دورة السداد لا يمكن أن تتجاوز سنوات مدة العقد.',
         );
@@ -1286,7 +1304,7 @@ class AiChatDomainRulesService {
       );
     }
     if (parsedAdvanceMode == AdvanceMode.deductFromTotal &&
-        (parsedAdvancePaid ?? 0) > parsedTotalAmount!) {
+        (parsedAdvancePaid ?? 0) > parsedTotalAmount) {
       return const AiChatValidationResult<AiChatContractDraft>.error(
         'الدفعة المقدمة لا يمكن أن تتجاوز إجمالي العقد عند الخصم من الإجمالي.',
       );
@@ -1294,10 +1312,10 @@ class AiChatDomainRulesService {
 
     return AiChatValidationResult<AiChatContractDraft>.success(
       AiChatContractDraft(
-        startDate: parsedStartDate!,
-        endDate: parsedEndDate!,
-        rentAmount: parsedRentAmount!,
-        totalAmount: parsedTotalAmount!,
+        startDate: parsedStartDate,
+        endDate: parsedEndDate,
+        rentAmount: parsedRentAmount,
+        totalAmount: parsedTotalAmount,
         term: parsedTerm,
         termYears: parsedTerm == ContractTerm.annual ? parsedTermYears : 1,
         paymentCycle: parsedTerm == ContractTerm.daily
@@ -1306,9 +1324,8 @@ class AiChatDomainRulesService {
         paymentCycleYears:
             parsedCycle == PaymentCycle.annual ? parsedCycleYears : 1,
         advanceMode: parsedAdvanceMode,
-        advancePaid: parsedAdvanceMode == AdvanceMode.none
-            ? null
-            : parsedAdvancePaid,
+        advancePaid:
+            parsedAdvanceMode == AdvanceMode.none ? null : parsedAdvancePaid,
         dailyCheckoutHour:
             parsedTerm == ContractTerm.daily ? parsedCheckoutHour : null,
         notes: parsedNotes,
@@ -1336,13 +1353,11 @@ class AiChatDomainRulesService {
     final parsedNotes = _optionalString(notes);
     final parsedEjarNo = _optionalString(ejarContractNo);
     final parsedEndDate = _dateOnly(endDate);
-    final parsedCycle = paymentCycle == null
-        ? null
-        : normalizePaymentCycle(paymentCycle);
+    final parsedCycle =
+        paymentCycle == null ? null : normalizePaymentCycle(paymentCycle);
     final parsedCycleYears = _intValue(paymentCycleYears);
-    final parsedAdvanceMode = advanceMode == null
-        ? null
-        : normalizeAdvanceMode(advanceMode);
+    final parsedAdvanceMode =
+        advanceMode == null ? null : normalizeAdvanceMode(advanceMode);
     final parsedAdvancePaid = _doubleValue(advancePaid);
     final parsedCheckoutHour = _intValue(dailyCheckoutHour);
 
@@ -1421,7 +1436,8 @@ class AiChatDomainRulesService {
     );
   }
 
-  static AiChatValidationResult<AiChatContractRenewDraft> validateContractRenew({
+  static AiChatValidationResult<AiChatContractRenewDraft>
+      validateContractRenew({
     required Object? newStartDate,
     required Object? newEndDate,
     Object? newRentAmount,
@@ -1436,10 +1452,12 @@ class AiChatDomainRulesService {
 
     final missing = <AiChatValidationIssue>[];
     if (parsedStart == null) {
-      missing.add(_missing('newStartDate', 'تاريخ البداية الجديد', 'تاريخ البداية الجديد مطلوب'));
+      missing.add(_missing('newStartDate', 'تاريخ البداية الجديد',
+          'تاريخ البداية الجديد مطلوب'));
     }
     if (parsedEnd == null) {
-      missing.add(_missing('newEndDate', 'تاريخ النهاية الجديد', 'تاريخ النهاية الجديد مطلوب'));
+      missing.add(_missing(
+          'newEndDate', 'تاريخ النهاية الجديد', 'تاريخ النهاية الجديد مطلوب'));
     }
     if (missing.isNotEmpty) {
       return AiChatValidationResult<AiChatContractRenewDraft>.missing(missing);
@@ -1463,8 +1481,8 @@ class AiChatDomainRulesService {
 
     return AiChatValidationResult<AiChatContractRenewDraft>.success(
       AiChatContractRenewDraft(
-        newStartDate: parsedStart!,
-        newEndDate: parsedEnd!,
+        newStartDate: parsedStart,
+        newEndDate: parsedEnd,
         newRentAmount: parsedRent,
         newTotalAmount: parsedTotal,
         notes: parsedNotes,
@@ -1486,7 +1504,8 @@ class AiChatDomainRulesService {
       missing.add(_missing('amount', 'المبلغ', 'المبلغ مطلوب'));
     }
     if (parsedDate == null) {
-      missing.add(_missing('dueDate', 'تاريخ الاستحقاق', 'تاريخ الاستحقاق مطلوب'));
+      missing
+          .add(_missing('dueDate', 'تاريخ الاستحقاق', 'تاريخ الاستحقاق مطلوب'));
     }
     if (missing.isNotEmpty) {
       return AiChatValidationResult<AiChatInvoiceDraft>.missing(missing);
@@ -1498,14 +1517,15 @@ class AiChatDomainRulesService {
     }
     return AiChatValidationResult<AiChatInvoiceDraft>.success(
       AiChatInvoiceDraft(
-        amount: parsedAmount!,
+        amount: parsedAmount,
         dueDate: parsedDate!,
         note: parsedNote,
       ),
     );
   }
 
-  static AiChatValidationResult<AiChatManualVoucherDraft> validateManualVoucher({
+  static AiChatValidationResult<AiChatManualVoucherDraft>
+      validateManualVoucher({
     required Object? kind,
     required Object? amount,
     required Object? issueDate,
@@ -1542,7 +1562,8 @@ class AiChatDomainRulesService {
       missing.add(_missing('partyName', 'اسم الطرف', 'اسم الطرف مطلوب'));
     }
     if (parsedPaymentMethod == null) {
-      missing.add(_missing('paymentMethod', 'طريقة الدفع', 'طريقة الدفع مطلوبة'));
+      missing
+          .add(_missing('paymentMethod', 'طريقة الدفع', 'طريقة الدفع مطلوبة'));
     }
     if (parsedTitle == null) {
       missing.add(_missing('title', 'عنوان السند', 'عنوان السند مطلوب'));
@@ -1578,13 +1599,12 @@ class AiChatDomainRulesService {
     return AiChatValidationResult<AiChatManualVoucherDraft>.success(
       AiChatManualVoucherDraft(
         kind: parsedKind!,
-        amount: parsedAmount!,
-        signedAmount:
-            parsedKind == 'expense' ? -parsedAmount! : parsedAmount!,
+        amount: parsedAmount,
+        signedAmount: parsedKind == 'expense' ? -parsedAmount : parsedAmount,
         issueDate: parsedIssueDate!,
-        title: parsedTitle!,
-        partyName: parsedPartyName!,
-        description: parsedDescription!,
+        title: parsedTitle,
+        partyName: parsedPartyName,
+        description: parsedDescription,
         paymentMethod: parsedPaymentMethod!,
         attachmentPaths: parsedAttachments,
         tenantName: parsedTenantName,
@@ -1593,7 +1613,8 @@ class AiChatDomainRulesService {
     );
   }
 
-  static AiChatValidationResult<AiChatMaintenanceDraft> validateMaintenanceRequest({
+  static AiChatValidationResult<AiChatMaintenanceDraft>
+      validateMaintenanceRequest({
     required Object? title,
     Object? description,
     Object? requestType,
@@ -1643,7 +1664,7 @@ class AiChatDomainRulesService {
 
     return AiChatValidationResult<AiChatMaintenanceDraft>.success(
       AiChatMaintenanceDraft(
-        title: parsedTitle!,
+        title: parsedTitle,
         description: parsedDescription,
         requestType: parsedRequestType,
         priority: parsedPriority,
@@ -1656,7 +1677,8 @@ class AiChatDomainRulesService {
     );
   }
 
-  static AiChatValidationResult<AiChatMaintenanceStatusDraft> validateMaintenanceStatus({
+  static AiChatValidationResult<AiChatMaintenanceStatusDraft>
+      validateMaintenanceStatus({
     required Object? status,
     Object? cost,
     Object? provider,
@@ -1688,7 +1710,8 @@ class AiChatDomainRulesService {
     );
   }
 
-  static AiChatValidationResult<AiChatPeriodicServiceDraft> validatePeriodicService({
+  static AiChatValidationResult<AiChatPeriodicServiceDraft>
+      validatePeriodicService({
     required Object? serviceType,
     Object? provider,
     Object? cost,
@@ -1703,16 +1726,19 @@ class AiChatDomainRulesService {
     final missing = <AiChatValidationIssue>[];
     if (parsedType == null) {
       missing.add(
-        _missing('serviceType', 'نوع الخدمة الدورية', 'نوع الخدمة الدورية مطلوب'),
+        _missing(
+            'serviceType', 'نوع الخدمة الدورية', 'نوع الخدمة الدورية مطلوب'),
       );
     }
     if (parsedDate == null) {
       missing.add(
-        _missing('scheduledDate', 'تاريخ الدورة القادمة', 'تاريخ الدورة القادمة مطلوب'),
+        _missing('scheduledDate', 'تاريخ الدورة القادمة',
+            'تاريخ الدورة القادمة مطلوب'),
       );
     }
     if (missing.isNotEmpty) {
-      return AiChatValidationResult<AiChatPeriodicServiceDraft>.missing(missing);
+      return AiChatValidationResult<AiChatPeriodicServiceDraft>.missing(
+          missing);
     }
     if (parsedCost != null && parsedCost < 0) {
       return const AiChatValidationResult<AiChatPeriodicServiceDraft>.error(
@@ -1746,7 +1772,8 @@ class AiChatDomainRulesService {
       missing.add(_missing('name', 'اسم العميل', 'اسم العميل مطلوب'));
     }
     if (parsedEmail == null) {
-      missing.add(_missing('email', 'البريد الإلكتروني', 'البريد الإلكتروني مطلوب'));
+      missing.add(
+          _missing('email', 'البريد الإلكتروني', 'البريد الإلكتروني مطلوب'));
     }
     if (missing.isNotEmpty) {
       return AiChatValidationResult<AiChatOfficeClientDraft>.missing(missing);
@@ -1779,9 +1806,9 @@ class AiChatDomainRulesService {
 
     return AiChatValidationResult<AiChatOfficeClientDraft>.success(
       AiChatOfficeClientDraft(
-        name: parsedName!,
-        email: parsedEmail!,
-        phone: normalizedPhone!,
+        name: parsedName,
+        email: parsedEmail,
+        phone: normalizedPhone,
         notes: parsedNotes,
       ),
     );
@@ -1838,7 +1865,8 @@ class AiChatDomainRulesService {
     final hasStartDate = _optionalString(startDate) != null;
 
     if (!hasPrice) {
-      return AiChatValidationResult<AiChatOfficeClientSubscriptionDraft>.missing(
+      return AiChatValidationResult<
+          AiChatOfficeClientSubscriptionDraft>.missing(
         <AiChatValidationIssue>[
           _missing(
             'price',
@@ -1850,24 +1878,28 @@ class AiChatDomainRulesService {
     }
 
     if (parsedPrice == null || parsedPrice <= 0) {
-      return const AiChatValidationResult<AiChatOfficeClientSubscriptionDraft>.error(
+      return const AiChatValidationResult<
+          AiChatOfficeClientSubscriptionDraft>.error(
         'سعر الاشتراك يجب أن يكون أكبر من صفر.',
       );
     }
 
     if (hasReminder && parsedReminder == null) {
-      return const AiChatValidationResult<AiChatOfficeClientSubscriptionDraft>.error(
+      return const AiChatValidationResult<
+          AiChatOfficeClientSubscriptionDraft>.error(
         'موعد تنبيه الاشتراك يجب أن يكون رقمًا صحيحًا من 1 إلى 3 أيام.',
       );
     }
     if (parsedReminder != null && (parsedReminder < 1 || parsedReminder > 3)) {
-      return const AiChatValidationResult<AiChatOfficeClientSubscriptionDraft>.error(
+      return const AiChatValidationResult<
+          AiChatOfficeClientSubscriptionDraft>.error(
         'موعد تنبيه الاشتراك يجب أن يكون من 1 إلى 3 أيام فقط.',
       );
     }
 
     if (hasStartDate && parsedStartDate == null) {
-      return const AiChatValidationResult<AiChatOfficeClientSubscriptionDraft>.error(
+      return const AiChatValidationResult<
+          AiChatOfficeClientSubscriptionDraft>.error(
         'تاريخ بداية الاشتراك يجب أن يكون بصيغة YYYY-MM-DD.',
       );
     }
@@ -1897,12 +1929,14 @@ class AiChatDomainRulesService {
       missing.add(_missing('ownerQuery', 'المالك', 'تحديد المالك مطلوب'));
     }
     if (missing.isNotEmpty) {
-      return AiChatValidationResult<AiChatReportsAssignPropertyOwnerDraft>.missing(
+      return AiChatValidationResult<
+          AiChatReportsAssignPropertyOwnerDraft>.missing(
         missing,
       );
     }
 
-    return AiChatValidationResult<AiChatReportsAssignPropertyOwnerDraft>.success(
+    return AiChatValidationResult<
+        AiChatReportsAssignPropertyOwnerDraft>.success(
       AiChatReportsAssignPropertyOwnerDraft(
         propertyQuery: parsedProperty!,
         ownerQuery: parsedOwner!,
@@ -2055,12 +2089,14 @@ class AiChatDomainRulesService {
     if (parsedMode == CommissionMode.percent) {
       final parsedValue = _doubleValue(value);
       if (parsedValue == null || parsedValue < 0) {
-        return const AiChatValidationResult<AiChatReportsCommissionRuleDraft>.error(
+        return const AiChatValidationResult<
+            AiChatReportsCommissionRuleDraft>.error(
           'أدخل نسبة عمولة صحيحة.',
         );
       }
       if (parsedValue > 100) {
-        return const AiChatValidationResult<AiChatReportsCommissionRuleDraft>.error(
+        return const AiChatValidationResult<
+            AiChatReportsCommissionRuleDraft>.error(
           'نسبة العمولة لا يمكن أن تتجاوز 100%.',
         );
       }
@@ -2320,7 +2356,8 @@ class AiChatDomainRulesService {
       missing.add(_missing('accountNumber', 'رقم الحساب', 'رقم الحساب مطلوب'));
     }
     if (missing.isNotEmpty) {
-      return AiChatValidationResult<AiChatReportsOwnerBankAccountEditDraft>.missing(
+      return AiChatValidationResult<
+          AiChatReportsOwnerBankAccountEditDraft>.missing(
         missing,
       );
     }
@@ -2331,12 +2368,14 @@ class AiChatDomainRulesService {
       iban: parsedIban,
     );
     if (bankError != null) {
-      return AiChatValidationResult<AiChatReportsOwnerBankAccountEditDraft>.error(
+      return AiChatValidationResult<
+          AiChatReportsOwnerBankAccountEditDraft>.error(
         bankError,
       );
     }
 
-    return AiChatValidationResult<AiChatReportsOwnerBankAccountEditDraft>.success(
+    return AiChatValidationResult<
+        AiChatReportsOwnerBankAccountEditDraft>.success(
       AiChatReportsOwnerBankAccountEditDraft(
         ownerQuery: parsedOwner!,
         accountQuery: parsedAccountQuery!,
@@ -2369,12 +2408,14 @@ class AiChatDomainRulesService {
       );
     }
     if (missing.isNotEmpty) {
-      return AiChatValidationResult<AiChatReportsOwnerBankAccountDeleteDraft>.missing(
+      return AiChatValidationResult<
+          AiChatReportsOwnerBankAccountDeleteDraft>.missing(
         missing,
       );
     }
 
-    return AiChatValidationResult<AiChatReportsOwnerBankAccountDeleteDraft>.success(
+    return AiChatValidationResult<
+        AiChatReportsOwnerBankAccountDeleteDraft>.success(
       AiChatReportsOwnerBankAccountDeleteDraft(
         ownerQuery: parsedOwner!,
         accountQuery: parsedAccountQuery!,
@@ -2705,10 +2746,14 @@ class AiChatDomainRulesService {
     if (value.contains('elevator') || value.contains('مصعد')) {
       return 'elevator';
     }
-    if (value.contains('internet') || value.contains('انترنت') || value.contains('إنترنت')) {
+    if (value.contains('internet') ||
+        value.contains('انترنت') ||
+        value.contains('إنترنت')) {
       return 'internet';
     }
-    if (value.contains('water') || value.contains('مياه') || value.contains('ماء')) {
+    if (value.contains('water') ||
+        value.contains('مياه') ||
+        value.contains('ماء')) {
       return 'water';
     }
     if (value.contains('electric') || value.contains('كهرب')) {
@@ -2762,7 +2807,8 @@ class AiChatDomainRulesService {
     }
   }
 
-  static OwnerAdjustmentCategory? normalizeOwnerAdjustmentCategory(Object? raw) {
+  static OwnerAdjustmentCategory? normalizeOwnerAdjustmentCategory(
+      Object? raw) {
     final value = _normalizeToken(raw);
     switch (value) {
       case 'ownerdiscount':
@@ -2952,7 +2998,8 @@ class AiChatDomainRulesService {
     return _digitsOnly.hasMatch(value) ? value : '';
   }
 
-  static AiChatValidationResult<AiChatReportsPeriodDraft> _validateReportsPeriod({
+  static AiChatValidationResult<AiChatReportsPeriodDraft>
+      _validateReportsPeriod({
     Object? fromDate,
     Object? toDate,
   }) {

@@ -150,6 +150,9 @@ class Property extends HiveObject {
   @HiveField(28)
   String? waterAmount;
 
+  @HiveField(29)
+  String? usageType;
+
   Property({
     String? id,
     this.name = '',
@@ -180,5 +183,6 @@ class Property extends HiveObject {
     this.waterMode,
     this.waterShare,
     this.waterAmount,
+    this.usageType,
   }) : id = (id == null || id.trim().isEmpty) ? const Uuid().v4() : id;
 }

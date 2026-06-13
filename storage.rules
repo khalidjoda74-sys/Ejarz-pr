@@ -1,0 +1,230 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function role() {
+      return isSignedIn() && request.auth.token.role != null
+        ? request.auth.token.role
+        : '';
+    }
+
+    function isAdmin() {
+      return isSignedIn() && role() == 'admin';
+    }
+
+    function isOfficeOwnerRole() {
+      return isSignedIn() && role() in ['office', 'office_owner'];
+    }
+
+    function isOfficeStaffRole() {
+      return isSignedIn() &&
+        role() in ['office_staff', 'office-user', 'office_user', 'staff'];
+    }
+
+    function isFullPermission(value) {
+      return value in ['full', 'control', 'write', 'admin'];
+    }
+
+    function isKnownPermission(value) {
+      return value in ['full', 'control', 'write', 'admin', 'view', 'read', 'readonly'];
+    }
+
+    function requesterProfileExists() {
+      return isSignedIn() &&
+        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    function requesterOfficeIdFromClaims() {
+      return isSignedIn()
+        ? (
+            request.auth.token.officeId != null
+              ? request.auth.token.officeId
+              : (
+                  request.auth.token.office_id != null
+                    ? request.auth.token.office_id
+                    : ''
+                )
+          )
+        : '';
+    }
+
+    function requesterOfficeIdFromProfile() {
+      return requesterProfileExists()
+        ? (
+            firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.officeId != null
+              ? firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.officeId
+              : (
+                  firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.office_id != null
+                    ? firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.office_id
+                    : ''
+                )
+          )
+        : '';
+    }
+
+    function requesterOfficeId() {
+      return requesterOfficeIdFromClaims() != ''
+        ? requesterOfficeIdFromClaims()
+        : requesterOfficeIdFromProfile();
+    }
+
+    function requesterManagedOfficeUid() {
+      return requesterOfficeId() != '' ? requesterOfficeId() : request.auth.uid;
+    }
+
+    function requesterEmail() {
+      return isSignedIn() && request.auth.token.email != null
+        ? request.auth.token.email
+        : '';
+    }
+
+    function userDocExists(uid) {
+      return firestore.exists(/databases/(default)/documents/users/$(uid));
+    }
+
+    function userEmail(uid) {
+      return userDocExists(uid) &&
+             firestore.get(/databases/(default)/documents/users/$(uid)).data.email != null
+        ? firestore.get(/databases/(default)/documents/users/$(uid)).data.email
+        : '';
+    }
+
+    function isOfficeUserRecord(data) {
+      return data.accountType == 'office_staff' ||
+        data.entityType == 'office_user' ||
+        data.targetRole == 'office' ||
+        data.role in ['office_staff', 'office-user', 'office_user', 'staff'] ||
+        isKnownPermission(data.officePermission) ||
+        isKnownPermission(data.permission);
+    }
+
+    function staffRecordByUidExists(officeUid) {
+      return isSignedIn() &&
+        firestore.exists(/databases/(default)/documents/offices/$(officeUid)/clients/$(request.auth.uid));
+    }
+
+    function staffRecordByEmailExists(officeUid) {
+      return requesterEmail() != '' &&
+        firestore.exists(/databases/(default)/documents/offices/$(officeUid)/clients/$(requesterEmail()));
+    }
+
+    function isOfficeStaffByUidFor(officeUid) {
+      return staffRecordByUidExists(officeUid) &&
+        isOfficeUserRecord(firestore.get(/databases/(default)/documents/offices/$(officeUid)/clients/$(request.auth.uid)).data);
+    }
+
+    function isOfficeStaffByEmailFor(officeUid) {
+      return staffRecordByEmailExists(officeUid) &&
+        isOfficeUserRecord(firestore.get(/databases/(default)/documents/offices/$(officeUid)/clients/$(requesterEmail())).data);
+    }
+
+    function isOfficeStaffFor(officeUid) {
+      return isSignedIn() &&
+        (
+          (isOfficeStaffRole() && requesterOfficeId() == officeUid) ||
+          isOfficeStaffByUidFor(officeUid) ||
+          isOfficeStaffByEmailFor(officeUid)
+        );
+    }
+
+    function isPrimaryOfficeUser(officeUid) {
+      return isSignedIn() && request.auth.uid == officeUid && isOfficeOwnerRole();
+    }
+
+    function hasFullPermissionFromClaims() {
+      return isSignedIn() &&
+        (
+          isFullPermission(request.auth.token.officePermission) ||
+          isFullPermission(request.auth.token.permission)
+        );
+    }
+
+    function hasFullPermissionFromProfile() {
+      return requesterProfileExists() &&
+        (
+          isFullPermission(firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.officePermission) ||
+          isFullPermission(firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.permission)
+        );
+    }
+
+    function hasFullPermissionFromUidRecord(officeUid) {
+      return staffRecordByUidExists(officeUid) &&
+        (
+          isFullPermission(firestore.get(/databases/(default)/documents/offices/$(officeUid)/clients/$(request.auth.uid)).data.officePermission) ||
+          isFullPermission(firestore.get(/databases/(default)/documents/offices/$(officeUid)/clients/$(request.auth.uid)).data.permission)
+        );
+    }
+
+    function hasFullPermissionFromEmailRecord(officeUid) {
+      return staffRecordByEmailExists(officeUid) &&
+        (
+          isFullPermission(firestore.get(/databases/(default)/documents/offices/$(officeUid)/clients/$(requesterEmail())).data.officePermission) ||
+          isFullPermission(firestore.get(/databases/(default)/documents/offices/$(officeUid)/clients/$(requesterEmail())).data.permission)
+        );
+    }
+
+    function hasFullOfficePermission(officeUid) {
+      return hasFullPermissionFromClaims() ||
+        hasFullPermissionFromProfile() ||
+        hasFullPermissionFromUidRecord(officeUid) ||
+        hasFullPermissionFromEmailRecord(officeUid);
+    }
+
+    function canWriteOfficeWorkspace(officeUid) {
+      return isAdmin() ||
+        isPrimaryOfficeUser(officeUid) ||
+        (isOfficeStaffFor(officeUid) && hasFullOfficePermission(officeUid));
+    }
+
+    function isManagedClientByUid(officeUid, uid) {
+      return officeUid != '' &&
+        firestore.exists(/databases/(default)/documents/offices/$(officeUid)/clients/$(uid)) &&
+        !isOfficeUserRecord(firestore.get(/databases/(default)/documents/offices/$(officeUid)/clients/$(uid)).data);
+    }
+
+    function isManagedClientByEmail(officeUid, uid) {
+      return officeUid != '' &&
+        userEmail(uid) != '' &&
+        firestore.exists(/databases/(default)/documents/offices/$(officeUid)/clients/$(userEmail(uid))) &&
+        !isOfficeUserRecord(firestore.get(/databases/(default)/documents/offices/$(officeUid)/clients/$(userEmail(uid))).data);
+    }
+
+    function isManagedOfficeClientWorkspace(uid) {
+      let officeUid = requesterManagedOfficeUid();
+      return isSignedIn() &&
+        (isManagedClientByUid(officeUid, uid) || isManagedClientByEmail(officeUid, uid));
+    }
+
+    function canReadUserFiles(uid) {
+      return isAdmin() ||
+        request.auth.uid == uid ||
+        isOfficeStaffFor(uid) ||
+        isManagedOfficeClientWorkspace(uid);
+    }
+
+    function canWriteUserFiles(uid) {
+      return isAdmin() ||
+        request.auth.uid == uid ||
+        (
+          isOfficeStaffFor(uid) &&
+          hasFullOfficePermission(uid)
+        ) ||
+        (
+          isManagedOfficeClientWorkspace(uid) &&
+          canWriteOfficeWorkspace(requesterManagedOfficeUid())
+        );
+    }
+
+    match /users/{uid}/{allPaths=**} {
+      allow read: if canReadUserFiles(uid);
+      allow write: if canWriteUserFiles(uid);
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

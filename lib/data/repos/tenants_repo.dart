@@ -1,4 +1,4 @@
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_user_collections.dart';
@@ -137,7 +137,6 @@ class TenantsRepo {
     return 'tenant';
   }
 
-
   DateTime? _toDateValue(dynamic v) {
     if (v == null) return null;
     if (v is Timestamp) return v.toDate();
@@ -205,6 +204,8 @@ class TenantsRepo {
     putOpt(map, 'companyTaxNumber', t.companyTaxNumber);
     putOpt(map, 'companyRepresentativeName', t.companyRepresentativeName);
     putOpt(map, 'companyRepresentativePhone', t.companyRepresentativePhone);
+    putOpt(map, 'companyRepresentativeNationalId',
+        t.companyRepresentativeNationalId);
     putOpt(map, 'companyBankAccountNumber', t.companyBankAccountNumber);
     putOpt(map, 'companyBankName', t.companyBankName);
     putOpt(map, 'serviceSpecialization', t.serviceSpecialization);
@@ -222,6 +223,13 @@ class TenantsRepo {
       map['idExpiry'] = FieldValue.delete();
     } else {
       map['idExpiry'] = Timestamp.fromDate(KsaTime.dateOnly(t.idExpiry!));
+    }
+
+    if (t.companyRepresentativeDateOfBirth == null) {
+      map['companyRepresentativeDateOfBirth'] = FieldValue.delete();
+    } else {
+      map['companyRepresentativeDateOfBirth'] = Timestamp.fromDate(
+          KsaTime.dateOnly(t.companyRepresentativeDateOfBirth!));
     }
 
     return map;
@@ -275,6 +283,10 @@ class TenantsRepo {
           (m['companyRepresentativeName'] as String?)?.trim(),
       companyRepresentativePhone:
           (m['companyRepresentativePhone'] as String?)?.trim(),
+      companyRepresentativeNationalId:
+          (m['companyRepresentativeNationalId'] as String?)?.trim(),
+      companyRepresentativeDateOfBirth:
+          tsToDate(m['companyRepresentativeDateOfBirth']),
       companyBankAccountNumber:
           (m['companyBankAccountNumber'] as String?)?.trim(),
       companyBankName: (m['companyBankName'] as String?)?.trim(),
@@ -325,7 +337,8 @@ class TenantsRepo {
       'city': (m['city'] ?? '').toString(),
       'region': (m['region'] ?? '').toString(),
       'postalCode': (m['postalCode'] ?? '').toString(),
-      'tags': (m['tags'] as List?)?.whereType<String>().toList() ?? const <String>[],
+      'tags': (m['tags'] as List?)?.whereType<String>().toList() ??
+          const <String>[],
       'clientType': (m['clientType'] ?? '').toString(),
       'isArchived': m['isArchived'] == true,
       'isBlacklisted': m['isBlacklisted'] == true,
@@ -334,5 +347,3 @@ class TenantsRepo {
     };
   }
 }
-
-

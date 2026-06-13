@@ -7,13 +7,13 @@ plugins {
 
 android {
     // 👇 عدّل إلى حزمة تطبيقك الفعلية (وطابقها مع google-services.json)
-    namespace = "com.darvoo.owner"
+    namespace = "sa.ejarzpro.owner"
 
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     defaultConfig {
-        applicationId = "com.darvoo.owner" // 👈 طابقها مع Firebase
+        applicationId = "sa.ejarzpro.owner" // 👈 طابقها مع Firebase
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -49,6 +49,7 @@ dependencies {
 
     // (اختياري) Firebase BoM وبعض الخدمات
     implementation(platform("com.google.firebase:firebase-bom:34.1.0"))
+    implementation("androidx.core:core-ktx:1.13.1")
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-auth")

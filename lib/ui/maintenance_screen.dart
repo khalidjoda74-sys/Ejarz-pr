@@ -14,7 +14,7 @@
 // - لا مقارنة تواريخ.
 // - أول عقد مرتبط بالعقار ⇒ نأخذ tenantId.
 // - إن تعذر قراءة الصندوق أو لا يوجد عقد ⇒ بدون مستأجر.
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -30,8 +30,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
-import 'invoices_screen.dart'
-    show Invoice, InvoiceAdapter, InvoiceDetailsScreen;
+import 'invoices_screen.dart' show Invoice, InvoiceDetailsScreen;
 import '../data/services/user_scope.dart' as scope;
 import '../data/services/hive_service.dart';
 import '../data/services/office_client_guard.dart';
@@ -39,7 +38,7 @@ import '../data/services/pdf_export_service.dart';
 import '../data/services/entity_audit_service.dart';
 import '../data/constants/boxes.dart' as bx;
 // أو المسار الصحيح حسب مكان الملف
-import '../widgets/darvoo_app_bar.dart';
+import '../widgets/ejarz_pro_app_bar.dart';
 import '../widgets/custom_confirm_dialog.dart';
 
 // موديلات موجودة لديك
@@ -114,10 +113,8 @@ Map<String, dynamic> _maintenanceToMap(MaintenanceRequest m) {
   put('title', m.title);
   put('note', m.description);
   put('requestType', m.requestType);
-  put('priority',
-      (m.priority is Enum) ? (m.priority as Enum).name : m.priority.toString());
-  put('status',
-      (m.status is Enum) ? (m.status as Enum).name : m.status.toString());
+  put('priority', m.priority.name);
+  put('status', m.status.name);
   put('isArchived', m.isArchived);
   put('cost', m.cost);
 
@@ -172,11 +169,8 @@ void _putMaintenanceProviderSnapshotDate(
 void _putMaintenanceProviderSnapshotList(
     Map<String, dynamic> target, String key, List<String>? values) {
   if (values == null) return;
-  final cleaned = values
-      .map((e) => e.trim())
-      .where((e) => e.isNotEmpty)
-      .toSet()
-      .toList();
+  final cleaned =
+      values.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
   if (cleaned.isEmpty) return;
   target[key] = cleaned;
 }
@@ -189,11 +183,9 @@ Map<String, dynamic> buildMaintenanceProviderSnapshot(Tenant tenant) {
   _putMaintenanceProviderSnapshotValue(map, 'phone', tenant.phone);
   _putMaintenanceProviderSnapshotValue(map, 'email', tenant.email);
   _putMaintenanceProviderSnapshotDate(map, 'dateOfBirth', tenant.dateOfBirth);
-  _putMaintenanceProviderSnapshotValue(
-      map, 'nationality', tenant.nationality);
+  _putMaintenanceProviderSnapshotValue(map, 'nationality', tenant.nationality);
   _putMaintenanceProviderSnapshotDate(map, 'idExpiry', tenant.idExpiry);
-  _putMaintenanceProviderSnapshotValue(
-      map, 'addressLine', tenant.addressLine);
+  _putMaintenanceProviderSnapshotValue(map, 'addressLine', tenant.addressLine);
   _putMaintenanceProviderSnapshotValue(map, 'city', tenant.city);
   _putMaintenanceProviderSnapshotValue(map, 'region', tenant.region);
   _putMaintenanceProviderSnapshotValue(map, 'postalCode', tenant.postalCode);
@@ -203,8 +195,8 @@ Map<String, dynamic> buildMaintenanceProviderSnapshot(Tenant tenant) {
       map, 'emergencyPhone', tenant.emergencyPhone);
   _putMaintenanceProviderSnapshotValue(map, 'notes', tenant.notes);
   _putMaintenanceProviderSnapshotValue(map, 'clientType', tenant.clientType);
-  _putMaintenanceProviderSnapshotValue(
-      map, 'clientTypeLabel', _maintenanceProviderClientTypeLabel(tenant.clientType));
+  _putMaintenanceProviderSnapshotValue(map, 'clientTypeLabel',
+      _maintenanceProviderClientTypeLabel(tenant.clientType));
   _putMaintenanceProviderSnapshotValue(
       map, 'tenantBankName', tenant.tenantBankName);
   _putMaintenanceProviderSnapshotValue(
@@ -363,11 +355,11 @@ bool _isSharedWaterOrElectricMaintenanceType(String raw) {
   final hay = raw.trim().toLowerCase();
   if (hay.isEmpty) return false;
   return hay.contains('water') ||
-      hay.contains('Ù…ÙŠØ§Ù‡') ||
-      hay.contains('Ù…Ø§Ø¡') ||
+      hay.contains('مياه') ||
+      hay.contains('ماء') ||
       hay.contains('electric') ||
       hay.contains('electricity') ||
-      hay.contains('ÙƒÙ‡Ø±Ø¨');
+      hay.contains('كهرب');
 }
 
 String? _extraPeriodicServiceTypeToken(dynamic raw) {
@@ -375,14 +367,14 @@ String? _extraPeriodicServiceTypeToken(dynamic raw) {
   if (value.isEmpty) return null;
   if (value == 'water' ||
       value.contains('water') ||
-      value.contains('Ù…ÙŠØ§Ù‡') ||
-      value.contains('Ù…Ø§Ø¡')) {
+      value.contains('مياه') ||
+      value.contains('ماء')) {
     return 'water';
   }
   if (value == 'electricity' ||
       value.contains('electric') ||
       value.contains('electricity') ||
-      value.contains('ÙƒÙ‡Ø±Ø¨')) {
+      value.contains('كهرب')) {
     return 'electricity';
   }
   return null;
@@ -648,7 +640,9 @@ String nextMaintenanceRequestSerialForBox(Box<MaintenanceRequest> box) =>
 String? _normalizePeriodicServiceTypeToken(dynamic raw) {
   final value = (raw ?? '').toString().trim().toLowerCase();
   if (value.isEmpty) return null;
-  if (value == 'cleaning' || value.contains('clean') || value.contains('نظاف')) {
+  if (value == 'cleaning' ||
+      value.contains('clean') ||
+      value.contains('نظاف')) {
     return 'cleaning';
   }
   if (value == 'elevator' ||
@@ -679,7 +673,8 @@ Future<void> saveMaintenanceRequestLocalAndSync(MaintenanceRequest m) async {
 Future<void> deleteMaintenanceRequestOnlyLocalAndSync(
     MaintenanceRequest m) async {
   await markPeriodicServiceRequestSuppressedForCurrentCycle(m);
-  final maintBox = Hive.box<MaintenanceRequest>(HiveService.maintenanceBoxName());
+  final maintBox =
+      Hive.box<MaintenanceRequest>(HiveService.maintenanceBoxName());
   dynamic keyToDelete;
 
   if (m.key != null && maintBox.containsKey(m.key)) {
@@ -704,12 +699,14 @@ Future<void> deleteMaintenanceRequestOnlyLocalAndSync(
 }
 
 String? _periodicServiceTypeForMaintenanceRequest(MaintenanceRequest request) {
-  final tagged = _normalizePeriodicServiceTypeToken(request.periodicServiceType);
+  final tagged =
+      _normalizePeriodicServiceTypeToken(request.periodicServiceType);
   if (tagged != null) return tagged;
-  final extraTagged = _extraPeriodicServiceTypeToken(request.periodicServiceType);
+  final extraTagged =
+      _extraPeriodicServiceTypeToken(request.periodicServiceType);
   if (extraTagged != null) return extraTagged;
-  final hay =
-      '${request.title} ${request.description} ${request.requestType}'.toLowerCase();
+  final hay = '${request.title} ${request.description} ${request.requestType}'
+      .toLowerCase();
   final extraHay = _extraPeriodicServiceTypeToken(hay);
   if (extraHay != null) return extraHay;
   if (hay.contains('نظاف') || hay.contains('clean')) {
@@ -779,7 +776,8 @@ DateTime? _periodicServiceExecutionDateForTodayFromConfig(
 ) {
   final normalizedToday = KsaTime.dateOnly(today);
   final lastGenerated = _periodicServiceConfigLastGeneratedDateFromConfig(cfg);
-  if (lastGenerated != null && KsaTime.dateOnly(lastGenerated) == normalizedToday) {
+  if (lastGenerated != null &&
+      KsaTime.dateOnly(lastGenerated) == normalizedToday) {
     return normalizedToday;
   }
 
@@ -820,13 +818,12 @@ Future<void> _markPeriodicServiceRequestSuppressedOnDelete(
   if (raw is! Map) return;
 
   final cfg = Map<String, dynamic>.from(raw);
-  final suppressionDate =
-      _periodicServiceExecutionDateForTodayFromConfig(
-            serviceType,
-            cfg,
-            KsaTime.today(),
-          ) ??
-          _periodicServiceAnchorForMaintenanceRequest(request);
+  final suppressionDate = _periodicServiceExecutionDateForTodayFromConfig(
+        serviceType,
+        cfg,
+        KsaTime.today(),
+      ) ??
+      _periodicServiceAnchorForMaintenanceRequest(request);
 
   final updated = Map<String, dynamic>.from(cfg)
     ..['suppressedRequestDate'] = suppressionDate.toIso8601String()
@@ -893,8 +890,8 @@ String _maintenanceDisplayServiceType(MaintenanceRequest request) {
 }
 
 String _maintenanceVoucherTypeLabel(MaintenanceRequest request) {
-  final hay =
-      '${request.title} ${request.description} ${request.requestType}'.toLowerCase();
+  final hay = '${request.title} ${request.description} ${request.requestType}'
+      .toLowerCase();
   final hasSharedService =
       hay.contains('مشترك') || hay.contains('مشتركة') || hay.contains('shared');
   if (hay.contains('مصعد') ||
@@ -914,8 +911,7 @@ String _maintenanceVoucherTypeLabel(MaintenanceRequest request) {
       (hay.contains('water') || hay.contains('مياه') || hay.contains('ماء'))) {
     return 'خدمة مياه مشتركة';
   }
-  if (hasSharedService &&
-      (hay.contains('electric') || hay.contains('كهرب'))) {
+  if (hasSharedService && (hay.contains('electric') || hay.contains('كهرب'))) {
     return 'خدمة كهرباء مشتركة';
   }
   if (hay.contains('water') || hay.contains('مياه') || hay.contains('ماء')) {
@@ -1013,15 +1009,17 @@ String _buildMaintenanceInvoiceNote(
   String propertyRef = '',
 }) {
   final lines = <String>[];
-  final serviceTypeToken = _periodicServiceTypeForMaintenanceRequest(request) ?? '';
+  final serviceTypeToken =
+      _periodicServiceTypeForMaintenanceRequest(request) ?? '';
   final title = request.title.trim();
   final description = request.description.trim();
   final typeLabel = _maintenanceVoucherTypeLabel(request);
   final sharedServiceType = (() {
-    final hay =
-        '${request.title} ${request.description} ${request.requestType}'.toLowerCase();
-    final hasSharedService =
-        hay.contains('مشترك') || hay.contains('مشتركة') || hay.contains('shared');
+    final hay = '${request.title} ${request.description} ${request.requestType}'
+        .toLowerCase();
+    final hasSharedService = hay.contains('مشترك') ||
+        hay.contains('مشتركة') ||
+        hay.contains('shared');
     if (!hasSharedService) return '';
     if (hay.contains('water') || hay.contains('مياه') || hay.contains('ماء')) {
       return 'water';
@@ -1048,7 +1046,8 @@ String _buildMaintenanceInvoiceNote(
   }
   lines.add(_appendMaintenancePropertyReference(firstLine, propertyRef));
 
-  if (description.isNotEmpty && description.toLowerCase() != title.toLowerCase()) {
+  if (description.isNotEmpty &&
+      description.toLowerCase() != title.toLowerCase()) {
     lines.add(description);
   }
 
@@ -1121,6 +1120,7 @@ String _fmtDate(DateTime d) {
   return '${x.year}-${x.month.toString().padLeft(2, '0')}-${x.day.toString().padLeft(2, '0')}';
 }
 
+// ignore: unused_element
 String _fmtDateOrDash(DateTime? d) => d == null ? '—' : _fmtDate(d);
 
 // ✅ تفعيل/تعطيل العرض الهجري من sessionBox
@@ -1177,7 +1177,7 @@ class _DarkCard extends StatelessWidget {
         border: Border.all(color: const Color(0x26FFFFFF)),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.25),
+              color: Colors.black.withValues(alpha: 0.25),
               blurRadius: 18,
               offset: const Offset(0, 10))
         ],
@@ -1205,7 +1205,7 @@ class _MaintenanceProviderSnapshotScaffold extends StatelessWidget {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text(
             title,
             style: GoogleFonts.cairo(
@@ -1259,9 +1259,9 @@ Widget _maintenanceProviderSnapshotNoteCard(String text) => _DarkCard(
         width: double.infinity,
         padding: EdgeInsets.all(12.w),
         decoration: BoxDecoration(
-          color: const Color(0xFF1E3A8A).withOpacity(0.32),
+          color: const Color(0xFF1E3A8A).withValues(alpha: 0.32),
           borderRadius: BorderRadius.circular(12.r),
-          border: Border.all(color: Colors.white.withOpacity(0.12)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
         ),
         child: Text(
           text,
@@ -1280,7 +1280,7 @@ Widget _maintenanceProviderSnapshotSectionTitle(String t) => Container(
       padding: EdgeInsets.symmetric(vertical: 8.h, horizontal: 12.w),
       margin: EdgeInsets.only(bottom: 12.h),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
+        color: Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(8.r),
       ),
       child: Text(
@@ -1320,7 +1320,10 @@ Widget _maintenanceProviderSnapshotRowInfo(String label, String? value,
             ),
           ),
         ),
-        Expanded(child: onTap == null ? valueText : InkWell(onTap: onTap, child: valueText)),
+        Expanded(
+            child: onTap == null
+                ? valueText
+                : InkWell(onTap: onTap, child: valueText)),
       ],
     ),
   );
@@ -1336,7 +1339,9 @@ bool _isMaintenanceProviderSnapshotImageAttachment(String path) {
 
 bool _isMaintenanceProviderSnapshotRemoteAttachment(String path) {
   final p = path.trim().toLowerCase();
-  return p.startsWith('http://') || p.startsWith('https://') || p.startsWith('gs://');
+  return p.startsWith('http://') ||
+      p.startsWith('https://') ||
+      p.startsWith('gs://');
 }
 
 Future<String> _resolveMaintenanceProviderSnapshotRemoteUrl(String path) async {
@@ -1422,7 +1427,9 @@ class _MaintenanceProviderSnapshotScreen extends StatelessWidget {
             _maintenanceProviderSnapshotString(snapshot, 'region') != null ||
             _maintenanceProviderSnapshotString(snapshot, 'postalCode') != null;
     final hasCompany =
-        _maintenanceProviderSnapshotString(snapshot, 'companyName') != null ||
+        _maintenanceProviderSnapshotString(
+                    snapshot, 'companyName') !=
+                null ||
             _maintenanceProviderSnapshotString(
                     snapshot, 'companyCommercialRegister') !=
                 null ||
@@ -1552,11 +1559,13 @@ class _MaintenanceProviderSnapshotScreen extends StatelessWidget {
                 ),
                 _maintenanceProviderSnapshotRowInfo(
                   'جوال الطوارئ',
-                  _maintenanceProviderSnapshotString(snapshot, 'emergencyPhone'),
+                  _maintenanceProviderSnapshotString(
+                      snapshot, 'emergencyPhone'),
                 ),
                 _maintenanceProviderSnapshotRowInfo(
                   'اسم البنك',
-                  _maintenanceProviderSnapshotString(snapshot, 'tenantBankName'),
+                  _maintenanceProviderSnapshotString(
+                      snapshot, 'tenantBankName'),
                 ),
                 _maintenanceProviderSnapshotRowInfo(
                   'رقم الحساب',
@@ -1565,7 +1574,8 @@ class _MaintenanceProviderSnapshotScreen extends StatelessWidget {
                 ),
                 _maintenanceProviderSnapshotRowInfo(
                   'الرقم الضريبي',
-                  _maintenanceProviderSnapshotString(snapshot, 'tenantTaxNumber'),
+                  _maintenanceProviderSnapshotString(
+                      snapshot, 'tenantTaxNumber'),
                 ),
                 _maintenanceProviderSnapshotRowInfo(
                   'الوسوم',
@@ -1577,7 +1587,8 @@ class _MaintenanceProviderSnapshotScreen extends StatelessWidget {
                 ),
                 _maintenanceProviderSnapshotRowInfo(
                   'سبب القائمة السوداء',
-                  _maintenanceProviderSnapshotString(snapshot, 'blacklistReason'),
+                  _maintenanceProviderSnapshotString(
+                      snapshot, 'blacklistReason'),
                 ),
                 _maintenanceProviderSnapshotRowInfo(
                   'الملاحظات',
@@ -1607,7 +1618,8 @@ class _MaintenanceProviderSnapshotScreen extends StatelessWidget {
                 ),
                 _maintenanceProviderSnapshotRowInfo(
                   'الرقم الضريبي',
-                  _maintenanceProviderSnapshotString(snapshot, 'companyTaxNumber'),
+                  _maintenanceProviderSnapshotString(
+                      snapshot, 'companyTaxNumber'),
                 ),
                 _maintenanceProviderSnapshotRowInfo(
                   'اسم الممثل',
@@ -1621,7 +1633,8 @@ class _MaintenanceProviderSnapshotScreen extends StatelessWidget {
                 ),
                 _maintenanceProviderSnapshotRowInfo(
                   'بنك الشركة',
-                  _maintenanceProviderSnapshotString(snapshot, 'companyBankName'),
+                  _maintenanceProviderSnapshotString(
+                      snapshot, 'companyBankName'),
                 ),
                 _maintenanceProviderSnapshotRowInfo(
                   'حساب الشركة',
@@ -1671,9 +1684,10 @@ class _MaintenanceProviderSnapshotScreen extends StatelessWidget {
                         child: Container(
                           width: 92.w,
                           height: 92.w,
-                          color: Colors.white.withOpacity(0.08),
-                          child: _buildMaintenanceProviderSnapshotAttachmentThumb(
-                              path),
+                          color: Colors.white.withValues(alpha: 0.08),
+                          child:
+                              _buildMaintenanceProviderSnapshotAttachmentThumb(
+                                  path),
                         ),
                       ),
                     );
@@ -1693,7 +1707,7 @@ Widget _chip(String text, {Color bg = const Color(0xFF334155)}) => Container(
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(10.r),
-        border: Border.all(color: Colors.white.withOpacity(0.15)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
       ),
       child: Text(text,
           style: GoogleFonts.cairo(
@@ -1720,8 +1734,9 @@ Color _statusColor(MaintenanceStatus s) {
 
 // ✅ تحسين الأداء: لا نستدعي Hive.box لكل عنصر داخل حلقة where
 bool _isInvoiceCanceledWithBox(MaintenanceRequest m, Box<Invoice>? invBox) {
-  if (m.invoiceId == null || m.invoiceId!.isEmpty || invBox == null)
+  if (m.invoiceId == null || m.invoiceId!.isEmpty || invBox == null) {
     return false;
+  }
   try {
     final inv = invBox.get(m.invoiceId);
     return inv?.isCanceled ?? false;
@@ -1936,7 +1951,8 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
     required bool providerHistoryScoped,
   }) {
     final parts = <String>[];
-    parts.add((!propertyScoped && _archivedFilter == true) ? 'المؤرشفة' : 'الكل');
+    parts.add(
+        (!propertyScoped && _archivedFilter == true) ? 'المؤرشفة' : 'الكل');
 
     if ((_assignedToFilter ?? '').isNotEmpty) {
       parts.add('مقدم الخدمة: ${_assignedToFilter!}');
@@ -2127,7 +2143,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text(
               propertyScoped
                   ? 'طلبات الخدمات'
@@ -2181,15 +2197,15 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                       prefixIcon:
                           const Icon(Icons.search, color: Colors.white70),
                       filled: true,
-                      fillColor: Colors.white.withOpacity(0.08),
+                      fillColor: Colors.white.withValues(alpha: 0.08),
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12.r),
                           borderSide: BorderSide(
-                              color: Colors.white.withOpacity(0.15))),
+                              color: Colors.white.withValues(alpha: 0.15))),
                       enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12.r),
                           borderSide: BorderSide(
-                              color: Colors.white.withOpacity(0.15))),
+                              color: Colors.white.withValues(alpha: 0.15))),
                       focusedBorder: const OutlineInputBorder(
                           borderSide: BorderSide(color: Colors.white),
                           borderRadius: BorderRadius.all(Radius.circular(12))),
@@ -2210,8 +2226,8 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                         decoration: BoxDecoration(
                           color: const Color(0xFF334155),
                           borderRadius: BorderRadius.circular(10.r),
-                          border:
-                              Border.all(color: Colors.white.withOpacity(0.15)),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.15)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -2257,7 +2273,8 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                           // القاعدة الأساسية: الطلبات التي سُندها ملغى تعتبر مؤرشفة حكماً
                           final isInvCanceled =
                               _isInvoiceCanceledWithBox(e, invBox);
-                          final effectiveArchived = e.isArchived || isInvCanceled;
+                          final effectiveArchived =
+                              e.isArchived || isInvCanceled;
                           return effectiveArchived == showArchivedEffective;
                         }).toList();
                       }
@@ -2354,8 +2371,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                                         ? 'لا توجد طلبات خدمات لهذا العقار'
                                         : 'لا توجد طلبات خدمات')));
                         return Center(
-                          child: Text(
-                              emptyText,
+                          child: Text(emptyText,
                               style: GoogleFonts.cairo(
                                   color: Colors.white70,
                                   fontWeight: FontWeight.w700)),
@@ -2481,7 +2497,8 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                                             _chip(
                                                 'البدء: ${_fmtDateOrDashDynamic(m.scheduledDate)}',
                                                 bg: const Color(0xFF1F2937)),
-                                            if (_maintenanceDisplayServiceType(m)
+                                            if (_maintenanceDisplayServiceType(
+                                                    m)
                                                 .isNotEmpty)
                                               _chip(
                                                   'النوع: ${_maintenanceDisplayServiceType(m)}',
@@ -2530,6 +2547,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
             if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
 
             final result =
+                // ignore: use_build_context_synchronously
                 await Navigator.of(context).push<MaintenanceRequest?>(
               MaterialPageRoute(
                   builder: (_) => const AddOrEditMaintenanceScreen()),
@@ -2594,7 +2612,10 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                       iconEnabledColor: Colors.white70,
                       style: GoogleFonts.cairo(
                           color: Colors.white, fontWeight: FontWeight.w700),
-                      items: <MaintenanceStatus?>[null, ...MaintenanceStatus.values]
+                      items: <MaintenanceStatus?>[
+                        null,
+                        ...MaintenanceStatus.values
+                      ]
                           .map((v) => DropdownMenuItem(
                               value: v,
                               child: Text(v == null
@@ -2645,7 +2666,8 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                       children: [
                         Expanded(
                           child: ChoiceChip(
-                            label: Text('غير مؤرشف', style: GoogleFonts.cairo()),
+                            label:
+                                Text('غير مؤرشف', style: GoogleFonts.cairo()),
                             selected: arch == false,
                             onSelected: (_) => setM(() => arch = false),
                           ),
@@ -2752,13 +2774,17 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
 
                       if (m.status == MaintenanceStatus.completed ||
                           m.status == MaintenanceStatus.canceled) {
+                        // ignore: use_build_context_synchronously
                         Navigator.pop(sheetCtx);
+                        // ignore: use_build_context_synchronously
                         await showEditBlockedDialog(sheetCtx);
                         return;
                       }
 
+                      // ignore: use_build_context_synchronously
                       Navigator.pop(sheetCtx);
                       final updated =
+                          // ignore: use_build_context_synchronously
                           await Navigator.of(context).push<MaintenanceRequest?>(
                         MaterialPageRoute(
                           builder: (_) =>
@@ -2793,8 +2819,10 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                         return;
                       }
 
+                      // ignore: use_build_context_synchronously
                       Navigator.pop(sheetCtx);
                       await _changeStatus(
+                        // ignore: use_build_context_synchronously
                         context,
                         m,
                         openDetailsAfterSave: true,
@@ -2817,8 +2845,10 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
 
                     // 🚫 منع فك أرشفة طلب ملغي السند
                     if (_isInvoiceCanceledSync(m)) {
+                      // ignore: use_build_context_synchronously
                       Navigator.pop(sheetCtx);
                       await _showServicesArchiveNoticeDialog(
+                        // ignore: use_build_context_synchronously
                         sheetCtx,
                         message:
                             'لا يمكن إلغاء الأرشفة، الطلبات المكتملة التي صُدرت لها سندات ثم أُلغيت تُؤرشف تلقائيًا.',
@@ -2828,7 +2858,9 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
 
                     // لا نسمح بالأرشفة اليدوية مطلقًا، تتم تلقائيًا فقط بعد إلغاء السند
                     if (!m.isArchived) {
+                      // ignore: use_build_context_synchronously
                       Navigator.pop(sheetCtx);
+                      // ignore: use_build_context_synchronously
                       await _showArchiveBlockedDialog(sheetCtx);
                       return;
                     }
@@ -2836,8 +2868,10 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                     // 🚫 منع فك أرشفة طلب ملغي يدويًا
                     if (m.isArchived &&
                         m.status == MaintenanceStatus.canceled) {
+                      // ignore: use_build_context_synchronously
                       Navigator.pop(sheetCtx);
                       await _showServicesArchiveNoticeDialog(
+                        // ignore: use_build_context_synchronously
                         sheetCtx,
                         message:
                             'لا يمكن إلغاء الأرشفة، الطلبات المكتملة التي صُدرت لها سندات ثم أُلغيت تُؤرشف تلقائيًا.',
@@ -2845,6 +2879,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                       return;
                     }
 
+                    // ignore: use_build_context_synchronously
                     Navigator.pop(sheetCtx);
 
                     final box = Hive.box<MaintenanceRequest>(
@@ -2859,6 +2894,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                     unawaited(_maintenanceUpsertFS(m));
 
                     if (mounted) {
+                      // ignore: use_build_context_synchronously
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
@@ -2894,9 +2930,11 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
 
                       // 🚫 منع حذف طلب الخدمات بعد اعتماده "مكتمل"
                       if (m.status == MaintenanceStatus.completed) {
+                        // ignore: use_build_context_synchronously
                         Navigator.pop(sheetCtx);
 
                         await CustomConfirmDialog.show(
+                          // ignore: use_build_context_synchronously
                           context: sheetCtx,
                           title: 'لا يمكن الحذف',
                           message:
@@ -2908,9 +2946,11 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                         return;
                       }
 
+                      // ignore: use_build_context_synchronously
                       Navigator.pop(sheetCtx);
 
                       final ok = await _confirm(
+                        // ignore: use_build_context_synchronously
                         sheetCtx,
                         'حذف الطلب',
                         'هل أنت متأكد من حذف هذا الطلب نهائيًا؟ لن تتمكن من استرجاعه مرة أخرى.',
@@ -2920,6 +2960,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                       try {
                         await _deleteMaintenanceAndInvoice(m);
                         if (mounted) {
+                          // ignore: use_build_context_synchronously
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
@@ -2931,6 +2972,7 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                         }
                       } catch (e) {
                         if (mounted) {
+                          // ignore: use_build_context_synchronously
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
@@ -2972,10 +3014,11 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12.r),
-            borderSide: BorderSide(color: Colors.white.withOpacity(0.15))),
+            borderSide:
+                BorderSide(color: Colors.white.withValues(alpha: 0.15))),
         focusedBorder: const OutlineInputBorder(
             borderSide: BorderSide(color: Colors.white),
             borderRadius: BorderRadius.all(Radius.circular(12))),
@@ -3126,18 +3169,18 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                               backgroundColor: const Color(0xFF0EA5E9)),
                           onPressed: saving
                               ? null
-                                : () async {
-                                    setM(() => saving = true);
-                                    try {
-                                      m.status = st;
-                                      if (st == MaintenanceStatus.canceled ||
-                                          st == MaintenanceStatus.completed) {
-                                        await markPeriodicServiceRequestSuppressedForCurrentCycle(
-                                            m);
-                                      }
-                                      if (st == MaintenanceStatus.completed) {
-                                        final c =
-                                            double.tryParse(costCtl.text.trim());
+                              : () async {
+                                  setM(() => saving = true);
+                                  try {
+                                    m.status = st;
+                                    if (st == MaintenanceStatus.canceled ||
+                                        st == MaintenanceStatus.completed) {
+                                      await markPeriodicServiceRequestSuppressedForCurrentCycle(
+                                          m);
+                                    }
+                                    if (st == MaintenanceStatus.completed) {
+                                      final c =
+                                          double.tryParse(costCtl.text.trim());
                                       if (c != null && c >= 0) {
                                         m.cost = c;
                                       }
@@ -3163,17 +3206,20 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                                     unawaited(_maintenanceUpsertFS(m));
 
                                     if (mounted) {
+                                      // ignore: use_build_context_synchronously
                                       Navigator.pop(ctx);
                                       if (openDetailsAfterSave &&
                                           context.mounted) {
                                         await Navigator.of(context).push(
                                           MaterialPageRoute(
-                                            builder: (_) => MaintenanceDetailsScreen(
+                                            builder: (_) =>
+                                                MaintenanceDetailsScreen(
                                               item: m,
                                             ),
                                           ),
                                         );
                                       } else {
+                                        // ignore: use_build_context_synchronously
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(
                                           SnackBar(
@@ -3185,7 +3231,9 @@ class _MaintenanceScreenState extends State<MaintenanceScreen> {
                                     }
                                   } catch (_) {
                                     if (mounted) {
+                                      // ignore: use_build_context_synchronously
                                       Navigator.pop(ctx);
+                                      // ignore: use_build_context_synchronously
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
                                         SnackBar(
@@ -3249,7 +3297,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
   double _bottomBarHeight = kBottomNavigationBarHeight;
   final Map<String, Future<String>> _remoteThumbUrls = {};
   static const MethodChannel _downloadsChannel =
-      MethodChannel('darvoo/downloads');
+      MethodChannel('ejarzpro/downloads');
 
   @override
   void initState() {
@@ -3333,7 +3381,8 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
 
   Future<Map<String, dynamic>?> _ensureProviderSnapshotForItem(
       MaintenanceRequest item) async {
-    final existing = _maintenanceProviderSnapshotMapOrNull(item.providerSnapshot);
+    final existing =
+        _maintenanceProviderSnapshotMapOrNull(item.providerSnapshot);
     if (existing != null && existing.isNotEmpty) return existing;
 
     final provider = _findAssignedProvider(item.assignedTo);
@@ -3418,8 +3467,8 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
   }
 
   Future<void> _openAssignedProviderForItem(MaintenanceRequest item) async {
-    final useSnapshot =
-        item.status == MaintenanceStatus.canceled || _isInvoiceCanceledSync(item);
+    final useSnapshot = item.status == MaintenanceStatus.canceled ||
+        _isInvoiceCanceledSync(item);
     if (useSnapshot) {
       final snapshot = await _ensureProviderSnapshotForItem(item);
       if (snapshot == null || snapshot.isEmpty) {
@@ -3435,6 +3484,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
         );
         return;
       }
+      // ignore: use_build_context_synchronously
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => _MaintenanceProviderSnapshotScreen(
@@ -3608,11 +3658,11 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
                       labelText: 'اختر الحالة',
                       labelStyle: GoogleFonts.cairo(color: Colors.white70),
                       filled: true,
-                      fillColor: Colors.white.withOpacity(0.06),
+                      fillColor: Colors.white.withValues(alpha: 0.06),
                       enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12.r),
                           borderSide: BorderSide(
-                              color: Colors.white.withOpacity(0.15))),
+                              color: Colors.white.withValues(alpha: 0.15))),
                       focusedBorder: const OutlineInputBorder(
                           borderSide: BorderSide(color: Colors.white),
                           borderRadius: BorderRadius.all(Radius.circular(12))),
@@ -3648,11 +3698,11 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
                         labelText: 'التكلفة الإجمالية',
                         labelStyle: GoogleFonts.cairo(color: Colors.white70),
                         filled: true,
-                        fillColor: Colors.white.withOpacity(0.06),
+                        fillColor: Colors.white.withValues(alpha: 0.06),
                         enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12.r),
                             borderSide: BorderSide(
-                                color: Colors.white.withOpacity(0.15))),
+                                color: Colors.white.withValues(alpha: 0.15))),
                         focusedBorder: const OutlineInputBorder(
                             borderSide: BorderSide(color: Colors.white),
                             borderRadius:
@@ -3692,11 +3742,11 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
                           labelText: 'تاريخ الإنهاء',
                           labelStyle: GoogleFonts.cairo(color: Colors.white70),
                           filled: true,
-                          fillColor: Colors.white.withOpacity(0.06),
+                          fillColor: Colors.white.withValues(alpha: 0.06),
                           enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12.r),
                               borderSide: BorderSide(
-                                  color: Colors.white.withOpacity(0.15))),
+                                  color: Colors.white.withValues(alpha: 0.15))),
                           focusedBorder: const OutlineInputBorder(
                               borderSide: BorderSide(color: Colors.white),
                               borderRadius:
@@ -3727,18 +3777,18 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
                               backgroundColor: const Color(0xFF0EA5E9)),
                           onPressed: saving
                               ? null
-                                : () async {
-                                    setM(() => saving = true);
-                                    try {
-                                      m.status = st;
-                                      if (st == MaintenanceStatus.canceled ||
-                                          st == MaintenanceStatus.completed) {
-                                        await markPeriodicServiceRequestSuppressedForCurrentCycle(
-                                            m);
-                                      }
-                                      if (st == MaintenanceStatus.completed) {
-                                        final c =
-                                            double.tryParse(costCtl.text.trim());
+                              : () async {
+                                  setM(() => saving = true);
+                                  try {
+                                    m.status = st;
+                                    if (st == MaintenanceStatus.canceled ||
+                                        st == MaintenanceStatus.completed) {
+                                      await markPeriodicServiceRequestSuppressedForCurrentCycle(
+                                          m);
+                                    }
+                                    if (st == MaintenanceStatus.completed) {
+                                      final c =
+                                          double.tryParse(costCtl.text.trim());
                                       if (c != null && c >= 0) {
                                         m.cost = c;
                                       }
@@ -3764,6 +3814,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
                                     unawaited(_maintenanceUpsertFS(m));
 
                                     if (mounted) {
+                                      // ignore: use_build_context_synchronously
                                       Navigator.pop(ctx);
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
@@ -3775,6 +3826,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
                                     }
                                   } catch (_) {
                                     if (mounted) {
+                                      // ignore: use_build_context_synchronously
                                       Navigator.pop(ctx);
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
@@ -3815,6 +3867,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
     );
   }
 
+  // ignore: unused_element
   void _showDescriptionSheet(BuildContext context, MaintenanceRequest m) {
     final controller = TextEditingController(text: (m.description).trim());
 
@@ -3859,11 +3912,11 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
                   hintText: 'اكتب وصف الطلب هنا…',
                   hintStyle: GoogleFonts.cairo(color: Colors.white54),
                   filled: true,
-                  fillColor: Colors.white.withOpacity(0.06),
+                  fillColor: Colors.white.withValues(alpha: 0.06),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12.r),
                     borderSide:
-                        BorderSide(color: Colors.white.withOpacity(0.15)),
+                        BorderSide(color: Colors.white.withValues(alpha: 0.15)),
                   ),
                   focusedBorder: const OutlineInputBorder(
                     borderSide: BorderSide(color: Colors.white),
@@ -3893,7 +3946,9 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
 
                         unawaited(_maintenanceUpsertFS(m));
                         if (mounted) {
+                          // ignore: use_build_context_synchronously
                           Navigator.of(ctx).pop();
+                          // ignore: use_build_context_synchronously
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text('تم حفظ الوصف',
@@ -3940,7 +3995,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
         padding: EdgeInsets.symmetric(vertical: 8.h, horizontal: 12.w),
         margin: EdgeInsets.only(bottom: 12.h),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
+          color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(8.r),
         ),
         child: Text(t,
@@ -3982,7 +4037,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(10.r),
-        border: Border.all(color: Colors.white.withOpacity(0.15)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
       ),
       child: Text(text,
           style: GoogleFonts.cairo(
@@ -4004,7 +4059,8 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
     final p = pMatch.isNotEmpty ? pMatch.first : null;
     final building = p?.parentBuildingId == null
         ? null
-        : firstWhereOrNull(_properties.values, (x) => x.id == p!.parentBuildingId);
+        : firstWhereOrNull(
+            _properties.values, (x) => x.id == p!.parentBuildingId);
     final propertyDisplayName = (() {
       final ref = _maintenancePropertyReference(
         property: p,
@@ -4042,7 +4098,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text('تفاصيل الخدمة',
               style: GoogleFonts.cairo(
                   color: Colors.white, fontWeight: FontWeight.w800)),
@@ -4068,6 +4124,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
                 // 🚫 منع فك أرشفة طلب ملغي السند
                 if (_isInvoiceCanceledSync(item)) {
                   await _showServicesArchiveNoticeDialog(
+                    // ignore: use_build_context_synchronously
                     context,
                     message:
                         'لا يمكن إلغاء الأرشفة، الطلبات المكتملة التي صُدرت لها سندات ثم أُلغيت تُؤرشف تلقائيًا.',
@@ -4077,6 +4134,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
 
                 // ✅ منع الأرشفة اليدوية مطلقًا، تتم تلقائيًا فقط بعد إلغاء السند
                 if (!item.isArchived) {
+                  // ignore: use_build_context_synchronously
                   await _showArchiveBlockedDialog(context);
                   return;
                 }
@@ -4130,7 +4188,6 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
                 color: Colors.white,
               ),
             ),
-
           ],
         ),
         body: Stack(
@@ -4222,7 +4279,8 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
                                           await Navigator.of(context).push(
                                             MaterialPageRoute(
                                               builder: (_) =>
-                                                  PropertyDetailsScreen(item: p),
+                                                  PropertyDetailsScreen(
+                                                      item: p),
                                             ),
                                           );
                                         },
@@ -4382,7 +4440,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
                                   child: Container(
                                     width: 92.w,
                                     height: 92.w,
-                                    color: Colors.white.withOpacity(0.08),
+                                    color: Colors.white.withValues(alpha: 0.08),
                                     child: _buildAttachmentThumb(path),
                                   ),
                                 ),
@@ -4412,10 +4470,12 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
                               }
 
                               if (item.status == MaintenanceStatus.completed) {
+                                // ignore: use_build_context_synchronously
                                 await showEditBlockedDialog(context);
                                 return;
                               }
 
+                              // ignore: use_build_context_synchronously
                               final updated = await Navigator.of(context)
                                   .push<MaintenanceRequest?>(
                                 MaterialPageRoute(
@@ -4440,8 +4500,8 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
                           _miniAction(
                             icon: Icons.delete_outline_rounded,
                             label: 'حذف',
-                            onTap: () =>
-                                _deleteMaintenanceItemFromDetails(context, item),
+                            onTap: () => _deleteMaintenanceItemFromDetails(
+                                context, item),
                             bg: const Color(0xFF7F1D1D),
                           ),
                         if (!_isInvoiceCanceledSync(item) &&
@@ -4458,9 +4518,11 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
                                 return;
                               }
 
+                              // ignore: use_build_context_synchronously
                               final host = context.findAncestorStateOfType<
                                   _MaintenanceScreenState>();
                               if (host != null) {
+                                // ignore: use_build_context_synchronously
                                 await host._changeStatus(context, item);
                               } else {
                                 await _openChangeStatusSheetLocal(item);
@@ -4602,6 +4664,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
     if (item.status == MaintenanceStatus.completed &&
         item.invoiceId?.isNotEmpty == true) {
       await CustomConfirmDialog.show(
+        // ignore: use_build_context_synchronously
         context: context,
         title: 'لا يمكن الحذف',
         message: 'لا يمكن حذف طلب الخدمات بعد صدور السند الخاص بهذه الخدمة.\n'
@@ -4613,6 +4676,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
     }
 
     final ok = await _confirm(
+      // ignore: use_build_context_synchronously
       context,
       'حذف الطلب',
       'هل أنت متأكد من حذف هذا الطلب نهائيًا؟ لن تتمكن من استرجاعه مرة أخرى.',
@@ -4622,6 +4686,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
     try {
       await _deleteMaintenanceAndInvoice(item);
       if (!mounted) return;
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -4630,9 +4695,11 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
           ),
         ),
       );
+      // ignore: use_build_context_synchronously
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -4731,6 +4798,16 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ListTile(
+                leading:
+                    const Icon(Icons.open_in_new_rounded, color: Colors.white),
+                title: Text('فتح مباشرة',
+                    style: GoogleFonts.cairo(color: Colors.white)),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  await _openAttachment(path);
+                },
+              ),
               ListTile(
                 leading:
                     const Icon(Icons.download_rounded, color: Colors.white),
@@ -4914,6 +4991,36 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
     }
   }
 
+  Future<void> _openAttachment(String path) async {
+    try {
+      final raw = path.trim();
+      String launchable = raw;
+      if (raw.startsWith('gs://')) {
+        launchable =
+            await FirebaseStorage.instance.refFromURL(raw).getDownloadURL();
+      }
+      Uri? uri;
+      if (_isRemoteAttachment(launchable)) {
+        uri = Uri.tryParse(launchable);
+      } else {
+        final f = File(launchable);
+        if (!f.existsSync()) throw Exception('attachment missing');
+        uri = Uri.file(f.path);
+      }
+      if (uri == null) throw Exception('bad uri');
+
+      var opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) {
+        opened = await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+      if (!opened) {
+        _showTopNotice('تعذر فتح المرفق', isError: true);
+      }
+    } catch (_) {
+      _showTopNotice('تعذر فتح المرفق', isError: true);
+    }
+  }
+
   void _showTopNotice(String message, {bool isError = false}) {
     final overlay = Overlay.of(context);
     final entry = OverlayEntry(
@@ -4970,7 +5077,7 @@ class _MaintenanceDetailsScreenState extends State<MaintenanceDetailsScreen> {
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(10.r),
-          border: Border.all(color: Colors.white.withOpacity(0.15)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -5034,6 +5141,7 @@ class _AddOrEditMaintenanceScreenState
 
   Property? _property;
   Tenant? _selectedProvider;
+  // ignore: unused_field
   String? _providerError;
   bool _providerLockedFromArgs = false;
   bool _prefillApplied = false;
@@ -5052,7 +5160,7 @@ class _AddOrEditMaintenanceScreenState
   bool _uploadingAttachments = false;
   final Map<String, Future<String>> _remoteThumbUrls = {};
   static const MethodChannel _downloadsChannel =
-      MethodChannel('darvoo/downloads');
+      MethodChannel('ejarzpro/downloads');
 
   DateTime? _lastExceedShownAt;
 
@@ -5138,6 +5246,7 @@ class _AddOrEditMaintenanceScreenState
     });
   }
 
+  // ignore: unused_element
   Box<MaintenanceRequest> get _box =>
       Hive.box<MaintenanceRequest>(HiveService.maintenanceBoxName());
 
@@ -5290,7 +5399,8 @@ class _AddOrEditMaintenanceScreenState
             _selectedProvider = providerMatch.first;
           }
         }
-        if (_selectedProvider == null && (m.assignedTo ?? '').trim().isNotEmpty) {
+        if (_selectedProvider == null &&
+            (m.assignedTo ?? '').trim().isNotEmpty) {
           final providerMatch = _tenants.values.where((t) {
             return t.clientType == 'serviceProvider' &&
                 !t.isArchived &&
@@ -5326,6 +5436,7 @@ class _AddOrEditMaintenanceScreenState
         .where((s) => s != MaintenanceStatus.canceled)
         .toList();
 
+    // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: () async => !_uploadingAttachments,
       child: AbsorbPointer(
@@ -5355,7 +5466,7 @@ class _AddOrEditMaintenanceScreenState
               elevation: 0,
               centerTitle: true,
               automaticallyImplyLeading: false,
-              leading: darvooLeading(context, iconColor: Colors.white),
+              leading: ejarzProLeading(context, iconColor: Colors.white),
               title: Text(isEdit ? 'تعديل طلب' : 'إضافة خدمة',
                   style: GoogleFonts.cairo(
                       color: Colors.white, fontWeight: FontWeight.w800)),
@@ -5383,7 +5494,14 @@ class _AddOrEditMaintenanceScreenState
                     left: -100,
                     child: _softCircle(260.r, const Color(0x22FFFFFF))),
                 SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 24.h),
+                  padding: EdgeInsets.fromLTRB(
+                    16.w,
+                    16.h,
+                    16.w,
+                    24.h +
+                        _bottomBarHeight +
+                        MediaQuery.of(context).padding.bottom,
+                  ),
                   child: _DarkCard(
                     padding: EdgeInsets.all(16.w),
                     child: Form(
@@ -5690,7 +5808,8 @@ class _AddOrEditMaintenanceScreenState
                                         child: Container(
                                           width: 88.w,
                                           height: 88.w,
-                                          color: Colors.white.withOpacity(0.08),
+                                          color: Colors.white
+                                              .withValues(alpha: 0.08),
                                           child: _buildAttachmentThumb(path),
                                         ),
                                       ),
@@ -5753,13 +5872,13 @@ class _AddOrEditMaintenanceScreenState
                     child: IgnorePointer(
                       ignoring: false,
                       child: Container(
-                        color: Colors.black.withOpacity(0.30),
+                        color: Colors.black.withValues(alpha: 0.30),
                         alignment: Alignment.center,
                         child: Container(
                           padding: EdgeInsets.symmetric(
                               horizontal: 18.w, vertical: 14.h),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.90),
+                            color: Colors.white.withValues(alpha: 0.90),
                             borderRadius: BorderRadius.circular(14.r),
                           ),
                           child: Row(
@@ -5805,10 +5924,11 @@ class _AddOrEditMaintenanceScreenState
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12.r),
-            borderSide: BorderSide(color: Colors.white.withOpacity(0.15))),
+            borderSide:
+                BorderSide(color: Colors.white.withValues(alpha: 0.15))),
         focusedBorder: const OutlineInputBorder(
             borderSide: BorderSide(color: Colors.white),
             borderRadius: BorderRadius.all(Radius.circular(12))),
@@ -6139,6 +6259,16 @@ class _AddOrEditMaintenanceScreenState
             children: [
               ListTile(
                 leading:
+                    const Icon(Icons.open_in_new_rounded, color: Colors.white),
+                title: Text('فتح مباشرة',
+                    style: GoogleFonts.cairo(color: Colors.white)),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  await _openAttachment(path);
+                },
+              ),
+              ListTile(
+                leading:
                     const Icon(Icons.download_rounded, color: Colors.white),
                 title: Text('تحميل',
                     style: GoogleFonts.cairo(color: Colors.white)),
@@ -6164,6 +6294,7 @@ class _AddOrEditMaintenanceScreenState
     );
   }
 
+  // ignore: unused_element
   Future<void> _downloadToFile(String url, File outFile) async {
     final client = HttpClient();
     try {
@@ -6377,6 +6508,7 @@ class _AddOrEditMaintenanceScreenState
     Future.delayed(const Duration(seconds: 2), () => entry.remove());
   }
 
+  // ignore: unused_element
   Future<void> _openAttachment(String path) async {
     try {
       final raw = path.trim();
@@ -6408,6 +6540,7 @@ class _AddOrEditMaintenanceScreenState
     }
   }
 
+  // ignore: unused_element
   Future<String?> _uploadAttachmentToStorage(
     File localFile,
     String fileName,
@@ -6500,10 +6633,8 @@ class _AddOrEditMaintenanceScreenState
   }
 
   List<String> _removedInitialLocalAttachments() {
-    final currentPaths = _attachments
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toSet();
+    final currentPaths =
+        _attachments.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
     return _initialLocalAttachments
         .where((path) => !currentPaths.contains(path))
         .toList(growable: false);
@@ -6586,14 +6717,14 @@ InputDecoration _maintenancePropertyPickerSearchDecoration(String hintText) {
     hintStyle: GoogleFonts.cairo(color: Colors.white70),
     prefixIcon: const Icon(Icons.search, color: Colors.white70),
     filled: true,
-    fillColor: Colors.white.withOpacity(0.08),
+    fillColor: Colors.white.withValues(alpha: 0.08),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12.r),
-      borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
     ),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12.r),
-      borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
     ),
     focusedBorder: OutlineInputBorder(
       borderSide: const BorderSide(color: Colors.white),
@@ -6619,12 +6750,10 @@ class _PropertyPickerSheetState extends State<_PropertyPickerSheet> {
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final rawSheetHeight = media.size.height * 0.72;
-    final availableHeight =
-        media.size.height - media.viewInsets.bottom - 12.h;
-    final sheetHeight =
-        availableHeight > 0 && availableHeight < rawSheetHeight
-            ? availableHeight
-            : rawSheetHeight;
+    final availableHeight = media.size.height - media.viewInsets.bottom - 12.h;
+    final sheetHeight = availableHeight > 0 && availableHeight < rawSheetHeight
+        ? availableHeight
+        : rawSheetHeight;
     return SafeArea(
       child: AnimatedPadding(
         duration: const Duration(milliseconds: 180),
@@ -6641,8 +6770,7 @@ class _PropertyPickerSheetState extends State<_PropertyPickerSheet> {
                 SizedBox(height: 14.h),
                 _maintenancePropertyPickerHeader(
                   title: 'اختيار العقار أو الوحدة',
-                  subtitle:
-                      'اختر العقار أو الوحدة التي تريد ربط الخدمة بها',
+                  subtitle: 'اختر العقار أو الوحدة التي تريد ربط الخدمة بها',
                 ),
                 SizedBox(height: 12.h),
                 TextField(
@@ -6657,105 +6785,179 @@ class _PropertyPickerSheetState extends State<_PropertyPickerSheet> {
                   child: ValueListenableBuilder(
                     valueListenable: _properties.listenable(),
                     builder: (context, Box<Property> b, _) {
-                    final allItems =
-                        b.values.where((p) => !p.isArchived).toList();
-                    final query = _q.toLowerCase();
-                    bool matches(Property p) =>
-                        query.isEmpty ||
-                        p.name.toLowerCase().contains(query) ||
-                        p.address.toLowerCase().contains(query);
+                      final allItems =
+                          b.values.where((p) => !p.isArchived).toList();
+                      final query = _q.toLowerCase();
+                      bool matches(Property p) =>
+                          query.isEmpty ||
+                          p.name.toLowerCase().contains(query) ||
+                          p.address.toLowerCase().contains(query);
 
-                    final topLevel = allItems
-                        .where((p) => p.parentBuildingId == null)
-                        .toList();
-                    final unitsByBuilding = <String, List<Property>>{};
-                    for (final p in allItems) {
-                      final parentId = p.parentBuildingId;
-                      if (parentId == null) continue;
-                      final list = unitsByBuilding.putIfAbsent(
-                          parentId, () => <Property>[]);
-                      list.add(p);
-                    }
-                    for (final units in unitsByBuilding.values) {
-                      units.sort((a, c) => a.name.compareTo(c.name));
-                    }
-                    topLevel.sort((a, c) {
-                      final aIsBuildingWithUnits =
-                          a.type == PropertyType.building &&
-                              (unitsByBuilding[a.id]?.isNotEmpty ?? false);
-                      final cIsBuildingWithUnits =
-                          c.type == PropertyType.building &&
-                              (unitsByBuilding[c.id]?.isNotEmpty ?? false);
-                      if (aIsBuildingWithUnits != cIsBuildingWithUnits) {
-                        return aIsBuildingWithUnits ? -1 : 1;
+                      final topLevel = allItems
+                          .where((p) => p.parentBuildingId == null)
+                          .toList();
+                      final unitsByBuilding = <String, List<Property>>{};
+                      for (final p in allItems) {
+                        final parentId = p.parentBuildingId;
+                        if (parentId == null) continue;
+                        final list = unitsByBuilding.putIfAbsent(
+                            parentId, () => <Property>[]);
+                        list.add(p);
                       }
-                      return a.name.compareTo(c.name);
-                    });
+                      for (final units in unitsByBuilding.values) {
+                        units.sort((a, c) => a.name.compareTo(c.name));
+                      }
+                      topLevel.sort((a, c) {
+                        final aIsBuildingWithUnits =
+                            a.type == PropertyType.building &&
+                                (unitsByBuilding[a.id]?.isNotEmpty ?? false);
+                        final cIsBuildingWithUnits =
+                            c.type == PropertyType.building &&
+                                (unitsByBuilding[c.id]?.isNotEmpty ?? false);
+                        if (aIsBuildingWithUnits != cIsBuildingWithUnits) {
+                          return aIsBuildingWithUnits ? -1 : 1;
+                        }
+                        return a.name.compareTo(c.name);
+                      });
 
-                    final hasAny = topLevel.any((p) {
-                      final units = unitsByBuilding[p.id] ?? const <Property>[];
-                      if (p.type == PropertyType.building && units.isNotEmpty) {
-                        return matches(p) || units.any(matches);
-                      }
-                      return matches(p);
-                    });
-                    if (!hasAny) {
-                      return Center(
-                        child: Text(
-                          'لا توجد عناصر',
-                          style: GoogleFonts.cairo(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w700,
+                      final hasAny = topLevel.any((p) {
+                        final units =
+                            unitsByBuilding[p.id] ?? const <Property>[];
+                        if (p.type == PropertyType.building &&
+                            units.isNotEmpty) {
+                          return matches(p) || units.any(matches);
+                        }
+                        return matches(p);
+                      });
+                      if (!hasAny) {
+                        return Center(
+                          child: Text(
+                            'لا توجد عناصر',
+                            style: GoogleFonts.cairo(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                      );
-                    }
+                        );
+                      }
 
-                    final widgets = <Widget>[];
-                    for (final p in topLevel) {
-                      final units = unitsByBuilding[p.id] ?? const <Property>[];
-                      final isBuildingWithUnits =
-                          p.type == PropertyType.building && units.isNotEmpty;
+                      final widgets = <Widget>[];
+                      for (final p in topLevel) {
+                        final units =
+                            unitsByBuilding[p.id] ?? const <Property>[];
+                        final isBuildingWithUnits =
+                            p.type == PropertyType.building && units.isNotEmpty;
 
-                      if (isBuildingWithUnits) {
-                        final showBuilding = matches(p);
-                        final visibleUnits = showBuilding
-                            ? units
-                            : units.where(matches).toList(growable: false);
-                        if (!showBuilding && visibleUnits.isEmpty) {
+                        if (isBuildingWithUnits) {
+                          final showBuilding = matches(p);
+                          final visibleUnits = showBuilding
+                              ? units
+                              : units.where(matches).toList(growable: false);
+                          if (!showBuilding && visibleUnits.isEmpty) {
+                            continue;
+                          }
+                          final expanded =
+                              _expandedBuildingIds.contains(p.id) ||
+                                  query.isNotEmpty;
+                          widgets.add(
+                            Container(
+                              margin: EdgeInsets.only(bottom: 6.h),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.04),
+                                borderRadius: BorderRadius.circular(12.r),
+                                border: Border.all(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.10)),
+                              ),
+                              child: ExpansionTile(
+                                key: ValueKey('building_${p.id}'),
+                                initiallyExpanded: expanded,
+                                onExpansionChanged: (isOpen) {
+                                  setState(() {
+                                    if (isOpen) {
+                                      _expandedBuildingIds.add(p.id);
+                                    } else {
+                                      _expandedBuildingIds.remove(p.id);
+                                    }
+                                  });
+                                },
+                                iconColor: Colors.white70,
+                                collapsedIconColor: Colors.white70,
+                                title: Text(
+                                  p.name,
+                                  style: GoogleFonts.cairo(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  p.address,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style:
+                                      GoogleFonts.cairo(color: Colors.white70),
+                                ),
+                                childrenPadding:
+                                    EdgeInsets.only(right: 8.w, left: 8.w),
+                                children: [
+                                  ListTile(
+                                    dense: true,
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 10.w, vertical: 0),
+                                    onTap: () => Navigator.of(context).pop(p),
+                                    leading: const Icon(Icons.apartment_rounded,
+                                        color: Colors.white70),
+                                    title: Text(
+                                      'اختيار العمارة نفسها',
+                                      style: GoogleFonts.cairo(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                  for (final u in visibleUnits)
+                                    ListTile(
+                                      dense: true,
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 10.w, vertical: 0),
+                                      onTap: () => Navigator.of(context).pop(u),
+                                      leading: const Icon(
+                                        Icons.meeting_room_rounded,
+                                        color: Colors.white70,
+                                      ),
+                                      title: Text(
+                                        u.name,
+                                        style: GoogleFonts.cairo(
+                                            color: Colors.white),
+                                      ),
+                                      subtitle: (u.address).trim().isEmpty
+                                          ? null
+                                          : Text(
+                                              u.address,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: GoogleFonts.cairo(
+                                                  color: Colors.white70),
+                                            ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          );
                           continue;
                         }
-                        final expanded = _expandedBuildingIds.contains(p.id) ||
-                            query.isNotEmpty;
+
+                        if (!matches(p)) continue;
                         widgets.add(
-                          Container(
-                            margin: EdgeInsets.only(bottom: 6.h),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.04),
-                              borderRadius: BorderRadius.circular(12.r),
-                              border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.10)),
-                            ),
-                            child: ExpansionTile(
-                              key: ValueKey('building_${p.id}'),
-                              initiallyExpanded: expanded,
-                              onExpansionChanged: (isOpen) {
-                                setState(() {
-                                  if (isOpen) {
-                                    _expandedBuildingIds.add(p.id);
-                                  } else {
-                                    _expandedBuildingIds.remove(p.id);
-                                  }
-                                });
-                              },
-                              iconColor: Colors.white70,
-                              collapsedIconColor: Colors.white70,
+                          Padding(
+                            padding: EdgeInsets.only(bottom: 6.h),
+                            child: ListTile(
+                              onTap: () => Navigator.of(context).pop(p),
+                              leading: const Icon(Icons.home_work_rounded,
+                                  color: Colors.white),
                               title: Text(
                                 p.name,
-                                style: GoogleFonts.cairo(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                                style: GoogleFonts.cairo(color: Colors.white),
                               ),
                               subtitle: Text(
                                 p.address,
@@ -6763,93 +6965,25 @@ class _PropertyPickerSheetState extends State<_PropertyPickerSheet> {
                                 overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.cairo(color: Colors.white70),
                               ),
-                              childrenPadding:
-                                  EdgeInsets.only(right: 8.w, left: 8.w),
-                              children: [
-                                ListTile(
-                                  dense: true,
-                                  contentPadding: EdgeInsets.symmetric(
-                                      horizontal: 10.w, vertical: 0),
-                                  onTap: () => Navigator.of(context).pop(p),
-                                  leading: const Icon(Icons.apartment_rounded,
-                                      color: Colors.white70),
-                                  title: Text(
-                                    'اختيار العمارة نفسها',
-                                    style: GoogleFonts.cairo(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                                for (final u in visibleUnits)
-                                  ListTile(
-                                    dense: true,
-                                    contentPadding: EdgeInsets.symmetric(
-                                        horizontal: 10.w, vertical: 0),
-                                    onTap: () => Navigator.of(context).pop(u),
-                                    leading: const Icon(
-                                      Icons.meeting_room_rounded,
-                                      color: Colors.white70,
-                                    ),
-                                    title: Text(
-                                      u.name,
-                                      style: GoogleFonts.cairo(
-                                          color: Colors.white),
-                                    ),
-                                    subtitle: (u.address).trim().isEmpty
-                                        ? null
-                                        : Text(
-                                            u.address,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: GoogleFonts.cairo(
-                                                color: Colors.white70),
-                                          ),
-                                  ),
-                              ],
                             ),
                           ),
                         );
-                        continue;
                       }
 
-                      if (!matches(p)) continue;
-                      widgets.add(
-                        Padding(
-                          padding: EdgeInsets.only(bottom: 6.h),
-                          child: ListTile(
-                            onTap: () => Navigator.of(context).pop(p),
-                            leading: const Icon(Icons.home_work_rounded,
-                                color: Colors.white),
-                            title: Text(
-                              p.name,
-                              style: GoogleFonts.cairo(color: Colors.white),
-                            ),
-                            subtitle: Text(
-                              p.address,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.cairo(color: Colors.white70),
-                            ),
-                          ),
+                      return Scrollbar(
+                        child: ListView(
+                          padding: EdgeInsets.zero,
+                          children: widgets,
                         ),
                       );
-                    }
-
-                    return Scrollbar(
-                      child: ListView(
-                        padding: EdgeInsets.zero,
-                        children: widgets,
-                      ),
-                    );
-                  },
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
-    ),
     );
   }
 }
@@ -6884,16 +7018,16 @@ class _ProviderPickerSheetState extends State<_ProviderPickerSheet> {
                   hintStyle: GoogleFonts.cairo(color: Colors.white70),
                   prefixIcon: const Icon(Icons.search, color: Colors.white70),
                   filled: true,
-                  fillColor: Colors.white.withOpacity(0.08),
+                  fillColor: Colors.white.withValues(alpha: 0.08),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12.r),
                     borderSide:
-                        BorderSide(color: Colors.white.withOpacity(0.15)),
+                        BorderSide(color: Colors.white.withValues(alpha: 0.15)),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12.r),
                     borderSide:
-                        BorderSide(color: Colors.white.withOpacity(0.15)),
+                        BorderSide(color: Colors.white.withValues(alpha: 0.15)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderSide: const BorderSide(color: Colors.white),
@@ -6930,7 +7064,8 @@ class _ProviderPickerSheetState extends State<_ProviderPickerSheet> {
                             onTap: () => Navigator.of(context).pop(
                                 _AddOrEditMaintenanceScreenState
                                     ._providerPickerNoSelection),
-                            leading: const Icon(Icons.remove_circle_outline_rounded,
+                            leading: const Icon(
+                                Icons.remove_circle_outline_rounded,
                                 color: Colors.white70),
                             title: Text(
                               'غير محدد',
@@ -6961,9 +7096,9 @@ class _ProviderPickerSheetState extends State<_ProviderPickerSheet> {
                             onTap: () => Navigator.of(context).pop(
                                 _AddOrEditMaintenanceScreenState
                                     ._providerPickerNoSelection),
-                            leading:
-                                const Icon(Icons.remove_circle_outline_rounded,
-                                    color: Colors.white70),
+                            leading: const Icon(
+                                Icons.remove_circle_outline_rounded,
+                                color: Colors.white70),
                             title: Text(
                               'غير محدد',
                               style: GoogleFonts.cairo(color: Colors.white),

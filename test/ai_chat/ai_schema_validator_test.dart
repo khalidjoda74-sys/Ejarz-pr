@@ -1,4 +1,4 @@
-import 'package:darvoo/ui/ai_chat/core/ai_schema_validator.dart';
+import 'package:ejarz_pro/ui/ai_chat/core/ai_schema_validator.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -10,8 +10,12 @@ void main() {
         'type': 'object',
         'additionalProperties': false,
         'properties': <String, dynamic>{
-          'name': <String, dynamic>{'type': <String>['string', 'null']},
-          'amount': <String, dynamic>{'type': <String>['number', 'null']},
+          'name': <String, dynamic>{
+            'type': <String>['string', 'null']
+          },
+          'amount': <String, dynamic>{
+            'type': <String>['number', 'null']
+          },
         },
         'required': <String>['name', 'amount'],
       },

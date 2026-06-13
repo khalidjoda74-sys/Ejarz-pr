@@ -1,5 +1,5 @@
 // lib/core/time_service.dart
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 
 /// غلاف بسيط ليتوافق مع الكود القديم الذي يستورد TimeService
 class TimeService {
@@ -46,5 +46,3 @@ class TimeService {
   // ===== أدوات =====
   DateTime? parseToUtc(dynamic v) => KsaTime.parseToUtc(v);
 }
-
-

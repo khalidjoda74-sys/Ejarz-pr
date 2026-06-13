@@ -3,24 +3,24 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:darvoo/data/constants/boxes.dart';
-import 'package:darvoo/data/services/hive_service.dart';
-import 'package:darvoo/data/services/user_scope.dart';
-import 'package:darvoo/firebase_options.dart';
-import 'package:darvoo/models/property.dart';
-import 'package:darvoo/models/tenant.dart';
-import 'package:darvoo/ui/ai_chat/ai_chat_executor.dart';
-import 'package:darvoo/ui/ai_chat/ai_chat_permissions.dart';
-import 'package:darvoo/ui/contracts_screen.dart'
+import 'package:ejarz_pro/data/constants/boxes.dart';
+import 'package:ejarz_pro/data/services/hive_service.dart';
+import 'package:ejarz_pro/data/services/user_scope.dart';
+import 'package:ejarz_pro/firebase_options.dart';
+import 'package:ejarz_pro/models/property.dart';
+import 'package:ejarz_pro/models/tenant.dart';
+import 'package:ejarz_pro/ui/ai_chat/ai_chat_executor.dart';
+import 'package:ejarz_pro/ui/ai_chat/ai_chat_permissions.dart';
+import 'package:ejarz_pro/ui/contracts_screen.dart'
     show Contract, ContractAdapter, kDailyContractEndHourField;
-import 'package:darvoo/ui/invoices_screen.dart' show Invoice, InvoiceAdapter;
-import 'package:darvoo/ui/maintenance_screen.dart'
+import 'package:ejarz_pro/ui/invoices_screen.dart' show Invoice, InvoiceAdapter;
+import 'package:ejarz_pro/ui/maintenance_screen.dart'
     show
         MaintenancePriorityAdapter,
         MaintenanceRequest,
         MaintenanceRequestAdapter,
         MaintenanceStatusAdapter;
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'package:connectivity_plus_platform_interface/connectivity_plus_platform_interface.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/services.dart';
@@ -103,7 +103,7 @@ class OperationalUatHarness {
       }
     } catch (_) {}
     final tempDir =
-        await Directory.systemTemp.createTemp('darvoo_operational_uat_');
+        await Directory.systemTemp.createTemp('ejarz_pro_operational_uat_');
     Hive.init(tempDir.path);
     _registerAdaptersIfNeeded();
     final previousConnectivityPlatform = ConnectivityPlatform.instance;
@@ -130,10 +130,9 @@ class OperationalUatHarness {
   }
 
   static Future<void> _configureDownloadsMock(Directory tempDir) async {
-    TestDefaultBinaryMessengerBinding
-        .instance.defaultBinaryMessenger
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('darvoo/downloads'),
+      const MethodChannel('ejarzpro/downloads'),
       (MethodCall call) async {
         if (call.method != 'saveToDownloads') return null;
         final args = Map<String, dynamic>.from(
@@ -236,7 +235,8 @@ class OperationalUatHarness {
     String ymd(DateTime d) =>
         '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-    Future<void> expectSuccess(String functionName, Map<String, dynamic> args) async {
+    Future<void> expectSuccess(
+        String functionName, Map<String, dynamic> args) async {
       final result = await runObject(owner, functionName, args);
       if (result['success'] != true) {
         throw StateError('Seed failed for $functionName: $result');
@@ -266,6 +266,8 @@ class OperationalUatHarness {
       'companyTaxNumber': '312345678900003',
       'companyRepresentativeName': 'Maha Noor',
       'companyRepresentativePhone': '0500000003',
+      'companyRepresentativeNationalId': '1098765432',
+      'companyRepresentativeDateOfBirth': '1990-01-01',
       'attachmentPaths': const <String>['/docs/company-nour.pdf'],
     });
 
@@ -405,7 +407,8 @@ class OperationalUatHarness {
       await expectSuccess('create_periodic_service', command);
     }
 
-    final annualContract = await runObject(owner, 'create_contract', <String, dynamic>{
+    final annualContract =
+        await runObject(owner, 'create_contract', <String, dynamic>{
       'tenantName': 'Ahmad Salem',
       'propertyName': 'Palm Villa',
       'startDate': ymd(annualStart),
@@ -419,7 +422,8 @@ class OperationalUatHarness {
       throw StateError('Seed failed for annual contract: $annualContract');
     }
 
-    final dailyContract = await runObject(owner, 'create_contract', <String, dynamic>{
+    final dailyContract =
+        await runObject(owner, 'create_contract', <String, dynamic>{
       'tenantName': 'Nour Trading',
       'propertyName': 'Sky Studio',
       'startDate': ymd(dailyStart),
@@ -445,7 +449,8 @@ class OperationalUatHarness {
     }
 
     const maintenanceTitle = 'AC repair visual';
-    final maintenance = await runObject(owner, 'create_maintenance_request', <String, dynamic>{
+    final maintenance =
+        await runObject(owner, 'create_maintenance_request', <String, dynamic>{
       'propertyName': 'Palm Villa',
       'title': maintenanceTitle,
       'requestType': 'repair',
@@ -523,17 +528,17 @@ class OperationalUatHarness {
   }
 
   Box<Tenant> get tenantsBox => Hive.box<Tenant>(boxName(kTenantsBox));
-  Box<Property> get propertiesBox => Hive.box<Property>(boxName(kPropertiesBox));
+  Box<Property> get propertiesBox =>
+      Hive.box<Property>(boxName(kPropertiesBox));
   Box<Contract> get contractsBox => Hive.box<Contract>(boxName(kContractsBox));
   Box<Invoice> get invoicesBox => Hive.box<Invoice>(boxName(kInvoicesBox));
   Box<MaintenanceRequest> get maintenanceBox =>
       Hive.box<MaintenanceRequest>(boxName(kMaintenanceBox));
 
   Future<void> dispose() async {
-    TestDefaultBinaryMessengerBinding
-        .instance.defaultBinaryMessenger
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('darvoo/downloads'),
+      const MethodChannel('ejarzpro/downloads'),
       null,
     );
     ConnectivityPlatform.instance = _previousConnectivityPlatform;

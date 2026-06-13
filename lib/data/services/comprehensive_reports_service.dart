@@ -1,4 +1,4 @@
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -20,6 +20,7 @@ import '../../utils/contract_utils.dart'
 import '../constants/boxes.dart';
 import 'entity_audit_service.dart';
 import 'hive_service.dart';
+import 'office_client_guard.dart';
 import 'user_scope.dart';
 
 enum CommissionMode { unspecified, percent, fixed }
@@ -962,14 +963,24 @@ class ComprehensiveReportsService {
     );
   }
 
+  static Future<void> _ensureWriteAllowed() async {
+    if (await OfficeClientGuard.canWriteCurrentWorkspace()) return;
+    final isClient = await OfficeClientGuard.isOfficeClient();
+    final message = isClient
+        ? OfficeClientGuard.officeClientWriteMessage
+        : OfficeClientGuard.readOnlyOfficeStaffMessage;
+    throw StateError(message);
+  }
+
   static Future<void> assignPropertyOwner({
     required String propertyId,
     required String ownerId,
     String? ownerName,
   }) async {
     if (propertyId.trim().isEmpty || ownerId.trim().isEmpty) return;
+    await _ensureWriteAllowed();
     await ensureFinanceBoxesOpen();
-    final box = Hive.box(_propertyOwnersBoxName);
+    final box = Hive.box<Map>(_propertyOwnersBoxName);
     await box.put(propertyId.trim(), {
       'ownerId': ownerId.trim(),
       'ownerName': (ownerName ?? '').trim(),
@@ -979,8 +990,9 @@ class ComprehensiveReportsService {
 
   static Future<void> clearPropertyOwner(String propertyId) async {
     if (propertyId.trim().isEmpty) return;
+    await _ensureWriteAllowed();
     await ensureFinanceBoxesOpen();
-    final box = Hive.box(_propertyOwnersBoxName);
+    final box = Hive.box<Map>(_propertyOwnersBoxName);
     await box.delete(propertyId.trim());
   }
 
@@ -989,9 +1001,10 @@ class ComprehensiveReportsService {
     String? scopeId,
     required CommissionRule rule,
   }) async {
+    await _ensureWriteAllowed();
     await ensureFinanceBoxesOpen();
     final key = _commissionKey(scope, scopeId);
-    final box = Hive.box(_financeConfigBoxName);
+    final box = Hive.box<Map>(_financeConfigBoxName);
     final previousRaw = box.get(key);
     final isCreate = previousRaw == null;
     final previous = CommissionRule.fromMap(previousRaw);
@@ -1018,7 +1031,7 @@ class ComprehensiveReportsService {
   }) async {
     await ensureFinanceBoxesOpen();
     final key = _commissionKey(scope, scopeId);
-    final box = Hive.box(_financeConfigBoxName);
+    final box = Hive.box<Map>(_financeConfigBoxName);
     final raw = box.get(key);
     return CommissionRule.fromMap(raw);
   }
@@ -1149,7 +1162,8 @@ class ComprehensiveReportsService {
   }
 
   static String _officeCommissionLinkedContractVoucherId(String? note) {
-    return (_manualVoucherMarkerValue(note, 'CONTRACT_VOUCHER_ID') ?? '').trim();
+    return (_manualVoucherMarkerValue(note, 'CONTRACT_VOUCHER_ID') ?? '')
+        .trim();
   }
 
   static bool _isOfficeCommissionInvoice(Invoice invoice) {
@@ -1208,7 +1222,9 @@ class ComprehensiveReportsService {
 
     final unitName = property.name.trim();
     final parentId = (property.parentBuildingId ?? '').trim();
-    if (parentId.isEmpty) return unitName.isNotEmpty ? unitName : normalizedPropertyId;
+    if (parentId.isEmpty) {
+      return unitName.isNotEmpty ? unitName : normalizedPropertyId;
+    }
 
     final buildingName = (propertyById[parentId]?.name ?? '').trim();
     if (buildingName.isEmpty) {
@@ -1223,33 +1239,29 @@ class ComprehensiveReportsService {
   static String _cleanVoucherDisplayNote(String? note) {
     final raw = (note ?? '').trim();
     if (raw.isEmpty) return '';
-    final lines = raw
-        .split('\n')
-        .map((line) => line.trim())
-        .where((line) {
-          if (line.isEmpty) return false;
-          final lower = line.toLowerCase();
-          return lower != '[manual]' &&
-              !lower.startsWith('[service]') &&
-              !lower.startsWith('[shared_service_office:') &&
-              !lower.startsWith('[party:') &&
-              !lower.startsWith('[party_id:') &&
-              !lower.startsWith('[property:') &&
-              !lower.startsWith('[property_id:') &&
-              !lower.startsWith('[owner_payout]') &&
-              !lower.startsWith('[owner_adjustment]') &&
-              !lower.startsWith('[owner_payout_id:') &&
-              !lower.startsWith('[owner_adjustment_id:') &&
-              !lower.startsWith('[owner_adjustment_category:') &&
-              !lower.startsWith('[office_commission]') &&
-              !lower.startsWith('[office_withdrawal]') &&
-              !lower.startsWith('[contract_voucher_id:') &&
-              !lower.startsWith('[posted]') &&
-              !lower.startsWith('[cancelled]') &&
-              !lower.startsWith('[reversal]') &&
-              !lower.startsWith('[reversed]');
-        })
-        .toList(growable: false);
+    final lines = raw.split('\n').map((line) => line.trim()).where((line) {
+      if (line.isEmpty) return false;
+      final lower = line.toLowerCase();
+      return lower != '[manual]' &&
+          !lower.startsWith('[service]') &&
+          !lower.startsWith('[shared_service_office:') &&
+          !lower.startsWith('[party:') &&
+          !lower.startsWith('[party_id:') &&
+          !lower.startsWith('[property:') &&
+          !lower.startsWith('[property_id:') &&
+          !lower.startsWith('[owner_payout]') &&
+          !lower.startsWith('[owner_adjustment]') &&
+          !lower.startsWith('[owner_payout_id:') &&
+          !lower.startsWith('[owner_adjustment_id:') &&
+          !lower.startsWith('[owner_adjustment_category:') &&
+          !lower.startsWith('[office_commission]') &&
+          !lower.startsWith('[office_withdrawal]') &&
+          !lower.startsWith('[contract_voucher_id:') &&
+          !lower.startsWith('[posted]') &&
+          !lower.startsWith('[cancelled]') &&
+          !lower.startsWith('[reversal]') &&
+          !lower.startsWith('[reversed]');
+    }).toList(growable: false);
     return lines.join('\n').trim();
   }
 
@@ -1261,10 +1273,7 @@ class ComprehensiveReportsService {
       '[MANUAL]',
       '[PARTY: المكتب]',
       if (!isExpense) '[OFFICE_COMMISSION]',
-      if (isExpense)
-        'مصروف مكتب'
-      else
-        'إيراد العمولات',
+      if (isExpense) 'مصروف مكتب' else 'إيراد العمولات',
     ];
     final cleanNote = note.trim();
     if (cleanNote.isNotEmpty) {
@@ -1331,6 +1340,7 @@ class ComprehensiveReportsService {
     String propertyName = '',
     ComprehensiveReportFilters filters = const ComprehensiveReportFilters(),
   }) async {
+    await _ensureWriteAllowed();
     await HiveService.ensureReportsBoxesOpen();
     await ensureFinanceBoxesOpen();
 
@@ -1401,7 +1411,7 @@ class ComprehensiveReportsService {
       voucherSerialNo: voucher.serialNo ?? '',
     );
 
-    final payouts = Hive.box(_ownerPayoutsBoxName);
+    final payouts = Hive.box<Map>(_ownerPayoutsBoxName);
     await payouts.put(rec.id, rec.toMap());
     return rec;
   }
@@ -1409,20 +1419,20 @@ class ComprehensiveReportsService {
   static Future<List<OwnerPayoutRecord>> loadOwnerPayouts() async {
     await HiveService.ensureReportsBoxesOpen();
     await ensureFinanceBoxesOpen();
-    final box = Hive.box(_ownerPayoutsBoxName);
+    final box = Hive.box<Map>(_ownerPayoutsBoxName);
     final invoiceById = <String, Invoice>{
-      for (final invoice in _safeValues<Invoice>(boxName(kInvoicesBox))) invoice.id: invoice,
+      for (final invoice in _safeValues<Invoice>(boxName(kInvoicesBox)))
+        invoice.id: invoice,
     };
     return box.values
         .whereType<Map>()
         .map((e) => OwnerPayoutRecord.fromMap(e))
         .map((record) {
-          final voucher = invoiceById[record.voucherId];
-          return record.copyWith(
-            status: _ownerStatusFromVoucher(voucher, record.status),
-          );
-        })
-        .toList()
+      final voucher = invoiceById[record.voucherId];
+      return record.copyWith(
+        status: _ownerStatusFromVoucher(voucher, record.status),
+      );
+    }).toList()
       ..sort((a, b) => (b.postedAt ?? b.createdAt).compareTo(
             a.postedAt ?? a.createdAt,
           ));
@@ -1441,6 +1451,7 @@ class ComprehensiveReportsService {
     String propertyName = '',
     ComprehensiveReportFilters filters = const ComprehensiveReportFilters(),
   }) async {
+    await _ensureWriteAllowed();
     await HiveService.ensureReportsBoxesOpen();
     await ensureFinanceBoxesOpen();
 
@@ -1513,7 +1524,7 @@ class ComprehensiveReportsService {
       voucherId: voucher.id,
     );
 
-    final adjustments = Hive.box(_ownerAdjustmentsBoxName);
+    final adjustments = Hive.box<Map>(_ownerAdjustmentsBoxName);
     await adjustments.put(rec.id, rec.toMap());
     return rec;
   }
@@ -1521,20 +1532,20 @@ class ComprehensiveReportsService {
   static Future<List<OwnerAdjustmentRecord>> loadOwnerAdjustments() async {
     await HiveService.ensureReportsBoxesOpen();
     await ensureFinanceBoxesOpen();
-    final box = Hive.box(_ownerAdjustmentsBoxName);
+    final box = Hive.box<Map>(_ownerAdjustmentsBoxName);
     final invoiceById = <String, Invoice>{
-      for (final invoice in _safeValues<Invoice>(boxName(kInvoicesBox))) invoice.id: invoice,
+      for (final invoice in _safeValues<Invoice>(boxName(kInvoicesBox)))
+        invoice.id: invoice,
     };
     return box.values
         .whereType<Map>()
         .map((e) => OwnerAdjustmentRecord.fromMap(e))
         .map((record) {
-          final voucher = invoiceById[record.voucherId];
-          return record.copyWith(
-            status: _ownerStatusFromVoucher(voucher, record.status),
-          );
-        })
-        .toList()
+      final voucher = invoiceById[record.voucherId];
+      return record.copyWith(
+        status: _ownerStatusFromVoucher(voucher, record.status),
+      );
+    }).toList()
       ..sort((a, b) => (b.postedAt ?? b.createdAt).compareTo(
             a.postedAt ?? a.createdAt,
           ));
@@ -1547,6 +1558,7 @@ class ComprehensiveReportsService {
     required String accountNumber,
     String iban = '',
   }) async {
+    await _ensureWriteAllowed();
     await ensureFinanceBoxesOpen();
 
     final normalizedOwnerId = ownerId.trim();
@@ -1576,7 +1588,7 @@ class ComprehensiveReportsService {
       updatedAt: now,
     );
 
-    final box = Hive.box(_ownerBankAccountsBoxName);
+    final box = Hive.box<Map>(_ownerBankAccountsBoxName);
     await box.put(record.id, record.toMap());
     await _recordLocalAudit(
       collectionName: _ownerBankAccountsAuditCollectionName,
@@ -1594,6 +1606,7 @@ class ComprehensiveReportsService {
     required String accountNumber,
     String iban = '',
   }) async {
+    await _ensureWriteAllowed();
     await ensureFinanceBoxesOpen();
 
     final normalizedAccountId = accountId.trim();
@@ -1616,7 +1629,7 @@ class ComprehensiveReportsService {
       throw StateError('رقم الحساب مطلوب');
     }
 
-    final box = Hive.box(_ownerBankAccountsBoxName);
+    final box = Hive.box<Map>(_ownerBankAccountsBoxName);
     final raw = box.get(normalizedAccountId);
     if (raw is! Map) {
       throw StateError('الحساب البنكي غير موجود');
@@ -1659,6 +1672,7 @@ class ComprehensiveReportsService {
     required String accountId,
     required String ownerId,
   }) async {
+    await _ensureWriteAllowed();
     await ensureFinanceBoxesOpen();
 
     final normalizedAccountId = accountId.trim();
@@ -1670,7 +1684,7 @@ class ComprehensiveReportsService {
       throw StateError('تعذر تحديد المالك');
     }
 
-    final box = Hive.box(_ownerBankAccountsBoxName);
+    final box = Hive.box<Map>(_ownerBankAccountsBoxName);
     final raw = box.get(normalizedAccountId);
     if (raw is! Map) {
       throw StateError('الحساب البنكي غير موجود');
@@ -1687,12 +1701,12 @@ class ComprehensiveReportsService {
   static Future<void> syncOfficeCommissionVouchers({
     String? contractVoucherId,
   }) async {
+    await _ensureWriteAllowed();
     await HiveService.ensureReportsBoxesOpen();
     await ensureFinanceBoxesOpen();
 
     final invoices = Hive.box<Invoice>(boxName(kInvoicesBox));
-    final ownerMapBox = Hive.box(_propertyOwnersBoxName);
-    final configBox = Hive.box(_financeConfigBoxName);
+    final configBox = Hive.box<Map>(_financeConfigBoxName);
     final globalCommissionRule = CommissionRule.fromMap(
       configBox.get(_commissionKey(CommissionScope.global, null)),
     );
@@ -1712,52 +1726,6 @@ class ComprehensiveReportsService {
     final contractById = <String, Contract>{
       for (final contract in contracts) contract.id: contract,
     };
-    final sessionBox = Hive.isBoxOpen(kSessionBox)
-        ? Hive.box(kSessionBox)
-        : await Hive.openBox(kSessionBox);
-
-    String pickFirstText(Iterable<Object?> values) {
-      for (final value in values) {
-        final text = (value ?? '').toString().trim();
-        if (text.isNotEmpty) return text;
-      }
-      return '';
-    }
-
-    final scopedUid = effectiveUid().trim();
-    final workspaceOwnerId = pickFirstText([
-      sessionBox.get('workspaceOwnerUid'),
-      scopedUid == 'guest' ? '' : scopedUid,
-    ]);
-
-    String ownerIdForProperty(String propertyId) {
-      final normalizedPropertyId = propertyId.trim();
-      if (normalizedPropertyId.isEmpty) return '';
-
-      // الأهم: مالك العقار المربوط صراحة له الأولوية دائمًا.
-      // الرجوع إلى مالك مساحة العمل لا يتم إلا عند عدم وجود ربط مباشر/موروث.
-      final direct = ownerMapBox.get(normalizedPropertyId);
-      if (direct is Map) {
-        final ownerId = (direct['ownerId'] ?? '').toString().trim();
-        if (ownerId.isNotEmpty) return ownerId;
-      } else if (direct is String && direct.trim().isNotEmpty) {
-        return direct.trim();
-      }
-
-      final property = propertyById[normalizedPropertyId];
-      final parentId = property?.parentBuildingId?.trim() ?? '';
-      if (parentId.isNotEmpty) {
-        final parent = ownerMapBox.get(parentId);
-        if (parent is Map) {
-          final ownerId = (parent['ownerId'] ?? '').toString().trim();
-          if (ownerId.isNotEmpty) return ownerId;
-        } else if (parent is String && parent.trim().isNotEmpty) {
-          return parent.trim();
-        }
-      }
-
-      return workspaceOwnerId;
-    }
 
     CommissionRule ruleFor() {
       return globalCommissionRule;
@@ -1767,22 +1735,22 @@ class ComprehensiveReportsService {
     for (final voucher in invoices.values) {
       final linkedId = _officeCommissionLinkedContractVoucherId(voucher.note);
       if (linkedId.isEmpty) continue;
-      officeByContractVoucherId.putIfAbsent(linkedId, () => <Invoice>[]).add(voucher);
+      officeByContractVoucherId
+          .putIfAbsent(linkedId, () => <Invoice>[])
+          .add(voucher);
     }
 
     final targetContractVoucherId = (contractVoucherId ?? '').trim();
-    final contractVouchers = invoices.values
-        .where((invoice) {
-          if (targetContractVoucherId.isNotEmpty &&
-              invoice.id != targetContractVoucherId) {
-            return false;
-          }
-          if (_detectVoucherSource(invoice) != VoucherSource.contracts) {
-            return false;
-          }
-          return invoice.amount >= 0;
-        })
-        .toList(growable: false)
+    final contractVouchers = invoices.values.where((invoice) {
+      if (targetContractVoucherId.isNotEmpty &&
+          invoice.id != targetContractVoucherId) {
+        return false;
+      }
+      if (_detectVoucherSource(invoice) != VoucherSource.contracts) {
+        return false;
+      }
+      return invoice.amount >= 0;
+    }).toList(growable: false)
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
     bool hasOfficeReversalFor(Invoice voucher) {
@@ -1856,9 +1824,9 @@ class ComprehensiveReportsService {
     }
 
     for (final contractVoucher in contractVouchers) {
-      final linkedOfficeVouchers = (officeByContractVoucherId[contractVoucher.id] ??
-              const <Invoice>[])
-          .toList(growable: false);
+      final linkedOfficeVouchers =
+          (officeByContractVoucherId[contractVoucher.id] ?? const <Invoice>[])
+              .toList(growable: false);
       final contract = contractById[contractVoucher.contractId];
       final contractState = _detectVoucherState(contractVoucher);
 
@@ -1987,7 +1955,7 @@ class ComprehensiveReportsService {
     await ensureFinanceBoxesOpen();
     final normalizedOwnerId = ownerId.trim();
     if (normalizedOwnerId.isEmpty) return const <OwnerBankAccountRecord>[];
-    final box = Hive.box(_ownerBankAccountsBoxName);
+    final box = Hive.box<Map>(_ownerBankAccountsBoxName);
     return box.values
         .whereType<Map>()
         .map((e) => OwnerBankAccountRecord.fromMap(e))
@@ -2002,6 +1970,7 @@ class ComprehensiveReportsService {
     DateTime? transactionDate,
     String note = '',
   }) async {
+    await _ensureWriteAllowed();
     await HiveService.ensureReportsBoxesOpen();
     await ensureFinanceBoxesOpen();
 
@@ -2025,7 +1994,7 @@ class ComprehensiveReportsService {
         final properties = _safeValues<Property>(boxName(kPropertiesBox))
             .where((p) => !p.isArchived)
             .toList(growable: false);
-        final ownerMapBox = Hive.box(_propertyOwnersBoxName);
+        final Box ownerMapBox = Hive.box<Map>(_propertyOwnersBoxName);
         final propertyById = <String, Property>{
           for (final property in properties) property.id: property,
         };
@@ -2094,6 +2063,7 @@ class ComprehensiveReportsService {
     String note = '',
     ComprehensiveReportFilters filters = const ComprehensiveReportFilters(),
   }) async {
+    await _ensureWriteAllowed();
     await HiveService.ensureReportsBoxesOpen();
     await ensureFinanceBoxesOpen();
 
@@ -2156,15 +2126,14 @@ class ComprehensiveReportsService {
         ? Hive.box<String>(contractsEjarBoxName)
         : await Hive.openBox<String>(contractsEjarBoxName);
     final allInvoices = _safeValues<Invoice>(boxName(kInvoicesBox));
-    final invoices = allInvoices
-        .where((i) => !i.isArchived)
-        .toList(growable: false);
+    final invoices =
+        allInvoices.where((i) => !i.isArchived).toList(growable: false);
     final maintenance =
         _safeValues<MaintenanceRequest>(HiveService.maintenanceBoxName())
             .where((m) => !m.isArchived)
             .toList(growable: false);
-    final allInvoiceEntries = Hive.box<Invoice>(boxName(kInvoicesBox)).values
-        .toList(growable: false);
+    final allInvoiceEntries =
+        Hive.box<Invoice>(boxName(kInvoicesBox)).values.toList(growable: false);
     final invoiceById = <String, Invoice>{
       for (final invoice in allInvoiceEntries) invoice.id: invoice,
     };
@@ -2180,13 +2149,9 @@ class ComprehensiveReportsService {
           .add(invoice);
     }
 
-    final ownerMapBox = Hive.box(_propertyOwnersBoxName);
-    final configBox = Hive.box(_financeConfigBoxName);
-    final globalCommissionRule = CommissionRule.fromMap(
-      configBox.get(_commissionKey(CommissionScope.global, null)),
-    );
-    final payoutBox = Hive.box(_ownerPayoutsBoxName);
-    final adjustmentsBox = Hive.box(_ownerAdjustmentsBoxName);
+    final Box ownerMapBox = Hive.box<Map>(_propertyOwnersBoxName);
+    final payoutBox = Hive.box<Map>(_ownerPayoutsBoxName);
+    final adjustmentsBox = Hive.box<Map>(_ownerAdjustmentsBoxName);
 
     final propertyById = <String, Property>{
       for (final p in properties) p.id: p,
@@ -2317,26 +2282,20 @@ class ComprehensiveReportsService {
         .whereType<Map>()
         .map((e) => OwnerPayoutRecord.fromMap(e))
         .map((record) {
-          final voucher = invoiceById[record.voucherId];
-          return record.copyWith(
-            status: _ownerStatusFromVoucher(voucher, record.status),
-          );
-        })
-        .toList(growable: false);
+      final voucher = invoiceById[record.voucherId];
+      return record.copyWith(
+        status: _ownerStatusFromVoucher(voucher, record.status),
+      );
+    }).toList(growable: false);
     final adjustmentRecords = adjustmentsBox.values
         .whereType<Map>()
         .map((e) => OwnerAdjustmentRecord.fromMap(e))
         .map((record) {
-          final voucher = invoiceById[record.voucherId];
-          return record.copyWith(
-            status: _ownerStatusFromVoucher(voucher, record.status),
-          );
-        })
-        .toList(growable: false);
-
-    CommissionRule ruleFor() {
-      return globalCommissionRule;
-    }
+      final voucher = invoiceById[record.voucherId];
+      return record.copyWith(
+        status: _ownerStatusFromVoucher(voucher, record.status),
+      );
+    }).toList(growable: false);
 
     final vouchers = <VoucherReportItem>[];
     final voucherTabItems = <VoucherReportItem>[];
@@ -2393,8 +2352,7 @@ class ComprehensiveReportsService {
         direction: direction,
         state: state,
         source: source,
-        isServiceInvoice:
-            serviceLikeInvoice ||
+        isServiceInvoice: serviceLikeInvoice ||
             source == VoucherSource.services ||
             source == VoucherSource.maintenance,
       );
@@ -2445,8 +2403,7 @@ class ComprehensiveReportsService {
         direction: direction,
         state: state,
         source: source,
-        isServiceInvoice:
-            serviceLikeInvoice ||
+        isServiceInvoice: serviceLikeInvoice ||
             source == VoucherSource.services ||
             source == VoucherSource.maintenance,
       );
@@ -2539,9 +2496,7 @@ class ComprehensiveReportsService {
         .where((v) => v.source == VoucherSource.ownerPayout)
         .fold<double>(0, (p, v) => p + v.amount);
     final unpaidServiceBills = vouchers
-        .where((v) =>
-            _isServiceVoucherItem(v) &&
-            v.state == VoucherState.draft)
+        .where((v) => _isServiceVoucherItem(v) && v.state == VoucherState.draft)
         .fold<double>(0, (p, v) => p + v.amount);
 
     final dashboard = DashboardSummary(
@@ -2588,9 +2543,7 @@ class ComprehensiveReportsService {
           .where(_countsTowardOperationalReceipt)
           .fold<double>(0, (sum, v) => sum + v.amount);
       final expenses = propertyVouchers
-          .where((v) =>
-              v.state == VoucherState.posted &&
-              v.direction == VoucherDirection.payment)
+          .where(_countsTowardOperationalExpense)
           .fold<double>(0, (sum, v) => sum + v.amount);
       final serviceExpenses = propertyVouchers
           .where((v) =>
@@ -2666,9 +2619,10 @@ class ComprehensiveReportsService {
       final contractLinked = linked
           .where((v) => v.source != VoucherSource.officeCommission)
           .toList(growable: false);
-      final paidAmount = contractLinked
-          .where(_countsTowardContractReceipt)
-          .fold<double>(0, (sum, v) => sum + v.amount);
+      final paidAmount = contractLinked.fold<double>(
+        0,
+        (sum, v) => sum + _paidAmountForContractReceipt(v),
+      );
       final remaining = math.max(0, c.totalAmount - paidAmount).toDouble();
       final overdueInstallments = countOverduePayments(c);
       final upcomingInstallments =
@@ -2777,12 +2731,10 @@ class ComprehensiveReportsService {
 
     final ownerIds = <String>{};
     ownerIds.addAll(
-      tenants
-          .where((t) {
-            final type = t.clientType.toLowerCase();
-            return type.contains('owner') || type.contains('مالك');
-          })
-          .map((t) => t.id),
+      tenants.where((t) {
+        final type = t.clientType.toLowerCase();
+        return type.contains('owner') || type.contains('مالك');
+      }).map((t) => t.id),
     );
     for (final rawOwnerMap in ownerMapBox.values) {
       if (rawOwnerMap is Map) {
@@ -2858,32 +2810,31 @@ class ComprehensiveReportsService {
         return ownerIds.length == 1;
       }
 
-      final ownerManualCommissionInvoices = invoices
-          .where((invoice) {
-            if (_detectVoucherSource(invoice) != VoucherSource.officeCommission) {
-              return false;
-            }
-            if (_officeCommissionLinkedContractVoucherId(invoice.note).isNotEmpty) {
-              return false;
-            }
-            if (!matchesManualOfficeCommissionOwner(invoice)) return false;
-            final state = _detectVoucherState(invoice);
-            if (state == VoucherState.draft) return false;
-            if (!filters.inRange(_dateOnly(invoice.issueDate))) return false;
-            if (filteredPropertyId.isEmpty) return true;
-            return matchesOwnerPropertyRecord(
-              recordPropertyId: invoice.propertyId,
-              targetPropertyId: filteredPropertyId,
-              allowUnassignedFallback: canFallbackUnassignedToSingleProperty,
-            );
-          })
-          .toList(growable: false);
+      final ownerManualCommissionInvoices = invoices.where((invoice) {
+        if (_detectVoucherSource(invoice) != VoucherSource.officeCommission) {
+          return false;
+        }
+        if (_officeCommissionLinkedContractVoucherId(invoice.note).isNotEmpty) {
+          return false;
+        }
+        if (!matchesManualOfficeCommissionOwner(invoice)) return false;
+        final state = _detectVoucherState(invoice);
+        if (state == VoucherState.draft) return false;
+        if (!filters.inRange(_dateOnly(invoice.issueDate))) return false;
+        if (filteredPropertyId.isEmpty) return true;
+        return matchesOwnerPropertyRecord(
+          recordPropertyId: invoice.propertyId,
+          targetPropertyId: filteredPropertyId,
+          allowUnassignedFallback: canFallbackUnassignedToSingleProperty,
+        );
+      }).toList(growable: false);
       final collectedRent =
           ownerRentRows.fold<double>(0, (sum, e) => sum + e.baseAmount);
       final automaticCommissions =
           ownerRentRows.fold<double>(0, (sum, e) => sum + e.commissionAmount);
       final manualCommissions = ownerManualCommissionInvoices
-          .where((invoice) => _detectVoucherState(invoice) == VoucherState.posted)
+          .where(
+              (invoice) => _detectVoucherState(invoice) == VoucherState.posted)
           .fold<double>(0, (sum, invoice) => sum + invoice.amount.abs());
       final comm = automaticCommissions + manualCommissions;
 
@@ -2947,98 +2898,97 @@ class ComprehensiveReportsService {
           previousTransfers;
       final ready = math.max(0, currentBalance).toDouble();
 
-      final propertyBreakdowns = ownerPropertyList
-          .map((property) {
-            final propertyScope = propertyScopeIds(property);
-            final propertyRentRows = ownerRentRows
-                .where((row) => matchesScopedPropertyId(row.propertyId, propertyScope))
-                .toList(growable: false);
-            final propertyCollectedRent = propertyRentRows.fold<double>(
-              0,
-              (sum, row) => sum + row.baseAmount,
-            );
-            final propertyAutomaticCommissions = propertyRentRows.fold<double>(
-              0,
-              (sum, row) => sum + row.commissionAmount,
-            );
-            final propertyManualCommissions = ownerManualCommissionInvoices
-                .where((invoice) =>
-                    matchesOwnerPropertyRecord(
-                      recordPropertyId: invoice.propertyId,
-                      targetPropertyId: property.id,
-                      allowUnassignedFallback:
-                          canFallbackUnassignedToSingleProperty,
-                    ) &&
-                    _detectVoucherState(invoice) == VoucherState.posted)
-                .fold<double>(0, (sum, invoice) => sum + invoice.amount.abs());
-            final propertyCommissions =
-                propertyAutomaticCommissions + propertyManualCommissions;
-            final propertyExpenses = vouchers
-                .where((v) =>
-                    v.state == VoucherState.posted &&
-                    v.direction == VoucherDirection.payment &&
-                    matchesScopedPropertyId(v.propertyId, propertyScope) &&
-                    _isServiceVoucherItem(v))
-                .fold<double>(0, (sum, v) => sum + v.amount);
-            final propertyAdjustments = adjustmentRecords
-                .where((a) =>
-                    a.ownerId == ownerId &&
-                    a.status == OwnerPayoutStatus.posted &&
-                    filters.inRange(a.postedAt ?? a.createdAt) &&
-                    matchesOwnerPropertyRecord(
-                      recordPropertyId: a.propertyId,
-                      targetPropertyId: property.id,
-                      allowUnassignedFallback:
-                          canFallbackUnassignedToSingleProperty,
-                    ))
-                .fold<double>(0, (sum, a) => sum + a.amount.abs());
-            final propertyOwnerPayout = payoutRecords
-                .where((p) =>
-                    p.ownerId == ownerId &&
-                    p.status == OwnerPayoutStatus.posted &&
-                    filters.inRange(p.postedAt ?? p.createdAt) &&
-                    matchesOwnerPropertyRecord(
-                      recordPropertyId: p.propertyId,
-                      targetPropertyId: property.id,
-                      allowUnassignedFallback:
-                          canFallbackUnassignedToSingleProperty,
-                    ))
-                .fold<double>(0, (sum, p) => sum + p.amount.abs());
-            final propertyVoucherPayout = vouchers
-                .where((v) =>
-                    v.source == VoucherSource.ownerPayout &&
-                    v.state == VoucherState.posted &&
-                    _extractOwnerIdFromNote(v.note) == ownerId &&
-                    matchesOwnerPropertyRecord(
-                      recordPropertyId: v.propertyId,
-                      targetPropertyId: property.id,
-                      allowUnassignedFallback:
-                          canFallbackUnassignedToSingleProperty,
-                    ))
-                .fold<double>(0, (sum, v) => sum + v.amount.abs());
-            final propertyPreviousTransfers =
-                propertyOwnerPayout > propertyVoucherPayout
-                    ? propertyOwnerPayout
-                    : propertyVoucherPayout;
-            final propertyCurrentBalance = propertyCollectedRent -
-                propertyCommissions -
-                propertyExpenses -
-                propertyAdjustments -
-                propertyPreviousTransfers;
+      final propertyBreakdowns = ownerPropertyList.map((property) {
+        final propertyScope = propertyScopeIds(property);
+        final propertyRentRows = ownerRentRows
+            .where(
+                (row) => matchesScopedPropertyId(row.propertyId, propertyScope))
+            .toList(growable: false);
+        final propertyCollectedRent = propertyRentRows.fold<double>(
+          0,
+          (sum, row) => sum + row.baseAmount,
+        );
+        final propertyAutomaticCommissions = propertyRentRows.fold<double>(
+          0,
+          (sum, row) => sum + row.commissionAmount,
+        );
+        final propertyManualCommissions = ownerManualCommissionInvoices
+            .where((invoice) =>
+                matchesOwnerPropertyRecord(
+                  recordPropertyId: invoice.propertyId,
+                  targetPropertyId: property.id,
+                  allowUnassignedFallback:
+                      canFallbackUnassignedToSingleProperty,
+                ) &&
+                _detectVoucherState(invoice) == VoucherState.posted)
+            .fold<double>(0, (sum, invoice) => sum + invoice.amount.abs());
+        final propertyCommissions =
+            propertyAutomaticCommissions + propertyManualCommissions;
+        final propertyExpenses = vouchers
+            .where((v) =>
+                v.state == VoucherState.posted &&
+                v.direction == VoucherDirection.payment &&
+                matchesScopedPropertyId(v.propertyId, propertyScope) &&
+                _isServiceVoucherItem(v))
+            .fold<double>(0, (sum, v) => sum + v.amount);
+        final propertyAdjustments = adjustmentRecords
+            .where((a) =>
+                a.ownerId == ownerId &&
+                a.status == OwnerPayoutStatus.posted &&
+                filters.inRange(a.postedAt ?? a.createdAt) &&
+                matchesOwnerPropertyRecord(
+                  recordPropertyId: a.propertyId,
+                  targetPropertyId: property.id,
+                  allowUnassignedFallback:
+                      canFallbackUnassignedToSingleProperty,
+                ))
+            .fold<double>(0, (sum, a) => sum + a.amount.abs());
+        final propertyOwnerPayout = payoutRecords
+            .where((p) =>
+                p.ownerId == ownerId &&
+                p.status == OwnerPayoutStatus.posted &&
+                filters.inRange(p.postedAt ?? p.createdAt) &&
+                matchesOwnerPropertyRecord(
+                  recordPropertyId: p.propertyId,
+                  targetPropertyId: property.id,
+                  allowUnassignedFallback:
+                      canFallbackUnassignedToSingleProperty,
+                ))
+            .fold<double>(0, (sum, p) => sum + p.amount.abs());
+        final propertyVoucherPayout = vouchers
+            .where((v) =>
+                v.source == VoucherSource.ownerPayout &&
+                v.state == VoucherState.posted &&
+                _extractOwnerIdFromNote(v.note) == ownerId &&
+                matchesOwnerPropertyRecord(
+                  recordPropertyId: v.propertyId,
+                  targetPropertyId: property.id,
+                  allowUnassignedFallback:
+                      canFallbackUnassignedToSingleProperty,
+                ))
+            .fold<double>(0, (sum, v) => sum + v.amount.abs());
+        final propertyPreviousTransfers =
+            propertyOwnerPayout > propertyVoucherPayout
+                ? propertyOwnerPayout
+                : propertyVoucherPayout;
+        final propertyCurrentBalance = propertyCollectedRent -
+            propertyCommissions -
+            propertyExpenses -
+            propertyAdjustments -
+            propertyPreviousTransfers;
 
-            return OwnerPropertyReportItem(
-              propertyId: property.id,
-              propertyName: property.name,
-              rentCollected: propertyCollectedRent,
-              officeCommissions: propertyCommissions,
-              ownerExpenses: propertyExpenses,
-              ownerAdjustments: propertyAdjustments,
-              previousTransfers: propertyPreviousTransfers,
-              currentBalance: propertyCurrentBalance,
-              readyForPayout: math.max(0, propertyCurrentBalance).toDouble(),
-            );
-          })
-          .toList(growable: true)
+        return OwnerPropertyReportItem(
+          propertyId: property.id,
+          propertyName: property.name,
+          rentCollected: propertyCollectedRent,
+          officeCommissions: propertyCommissions,
+          ownerExpenses: propertyExpenses,
+          ownerAdjustments: propertyAdjustments,
+          previousTransfers: propertyPreviousTransfers,
+          currentBalance: propertyCurrentBalance,
+          readyForPayout: math.max(0, propertyCurrentBalance).toDouble(),
+        );
+      }).toList(growable: true)
         ..sort((a, b) => a.propertyName.compareTo(b.propertyName));
 
       final ledger = <OwnerLedgerEntry>[];
@@ -3124,8 +3074,7 @@ class ComprehensiveReportsService {
               matchesOwnerPropertyRecord(
                 recordPropertyId: p.propertyId,
                 targetPropertyId: filteredPropertyId,
-                allowUnassignedFallback:
-                    canFallbackUnassignedToSingleProperty,
+                allowUnassignedFallback: canFallbackUnassignedToSingleProperty,
               )))) {
         tmp.add(
           OwnerLedgerEntry(
@@ -3151,8 +3100,7 @@ class ComprehensiveReportsService {
               matchesOwnerPropertyRecord(
                 recordPropertyId: a.propertyId,
                 targetPropertyId: filteredPropertyId,
-                allowUnassignedFallback:
-                    canFallbackUnassignedToSingleProperty,
+                allowUnassignedFallback: canFallbackUnassignedToSingleProperty,
               )))) {
         tmp.add(
           OwnerLedgerEntry(
@@ -3215,7 +3163,8 @@ class ComprehensiveReportsService {
     final officeExpenses = approved
         .where((v) =>
             v.direction == VoucherDirection.payment &&
-            (v.source == VoucherSource.manual || v.source == VoucherSource.other))
+            (v.source == VoucherSource.manual ||
+                v.source == VoucherSource.other))
         .fold<double>(0, (sum, v) => sum + v.amount);
     final officeWithdrawals = approved
         .where((v) =>
@@ -3265,7 +3214,8 @@ class ComprehensiveReportsService {
     }
     for (final voucher in approved.where((v) =>
         v.direction == VoucherDirection.payment &&
-        (v.source == VoucherSource.manual || v.source == VoucherSource.other))) {
+        (v.source == VoucherSource.manual ||
+            v.source == VoucherSource.other))) {
       final cleanNote = _cleanVoucherDisplayNote(voucher.note);
       officeLedgerTemp.add(
         OfficeLedgerEntry(
@@ -3291,8 +3241,7 @@ class ComprehensiveReportsService {
           id: 'office_withdrawal_${voucher.id}',
           date: voucher.date,
           sortDate: invoiceById[voucher.id]?.createdAt ?? voucher.date,
-          description:
-              cleanNote.isEmpty ? 'تحويل من رصيد المكتب' : cleanNote,
+          description: cleanNote.isEmpty ? 'تحويل من رصيد المكتب' : cleanNote,
           type: 'withdrawal',
           debit: voucher.amount,
           credit: 0,
@@ -3306,9 +3255,10 @@ class ComprehensiveReportsService {
     var officeRunningBalance = 0.0;
     final officeLedger = <OfficeLedgerEntry>[];
     for (final entry in officeLedgerTemp) {
-        if (entry.voucherState == null || entry.voucherState == VoucherState.posted) {
-          officeRunningBalance += entry.credit - entry.debit;
-        }
+      if (entry.voucherState == null ||
+          entry.voucherState == VoucherState.posted) {
+        officeRunningBalance += entry.credit - entry.debit;
+      }
       officeLedger.add(
         OfficeLedgerEntry(
           id: entry.id,
@@ -3373,7 +3323,7 @@ class ComprehensiveReportsService {
 
   static Future<void> _ensureMapBox(String name) async {
     if (Hive.isBoxOpen(name)) return;
-    await Hive.openBox(name);
+    await Hive.openBox<Map>(name);
   }
 
   static Box<dynamic>? _mapBoxIfOpen(String name) {
@@ -3459,10 +3409,19 @@ bool _countsTowardOperationalExpense(VoucherReportItem voucher) {
       voucher.source != VoucherSource.ownerPayout;
 }
 
-bool _countsTowardContractReceipt(VoucherReportItem voucher) {
-  return voucher.state == VoucherState.posted &&
-      voucher.direction == VoucherDirection.receipt &&
-      voucher.source == VoucherSource.contracts;
+double _paidAmountForContractReceipt(VoucherReportItem voucher) {
+  if (voucher.direction != VoucherDirection.receipt ||
+      voucher.source != VoucherSource.contracts) {
+    return 0;
+  }
+  if (voucher.state == VoucherState.cancelled ||
+      voucher.state == VoucherState.reversed) {
+    return 0;
+  }
+  final paid = voucher.paidAmount.abs();
+  if (paid <= 0) return 0;
+  final due = voucher.amount.abs();
+  return paid > due ? due : paid;
 }
 
 DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -3514,7 +3473,8 @@ _HistoricalCommissionSnapshot? _historicalCommissionSnapshotFromContractVoucher(
           : CommissionMode.unspecified;
   return _HistoricalCommissionSnapshot(
     mode: mode,
-    value: _toDouble(_manualVoucherMarkerValue(invoice.note, 'COMMISSION_VALUE')),
+    value:
+        _toDouble(_manualVoucherMarkerValue(invoice.note, 'COMMISSION_VALUE')),
     amount:
         _toDouble(_manualVoucherMarkerValue(invoice.note, 'COMMISSION_AMOUNT')),
   );
@@ -3630,7 +3590,8 @@ VoucherSource _detectVoucherSource(Invoice inv) {
   if (note.contains('[owner_payout]')) {
     return VoucherSource.ownerPayout;
   }
-  if (note.contains('[owner_adjustment]') || note.contains('[owner_discount]')) {
+  if (note.contains('[owner_adjustment]') ||
+      note.contains('[owner_discount]')) {
     return VoucherSource.ownerAdjustment;
   }
   if (note.contains('[office_commission]')) {
@@ -3844,6 +3805,3 @@ DateTime _addMonths(DateTime d, int months) {
   final safeDay = d.day > maxDay ? maxDay : d.day;
   return DateTime(y, m, safeDay);
 }
-
-
-

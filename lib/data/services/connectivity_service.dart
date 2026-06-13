@@ -37,8 +37,8 @@ class ConnectivityService {
     final hasConnection =
         results.isNotEmpty && !results.contains(ConnectivityResult.none);
 
-    var hasReachableInternet = false;
-    if (hasConnection) {
+    var hasReachableInternet = kIsWeb;
+    if (!kIsWeb && hasConnection) {
       hasReachableInternet = await _probeInternet();
     }
 

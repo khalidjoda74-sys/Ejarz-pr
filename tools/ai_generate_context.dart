@@ -3,17 +3,21 @@ import 'dart:io';
 
 void main() {
   final root = Directory.current.path;
-  final aiContextDir = Directory('$root\\ai-context')..createSync(recursive: true);
-  final docsDir = Directory('$root\\docs\\ai-chat')..createSync(recursive: true);
+  final aiContextDir = Directory('$root\\ai-context')
+    ..createSync(recursive: true);
+  final docsDir = Directory('$root\\docs\\ai-chat')
+    ..createSync(recursive: true);
   final evalsDir = Directory('$root\\evals')..createSync(recursive: true);
 
   final registryText =
-      File('$root\\lib\\ui\\ai_chat\\core\\ai_tool_registry.dart').readAsStringSync();
+      File('$root\\lib\\ui\\ai_chat\\core\\ai_tool_registry.dart')
+          .readAsStringSync();
   final architectureText =
       File('$root\\lib\\data\\services\\app_architecture_registry.dart')
           .readAsStringSync();
   final openAiConfigText =
-      File('$root\\lib\\ui\\ai_chat\\core\\ai_openai_config.dart').readAsStringSync();
+      File('$root\\lib\\ui\\ai_chat\\core\\ai_openai_config.dart')
+          .readAsStringSync();
 
   final tools = _parseTools(registryText);
   final modules = _parseModules(architectureText);
@@ -86,7 +90,7 @@ void main() {
   );
 
   _write(
-    '${evalsDir.path}\\darfo-ai-ar.jsonl',
+    '${evalsDir.path}\\ejarz-pro-ai-ar.jsonl',
     _evalDatasetJsonl(),
   );
 
@@ -104,8 +108,7 @@ List<Map<String, dynamic>> _parseTools(String source) {
     final chunk = part.split(RegExp(r'\n\s+\),')).first;
     final name = _firstMatch(chunk, RegExp(r"name:\s*'([^']+)'"));
     if (name.isEmpty) continue;
-    final description =
-        _firstMatch(chunk, RegExp(r"description:\s*'([^']+)'"));
+    final description = _firstMatch(chunk, RegExp(r"description:\s*'([^']+)'"));
     final category = _firstMatch(chunk, RegExp(r"category:\s*'([^']+)'"));
     final operationType = _firstMatch(
       chunk,
@@ -181,7 +184,7 @@ String _productOverview(List<Map<String, dynamic>> modules) {
   return '''
 # Product Overview
 
-Darfo is a Flutter/Dart property-management application with:
+Ejarz Pro is a Flutter/Dart property-management application with:
 
 - Flutter UI screens for owner mode and office mode
 - Hive local storage for operational entities
@@ -352,7 +355,7 @@ String _workflowsDoc() {
 
 String _systemPromptDoc() {
   return '''
-أنت مساعد دارفو لإدارة الأملاك.
+أنت مساعد Ejarz Pro لإدارة الأملاك.
 
 القواعد الأساسية:
 1. لا تخترع أي معلومة عن العقارات أو الوحدات أو الملاك أو المستأجرين أو العقود أو المدفوعات أو الصيانة أو التقارير.
@@ -674,7 +677,12 @@ String _evalDatasetJsonl() {
       expectedIntent: 'create_contract',
       expectedTool: 'contracts.create',
       requiresConfirmation: true,
-      missingFields: const <String>['start_date', 'end_date', 'rent_amount', 'payment_cycle'],
+      missingFields: const <String>[
+        'start_date',
+        'end_date',
+        'rent_amount',
+        'payment_cycle'
+      ],
       notes: 'contract',
     );
   }
@@ -832,7 +840,9 @@ String _evalDatasetJsonl() {
     add(
       userMessage: message,
       expectedIntent: 'permission',
-      expectedTool: message.contains('تقرير') ? 'reports.income_expense' : 'payments.create',
+      expectedTool: message.contains('تقرير')
+          ? 'reports.income_expense'
+          : 'payments.create',
       requiresConfirmation: true,
       mustNotSay: const <String>['تم التنفيذ'],
       notes: 'permission',

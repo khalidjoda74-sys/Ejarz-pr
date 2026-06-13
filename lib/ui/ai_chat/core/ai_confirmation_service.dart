@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:hive/hive.dart';
 
 import 'ai_chat_types.dart';
@@ -9,6 +11,7 @@ class AiConfirmationService {
   static const Duration _defaultExpiry = Duration(minutes: 20);
   static const Duration _retentionWindow = Duration(days: 14);
   static const Set<String> _activeStatuses = <String>{'pending', 'confirmed'};
+  static int _lastPendingIdMicros = 0;
 
   static const String _expiredMessage =
       '\u0627\u0646\u062a\u0647\u062a \u0635\u0644\u0627\u062d\u064a\u0629 \u0627\u0644\u062a\u0623\u0643\u064a\u062f.';
@@ -73,7 +76,9 @@ class AiConfirmationService {
     final box = await _openBox();
     await cleanupExpiredAndStale(box: box);
     final now = DateTime.now();
-    final payloadToHash = '$toolName|$scopeId|$userId|$normalizedArguments';
+    final pendingIdMicros = _nextPendingIdMicros(now);
+    final argumentsText = _canonicalArgumentsText(normalizedArguments);
+    final payloadToHash = '$toolName|$scopeId|$userId|$argumentsText';
     final argsHash = aiStableHash(payloadToHash);
     final reusable = _findReusablePending(
       box: box,
@@ -82,6 +87,7 @@ class AiConfirmationService {
       scopeId: scopeId,
       toolName: toolName,
       argsHash: argsHash,
+      normalizedArguments: normalizedArguments,
     );
     if (reusable != null) {
       return reusable;
@@ -93,7 +99,7 @@ class AiConfirmationService {
       scopeId: scopeId,
     );
     final record = AiPendingActionRecord(
-      id: 'pending_${now.microsecondsSinceEpoch}',
+      id: 'pending_$pendingIdMicros',
       conversationId: conversationId,
       userId: userId,
       scopeId: scopeId,
@@ -118,6 +124,16 @@ class AiConfirmationService {
       awaitRemote: true,
     );
     return record;
+  }
+
+  static int _nextPendingIdMicros(DateTime now) {
+    final current = now.microsecondsSinceEpoch;
+    if (current <= _lastPendingIdMicros) {
+      _lastPendingIdMicros += 1;
+    } else {
+      _lastPendingIdMicros = current;
+    }
+    return _lastPendingIdMicros;
   }
 
   static Future<AiPendingActionRecord?> get(
@@ -313,6 +329,7 @@ class AiConfirmationService {
     required String scopeId,
     required String toolName,
     required String argsHash,
+    required Map<String, dynamic> normalizedArguments,
   }) {
     for (final raw in box.values) {
       final record =
@@ -322,6 +339,10 @@ class AiConfirmationService {
           record.scopeId != scopeId ||
           record.toolName != toolName ||
           record.argsHash != argsHash ||
+          !_sameNormalizedArguments(
+            record.normalizedArguments,
+            normalizedArguments,
+          ) ||
           !_activeStatuses.contains(record.status) ||
           _isExpired(record)) {
         continue;
@@ -329,6 +350,44 @@ class AiConfirmationService {
       return record;
     }
     return null;
+  }
+
+  static bool _sameNormalizedArguments(
+    Map<String, dynamic> left,
+    Map<String, dynamic> right,
+  ) {
+    return _canonicalArgumentsText(left) == _canonicalArgumentsText(right);
+  }
+
+  static String _canonicalArgumentsText(Map<String, dynamic> arguments) {
+    return jsonEncode(_canonicalJsonValue(arguments));
+  }
+
+  static Object? _canonicalJsonValue(Object? value) {
+    if (value is Map) {
+      final entries = value.entries
+          .map(
+            (entry) => MapEntry(
+              entry.key.toString(),
+              _canonicalJsonValue(entry.value),
+            ),
+          )
+          .toList()
+        ..sort((left, right) => left.key.compareTo(right.key));
+      return <String, Object?>{
+        for (final entry in entries) entry.key: entry.value,
+      };
+    }
+    if (value is Iterable) {
+      return value.map(_canonicalJsonValue).toList();
+    }
+    if (value is DateTime) {
+      return value.toIso8601String();
+    }
+    if (value is Enum) {
+      return value.name;
+    }
+    return value;
   }
 
   static Future<void> _cancelOlderActiveRequests({

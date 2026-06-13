@@ -6,7 +6,7 @@ Use a server-side proxy or Cloud Function and pass it at build time:
 
 ```bash
 flutter run \
-  --dart-define=DARFO_AI_PROXY_URL=https://your-domain.example.com/ai/chat
+  --dart-define=EJARZ_PRO_AI_PROXY_URL=https://your-domain.example.com/ai/chat
 ```
 
 The mobile app should not contain a production OpenAI API key.
@@ -29,7 +29,7 @@ Legacy Firestore fallback is still supported through `_meta/openai.api_key`. It 
 
 ## Environment variables
 
-- `DARFO_AI_PROXY_URL` preferred production endpoint.
+- `EJARZ_PRO_AI_PROXY_URL` preferred production endpoint.
 - `OPENAI_API_KEY` development-only direct key.
 - `ALLOW_CLIENT_OPENAI_DIRECT` default: `false`.
 - `ALLOW_FIRESTORE_OPENAI_KEY_FALLBACK` default: `true` for backward compatibility.

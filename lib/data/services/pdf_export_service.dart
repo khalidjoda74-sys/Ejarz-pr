@@ -1,5 +1,5 @@
 // ignore_for_file: prefer_const_constructors,avoid_types_as_parameter_names,use_build_context_synchronously,unnecessary_string_interpolations,curly_braces_in_flow_control_structures
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 
 import 'dart:convert';
 import 'dart:io';
@@ -26,6 +26,8 @@ import '../../ui/maintenance_screen.dart'
     show MaintenanceRequest, MaintenancePriority;
 import '../../models/property.dart';
 import '../../models/tenant.dart';
+
+enum _PdfExportAction { open, share, download }
 
 bool _pdfInvoiceIsManual(Invoice invoice) =>
     (invoice.note ?? '').toLowerCase().contains('[manual]');
@@ -152,34 +154,30 @@ bool _pdfTenantIsProvider(Tenant? tenant) {
 String _pdfInvoiceCleanNote(String? note) {
   final raw = (note ?? '').trim();
   if (raw.isEmpty) return '';
-  final lines = raw
-      .split('\n')
-      .map((line) => line.trim())
-      .where((line) {
-        if (line.isEmpty) return false;
-        final lower = line.toLowerCase();
-        return lower != '[manual]' &&
-            !lower.startsWith('[service]') &&
-            !lower.startsWith('[shared_service_office:') &&
-            !lower.startsWith('[party:') &&
-            !lower.startsWith('[party_id:') &&
-            !lower.startsWith('[property:') &&
-            !lower.startsWith('[property_id:') &&
-            !lower.startsWith('[title:') &&
-            !lower.startsWith('[owner_payout]') &&
-            !lower.startsWith('[owner_adjustment]') &&
-            !lower.startsWith('[office_commission]') &&
-            !lower.startsWith('[office_withdrawal]') &&
-            !lower.startsWith('[owner_payout_id:') &&
-            !lower.startsWith('[owner_adjustment_id:') &&
-            !lower.startsWith('[owner_adjustment_category:') &&
-            !lower.startsWith('[contract_voucher_id:') &&
-            !lower.startsWith('[posted]') &&
-            !lower.startsWith('[cancelled]') &&
-            !lower.startsWith('[reversal]') &&
-            !lower.startsWith('[reversed]');
-      })
-      .toList();
+  final lines = raw.split('\n').map((line) => line.trim()).where((line) {
+    if (line.isEmpty) return false;
+    final lower = line.toLowerCase();
+    return lower != '[manual]' &&
+        !lower.startsWith('[service]') &&
+        !lower.startsWith('[shared_service_office:') &&
+        !lower.startsWith('[party:') &&
+        !lower.startsWith('[party_id:') &&
+        !lower.startsWith('[property:') &&
+        !lower.startsWith('[property_id:') &&
+        !lower.startsWith('[title:') &&
+        !lower.startsWith('[owner_payout]') &&
+        !lower.startsWith('[owner_adjustment]') &&
+        !lower.startsWith('[office_commission]') &&
+        !lower.startsWith('[office_withdrawal]') &&
+        !lower.startsWith('[owner_payout_id:') &&
+        !lower.startsWith('[owner_adjustment_id:') &&
+        !lower.startsWith('[owner_adjustment_category:') &&
+        !lower.startsWith('[contract_voucher_id:') &&
+        !lower.startsWith('[posted]') &&
+        !lower.startsWith('[cancelled]') &&
+        !lower.startsWith('[reversal]') &&
+        !lower.startsWith('[reversed]');
+  }).toList();
   return lines.join('\n').trim();
 }
 
@@ -232,12 +230,14 @@ String _pdfAppendPropertyReferenceToStatement(
   return lines.join('\n').trim();
 }
 
+// ignore: unused_element
 String _pdfMaintenanceStatementText(
   String? note, {
   required String propertyRef,
   String fallback = '',
 }) {
-  final base = _pdfPlainText(_pdfInvoiceDisplayNote(note), fallback: fallback).trim();
+  final base =
+      _pdfPlainText(_pdfInvoiceDisplayNote(note), fallback: fallback).trim();
   if (base.isEmpty) return _pdfPlainText(propertyRef, fallback: '-');
   return _pdfAppendPropertyReferenceToStatement(base, propertyRef);
 }
@@ -324,7 +324,8 @@ class MaintenanceReceiptDetails {
       assignedTo: (map['assignedTo'] ?? '').toString().isEmpty
           ? null
           : (map['assignedTo'] ?? '').toString(),
-      providerSnapshot: (map['providerSnapshot'] as Map?)?.cast<String, dynamic>(),
+      providerSnapshot:
+          (map['providerSnapshot'] as Map?)?.cast<String, dynamic>(),
       createdAt: parseDate(map['createdAt']) ?? KsaTime.now(),
       scheduledDate: parseDate(map['scheduledDate']),
       executionDeadline: parseDate(map['executionDeadline']),
@@ -366,11 +367,14 @@ String _pdfSharedServiceVoucherLabelFromText(
 }) {
   final lower = text.trim().toLowerCase();
   if (lower.isEmpty) return '';
-  final hasSharedService =
-      lower.contains('مشترك') || lower.contains('مشتركة') || lower.contains('shared');
+  final hasSharedService = lower.contains('مشترك') ||
+      lower.contains('مشتركة') ||
+      lower.contains('shared');
   if (!hasSharedService) return '';
   final prefix = isExpense ? 'سداد' : 'تحصيل';
-  if (lower.contains('water') || lower.contains('مياه') || lower.contains('ماء')) {
+  if (lower.contains('water') ||
+      lower.contains('مياه') ||
+      lower.contains('ماء')) {
     return '$prefix خدمة مياه مشتركة';
   }
   if (lower.contains('electric') || lower.contains('كهرب')) {
@@ -379,8 +383,10 @@ String _pdfSharedServiceVoucherLabelFromText(
   return '';
 }
 
-String _pdfMaintenanceSharedServiceVoucherLabel(MaintenanceReceiptDetails details) {
-  final hay = '${details.requestType}\n${details.title}\n${details.description}'.trim();
+String _pdfMaintenanceSharedServiceVoucherLabel(
+    MaintenanceReceiptDetails details) {
+  final hay =
+      '${details.requestType}\n${details.title}\n${details.description}'.trim();
   return _pdfSharedServiceVoucherLabelFromText(hay, isExpense: true);
 }
 
@@ -398,10 +404,13 @@ String _pdfMaintenanceVoucherTypeLabelFromText(String raw) {
   final lower = text.toLowerCase();
   if (lower.isEmpty) return '';
 
-  final hasSharedService =
-      lower.contains('مشترك') || lower.contains('مشتركة') || lower.contains('shared');
+  final hasSharedService = lower.contains('مشترك') ||
+      lower.contains('مشتركة') ||
+      lower.contains('shared');
   if (hasSharedService &&
-      (lower.contains('water') || lower.contains('مياه') || lower.contains('ماء'))) {
+      (lower.contains('water') ||
+          lower.contains('مياه') ||
+          lower.contains('ماء'))) {
     return 'خدمة مياه مشتركة';
   }
   if (hasSharedService &&
@@ -421,7 +430,9 @@ String _pdfMaintenanceVoucherTypeLabelFromText(String raw) {
       lower.contains('إنترنت')) {
     return 'خدمة إنترنت';
   }
-  if (lower.contains('water') || lower.contains('مياه') || lower.contains('ماء')) {
+  if (lower.contains('water') ||
+      lower.contains('مياه') ||
+      lower.contains('ماء')) {
     return 'خدمة مياه';
   }
   if (lower.contains('electric') || lower.contains('كهرب')) {
@@ -439,7 +450,11 @@ String _pdfMaintenanceVoucherDisplayType(MaintenanceReceiptDetails details) {
     return sharedLabel.replaceFirst(RegExp(r'^(سداد|تحصيل)\s+'), '').trim();
   }
 
-  for (final value in [details.requestType, details.title, details.description]) {
+  for (final value in [
+    details.requestType,
+    details.title,
+    details.description
+  ]) {
     final label = _pdfMaintenanceVoucherTypeLabelFromText(value);
     if (label.isNotEmpty) return label;
   }
@@ -494,6 +509,7 @@ String _pdfMaintenanceCompactStatementText(
   return _pdfAppendPropertyReferenceToStatement(base, propertyRef);
 }
 
+// ignore: unused_element
 bool _pdfMaintenanceIsSharedServiceVoucher(MaintenanceReceiptDetails details) =>
     _pdfMaintenanceSharedServiceVoucherLabel(details).isNotEmpty;
 
@@ -506,12 +522,15 @@ DateTime _pdfMaintenanceEffectiveCycleDate(MaintenanceReceiptDetails details) =>
 class PdfExportService {
   static const String _officeProfilePath = 'office_profile';
   static const MethodChannel _downloadsChannel =
-      MethodChannel('darvoo/downloads');
+      MethodChannel('ejarzpro/downloads');
 
   static Future<Map<String, String>> _loadOfficeProfile() async {
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null || uid.trim().isEmpty) return const {};
+      final scopedUid = effectiveUid().trim();
+      final uid = scopedUid.isNotEmpty
+          ? scopedUid
+          : (FirebaseAuth.instance.currentUser?.uid ?? '').trim();
+      if (uid.isEmpty) return const {};
       final snap =
           await FirebaseFirestore.instance.collection('users').doc(uid).get();
       final data = snap.data() ?? const <String, dynamic>{};
@@ -539,6 +558,7 @@ class PdfExportService {
         'address': pick(['address', 'office_address', 'officeAddress']),
         'commercial': pick(['commercial_no', 'commercialNo']),
         'mobile': pick(['mobile']),
+        'mobile_extra': pick(['mobile_extra', 'mobileExtra']),
         'phone': pick(['phone']),
         'tax_no': pick(['tax_no', 'taxNo', 'vat_no', 'vatNo']),
         'logo_base64': pick(['logo_base64', 'logoBase64']),
@@ -548,6 +568,7 @@ class PdfExportService {
         'uid=$uid '
         'name="${profile['name']}" '
         'mobile="${profile['mobile']}" '
+        'mobileExtra="${profile['mobile_extra']}" '
         'phone="${profile['phone']}" '
         'commercial="${profile['commercial']}" '
         'hasLogo=${(profile['logo_base64'] ?? '').isNotEmpty}',
@@ -570,9 +591,8 @@ class PdfExportService {
         'name': (data['name'] ?? '').toString().trim(),
         'role': (data['role'] ?? '').toString().trim(),
         'isDemo': (data['isDemo'] == true).toString(),
-        'officeId': (data['officeId'] ?? data['office_id'] ?? '')
-            .toString()
-            .trim(),
+        'officeId':
+            (data['officeId'] ?? data['office_id'] ?? '').toString().trim(),
         'demoOfficeId': (data['demoOfficeId'] ?? '').toString().trim(),
       };
       debugPrint(
@@ -842,8 +862,7 @@ class PdfExportService {
 
   static Future<(pw.Font, pw.Font)> _loadFonts() async {
     try {
-      final pw.Font regular =
-          await _loadBundledPdfFont(_pdfRegularFontAsset);
+      final pw.Font regular = await _loadBundledPdfFont(_pdfRegularFontAsset);
       final pw.Font bold = await _loadBundledPdfFont(_pdfBoldFontAsset);
       return (regular, bold);
     } catch (_) {
@@ -918,6 +937,385 @@ class PdfExportService {
     }
   }
 
+  static Future<_PdfExportAction?> _showPdfActionSheet(
+      BuildContext context) async {
+    if (!context.mounted) return null;
+    return showModalBottomSheet<_PdfExportAction>(
+      context: context,
+      backgroundColor: const Color(0xFF0B1220),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        const textStyle = TextStyle(color: Colors.white);
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                const ListTile(
+                  title: Text(
+                    'ملف PDF',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.open_in_new_rounded,
+                      color: Colors.white),
+                  title: const Text('فتح مباشرة', style: textStyle),
+                  onTap: () => Navigator.of(ctx).pop(_PdfExportAction.open),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.share_rounded, color: Colors.white),
+                  title: const Text('مشاركة', style: textStyle),
+                  onTap: () => Navigator.of(ctx).pop(_PdfExportAction.share),
+                ),
+                ListTile(
+                  leading:
+                      const Icon(Icons.download_rounded, color: Colors.white),
+                  title: const Text('تحميل', style: textStyle),
+                  onTap: () => Navigator.of(ctx).pop(_PdfExportAction.download),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  static Future<bool> _openPdfUri(
+    BuildContext context,
+    Uri uri, {
+    bool showError = true,
+  }) async {
+    try {
+      final opened = await launchUrl(
+            uri,
+            mode: LaunchMode.externalApplication,
+          ) ||
+          await launchUrl(
+            uri,
+            mode: LaunchMode.platformDefault,
+          );
+      if (!opened && showError && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر فتح ملف PDF')),
+        );
+      }
+      return opened;
+    } catch (e) {
+      debugPrint('[PDF_TRACE] open pdf failed: $e');
+      if (showError && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر فتح ملف PDF')),
+        );
+      }
+      return false;
+    }
+  }
+
+  static Future<bool> _openPdfBytesNative({
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    if (!Platform.isAndroid) return false;
+    try {
+      final openedLocation = await _downloadsChannel.invokeMethod<String>(
+        'openPdf',
+        <String, dynamic>{
+          'bytes': bytes,
+          'name': filename,
+          'mimeType': 'application/pdf',
+        },
+      );
+      debugPrint(
+        '[PDF_TRACE] openPdf native success location="$openedLocation"',
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[PDF_TRACE] openPdf native failed: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> _sharePdfBytes({
+    required Uint8List bytes,
+    required File tempFile,
+    required String filename,
+  }) async {
+    try {
+      debugPrint('[PDF_TRACE] shareDoc try Printing.sharePdf');
+      await Printing.sharePdf(bytes: bytes, filename: filename);
+      debugPrint('[PDF_TRACE] shareDoc Printing.sharePdf success');
+      return true;
+    } catch (e) {
+      debugPrint('[PDF_TRACE] Printing.sharePdf failed: $e');
+    }
+
+    try {
+      debugPrint('[PDF_TRACE] shareDoc try Share.shareXFiles temp');
+      await Share.shareXFiles(
+        [XFile(tempFile.path, mimeType: 'application/pdf')],
+      );
+      debugPrint('[PDF_TRACE] shareDoc Share.shareXFiles temp success');
+      return true;
+    } catch (e) {
+      debugPrint('[PDF_TRACE] Share.shareXFiles failed: $e');
+    }
+
+    try {
+      debugPrint('[PDF_TRACE] shareDoc try Share.shareXFiles memory');
+      await Share.shareXFiles([
+        XFile.fromData(bytes, mimeType: 'application/pdf', name: filename),
+      ]);
+      debugPrint('[PDF_TRACE] shareDoc Share.shareXFiles memory success');
+      return true;
+    } catch (e) {
+      debugPrint('[PDF_TRACE] Share.shareXFiles memory failed: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> _downloadPdfBytes({
+    required BuildContext context,
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    final downloadsUri = await _savePdfToDownloads(bytes, filename);
+    if (downloadsUri == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر تحميل ملف PDF')),
+        );
+      }
+      return false;
+    }
+    debugPrint('[PDF_TRACE] shareDoc downloads uri=$downloadsUri');
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حفظ ملف PDF في التنزيلات')),
+      );
+    }
+    return true;
+  }
+
+  static Future<bool> openPdfBytesDirectly({
+    required BuildContext context,
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    try {
+      final safeName = _safeFileName(filename);
+      await _loadCurrentUserDebugContext();
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/$safeName');
+      debugPrint(
+        '[PDF_TRACE] openPdfBytesDirectly start name=$safeName bytes=${bytes.length} tempPath=${file.path}',
+      );
+      await file.writeAsBytes(bytes, flush: true);
+
+      final openedNative = await _openPdfBytesNative(
+        bytes: bytes,
+        filename: safeName,
+      );
+      if (openedNative) return true;
+
+      final tempUri = Uri.file(file.path);
+      debugPrint('[PDF_TRACE] openPdfBytesDirectly temp uri=$tempUri');
+      final openedTemp = await _openPdfUri(context, tempUri, showError: false);
+      if (openedTemp) return true;
+
+      final downloadsUri = await _savePdfToDownloads(bytes, safeName);
+      if (downloadsUri != null) {
+        return _openPdfUri(context, downloadsUri);
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر فتح ملف PDF')),
+        );
+      }
+      return false;
+    } catch (e, s) {
+      debugPrint('[PDF_TRACE] openPdfBytesDirectly failed: $e');
+      debugPrint('$s');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر فتح ملف PDF')),
+        );
+      }
+      return false;
+    }
+  }
+
+  static Future<List<pw.Widget>> buildStandardPdfHeader({
+    required String documentTitle,
+    required DateTime issueDate,
+    required pw.Font regular,
+    required pw.Font bold,
+    double titleFontSize = 24,
+    double officeFontSize = 13,
+    PdfColor? titleColor,
+  }) async {
+    final office = await _loadOfficeProfile();
+    final officeName = _txt(office['name'], fallback: '-');
+    final officeAddress = _txt(office['address'], fallback: '-');
+    final officeMobile = _txt(office['mobile'], fallback: '-');
+    final officeMobileExtra = _txt(office['mobile_extra'], fallback: '');
+    final officePhone = _txt(office['phone'], fallback: '-');
+    final officeContactLine = officeMobileExtra.trim().isEmpty
+        ? 'الجوال: $officeMobile   |   الهاتف: $officePhone'
+        : 'الجوال: $officeMobile   |   الجوال الإضافي: $officeMobileExtra   |   الهاتف: $officePhone';
+    final officeCommercial = _txt(office['commercial'], fallback: '-');
+    final officeTax = _txt(
+      office['tax'] ?? office['vat'] ?? office['tax_no'] ?? office['vat_no'],
+      fallback: '-',
+    );
+    final officeLogoBytes = await _decodeOfficeLogoBytes(office);
+    final issueDateG = _fmtDate(issueDate);
+    final issueDateH = _fmtHijriDate(issueDate);
+    final resolvedTitleColor = titleColor ?? PdfColor.fromInt(0xFF0B3B8C);
+
+    return [
+      pw.Container(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColor.fromInt(0xFFCBD5E1)),
+          borderRadius: pw.BorderRadius.circular(8),
+          color: PdfColor.fromInt(0xFFF8FAFC),
+        ),
+        child: pw.Row(
+          children: [
+            pw.Expanded(
+              child: pw.Align(
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text(
+                  'ت م: $issueDateG',
+                  style: pw.TextStyle(
+                    font: bold,
+                    fontSize: officeFontSize,
+                    color: PdfColor.fromInt(0xFF0F172A),
+                  ),
+                ),
+              ),
+            ),
+            pw.SizedBox(width: 10),
+            pw.Expanded(
+              child: pw.Align(
+                alignment: pw.Alignment.centerLeft,
+                child: pw.Text(
+                  'ت هـ: $issueDateH',
+                  style: pw.TextStyle(
+                    font: bold,
+                    fontSize: officeFontSize,
+                    color: PdfColor.fromInt(0xFF0F172A),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      pw.SizedBox(height: 10),
+      pw.Center(
+        child: pw.Text(
+          _txt(documentTitle),
+          textDirection: pw.TextDirection.rtl,
+          style: pw.TextStyle(
+            font: bold,
+            fontSize: titleFontSize,
+            color: resolvedTitleColor,
+          ),
+        ),
+      ),
+      pw.SizedBox(height: 10),
+      pw.Container(
+        width: double.infinity,
+        padding: const pw.EdgeInsets.all(10),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColor.fromInt(0xFFCBD5E1)),
+          borderRadius: pw.BorderRadius.circular(8),
+          color: PdfColor.fromInt(0xFFF8FAFC),
+        ),
+        child: pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Expanded(
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    officeName,
+                    style: pw.TextStyle(
+                      font: bold,
+                      fontSize: officeFontSize + 1,
+                    ),
+                  ),
+                  pw.Text(
+                    'العنوان: $officeAddress',
+                    style:
+                        pw.TextStyle(font: regular, fontSize: officeFontSize),
+                  ),
+                  pw.Text(
+                    officeContactLine,
+                    style:
+                        pw.TextStyle(font: regular, fontSize: officeFontSize),
+                  ),
+                  pw.Text(
+                    'رقم السجل: $officeCommercial',
+                    style:
+                        pw.TextStyle(font: regular, fontSize: officeFontSize),
+                  ),
+                  if (officeTax != '-')
+                    pw.Text(
+                      'الرقم الضريبي: $officeTax',
+                      style:
+                          pw.TextStyle(font: regular, fontSize: officeFontSize),
+                    ),
+                ],
+              ),
+            ),
+            pw.SizedBox(width: 10),
+            pw.Container(
+              width: 52,
+              height: 52,
+              decoration: pw.BoxDecoration(
+                borderRadius: pw.BorderRadius.circular(8),
+                border: pw.Border.all(color: PdfColor.fromInt(0xFFCBD5E1)),
+              ),
+              child: pw.ClipRRect(
+                horizontalRadius: 8,
+                verticalRadius: 8,
+                child: officeLogoBytes == null
+                    ? pw.Center(
+                        child: pw.Text(
+                          'شعار',
+                          style: pw.TextStyle(
+                            font: regular,
+                            fontSize: officeFontSize - 3,
+                          ),
+                        ),
+                      )
+                    : pw.Image(
+                        pw.MemoryImage(officeLogoBytes),
+                        fit: pw.BoxFit.cover,
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      pw.SizedBox(height: 10),
+    ];
+  }
+
   static Future<bool> _shareDoc({
     required BuildContext context,
     required pw.Document doc,
@@ -933,71 +1331,50 @@ class PdfExportService {
         '[PDF_TRACE] shareDoc start name=$safeName bytes=${bytes.length} tempPath=${file.path}',
       );
       await file.writeAsBytes(bytes, flush: true);
-      final xFile = XFile(file.path, mimeType: 'application/pdf');
 
-      try {
-        debugPrint('[PDF_TRACE] shareDoc try Printing.sharePdf');
-        await Printing.sharePdf(bytes: bytes, filename: safeName);
-        debugPrint('[PDF_TRACE] shareDoc Printing.sharePdf success');
-        return true;
-      } catch (e) {
-        debugPrint('[PDF_TRACE] Printing.sharePdf failed: $e');
-      }
+      final action = await _showPdfActionSheet(context);
+      if (action == null) return false;
+      switch (action) {
+        case _PdfExportAction.open:
+          final openedNative = await _openPdfBytesNative(
+            bytes: bytes,
+            filename: safeName,
+          );
+          if (openedNative) return true;
 
-      try {
-        debugPrint('[PDF_TRACE] shareDoc try Share.shareXFiles temp');
-        await Share.shareXFiles([xFile]);
-        debugPrint('[PDF_TRACE] shareDoc Share.shareXFiles temp success');
-        return true;
-      } catch (e) {
-        debugPrint('[PDF_TRACE] Share.shareXFiles failed: $e');
+          final uri = Uri.file(file.path);
+          debugPrint('[PDF_TRACE] shareDoc open temp uri=$uri');
+          final opened = await _openPdfUri(context, uri, showError: false);
+          if (opened) return true;
+          final downloadsUri = await _savePdfToDownloads(bytes, safeName);
+          if (downloadsUri != null) {
+            return _openPdfUri(context, downloadsUri);
+          }
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('تعذر فتح ملف PDF')),
+            );
+          }
+          return false;
+        case _PdfExportAction.share:
+          final shared = await _sharePdfBytes(
+            bytes: bytes,
+            tempFile: file,
+            filename: safeName,
+          );
+          if (!shared && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('تعذر مشاركة الملف')),
+            );
+          }
+          return shared;
+        case _PdfExportAction.download:
+          return _downloadPdfBytes(
+            context: context,
+            bytes: bytes,
+            filename: safeName,
+          );
       }
-
-      try {
-        debugPrint('[PDF_TRACE] shareDoc try Share.shareXFiles memory');
-        await Share.shareXFiles([
-          XFile.fromData(bytes, mimeType: 'application/pdf', name: safeName),
-        ]);
-        debugPrint('[PDF_TRACE] shareDoc Share.shareXFiles memory success');
-        return true;
-      } catch (e) {
-        debugPrint('[PDF_TRACE] Share.shareXFiles memory failed: $e');
-      }
-
-      final downloadsUri = await _savePdfToDownloads(bytes, safeName);
-      if (downloadsUri != null) {
-        debugPrint('[PDF_TRACE] shareDoc downloads uri=$downloadsUri');
-        try {
-          final openedFromDownloads =
-              await launchUrl(
-                downloadsUri,
-                mode: LaunchMode.externalApplication,
-              ) ||
-              await launchUrl(
-                downloadsUri,
-                mode: LaunchMode.platformDefault,
-              );
-          debugPrint('[PDF_TRACE] shareDoc open downloads result=$openedFromDownloads');
-          if (openedFromDownloads) return true;
-        } catch (e) {
-          debugPrint('[PDF_TRACE] open downloads uri failed: $e');
-        }
-        if (!context.mounted) return false;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم حفظ ملف PDF في التنزيلات')),
-        );
-        return true;
-      }
-
-      final uri = Uri.file(file.path);
-      debugPrint('[PDF_TRACE] shareDoc try open temp uri=$uri');
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication) ||
-          await launchUrl(uri, mode: LaunchMode.platformDefault);
-      debugPrint('[PDF_TRACE] shareDoc open temp result=$opened');
-      if (!opened) {
-        throw Exception('pdf_open_failed');
-      }
-      return true;
     } catch (e, s) {
       debugPrint('[PDF_TRACE] shareDoc failed: $e');
       debugPrint('$s');
@@ -1145,9 +1522,8 @@ class PdfExportService {
 
   static String _formatHourAmPm(int hour24) {
     final normalized = hour24.clamp(0, 23);
-    final hour12 = normalized == 0
-        ? 12
-        : (normalized > 12 ? normalized - 12 : normalized);
+    final hour12 =
+        normalized == 0 ? 12 : (normalized > 12 ? normalized - 12 : normalized);
     final suffix = normalized >= 12 ? 'PM' : 'AM';
     return '$hour12:00 $suffix';
   }
@@ -1335,23 +1711,32 @@ class PdfExportService {
         'end=${_fmtDate(contract.endDate)}',
       );
       final (regular, bold) = await _loadFonts();
-      final bodyStyle = pw.TextStyle(font: regular, fontSize: 15, height: 1.65);
-      final summaryStyle = pw.TextStyle(
+      final primaryColor = PdfColor.fromInt(0xFF0B3B8C);
+      final accentColor = PdfColor.fromInt(0xFF0B5FB3);
+      final borderColor = PdfColor.fromInt(0xFFCBD5E1);
+      final softBlueColor = PdfColor.fromInt(0xFFEAF2FF);
+      final detailLabelStyle = pw.TextStyle(
         font: regular,
-        fontSize: 16,
-        height: 1.85,
+        fontSize: 11,
+        height: 1.25,
+        color: PdfColor.fromInt(0xFF64748B),
+      );
+      final detailValueStyle = pw.TextStyle(
+        font: bold,
+        fontSize: 13.5,
+        height: 1.35,
         color: PdfColor.fromInt(0xFF0F172A),
+      );
+      final detailAccentStyle = pw.TextStyle(
+        font: bold,
+        fontSize: 13.5,
+        height: 1.35,
+        color: accentColor,
       );
       final sectionTitleStyle = pw.TextStyle(
         font: bold,
         fontSize: 21,
-        color: PdfColor.fromInt(0xFF0F172A),
-      );
-      final answerStyle = pw.TextStyle(
-        font: bold,
-        fontSize: 16,
-        height: 1.85,
-        color: PdfColor.fromInt(0xFF0B5FB3),
+        color: primaryColor,
       );
       final footerLabelStyle = pw.TextStyle(
         font: bold,
@@ -1369,7 +1754,11 @@ class PdfExportService {
       final officeName = _txt(office['name'], fallback: '-');
       final officeAddress = _txt(office['address'], fallback: '-');
       final officeMobile = _txt(office['mobile'], fallback: '-');
+      final officeMobileExtra = _txt(office['mobile_extra'], fallback: '');
       final officePhone = _txt(office['phone'], fallback: '-');
+      final officeContactLine = officeMobileExtra.trim().isEmpty
+          ? 'الجوال: $officeMobile   |   الهاتف: $officePhone'
+          : 'الجوال: $officeMobile   |   الجوال الإضافي: $officeMobileExtra   |   الهاتف: $officePhone';
       final officeCommercial = _txt(office['commercial'], fallback: '-');
       final officeTax = _txt(
         office['tax'] ?? office['vat'] ?? office['tax_no'] ?? office['vat_no'],
@@ -1382,6 +1771,24 @@ class PdfExportService {
       final issueDateH = _fmtHijriDate(issueDate);
       final tenantName =
           _txt(tenant?.fullName ?? '-', fallback: 'المستأجر الكريم');
+      final tenantPhoneRaw = _txt(tenant?.phone, fallback: '').trim();
+      final companyRepresentativePhoneRaw =
+          _txt(tenant?.companyRepresentativePhone, fallback: '').trim();
+      final tenantPhone = _txt(
+        tenantPhoneRaw.isNotEmpty
+            ? tenantPhoneRaw
+            : companyRepresentativePhoneRaw,
+        fallback: '-',
+      );
+      final tenantNationalIdRaw = _txt(tenant?.nationalId, fallback: '').trim();
+      final companyRepresentativeNationalIdRaw =
+          _txt(tenant?.companyRepresentativeNationalId, fallback: '').trim();
+      final tenantNationalId = _txt(
+        tenantNationalIdRaw.isNotEmpty
+            ? tenantNationalIdRaw
+            : companyRepresentativeNationalIdRaw,
+        fallback: '-',
+      );
       final (propertyRef, propertyAddress) =
           await _resolveMaintenancePropertyInfo(
         property: property,
@@ -1444,7 +1851,8 @@ class PdfExportService {
         for (final d in dueDates) _fmtDate(DateTime(d.year, d.month, d.day)),
       };
       for (final inv in invoices) {
-        final d = DateTime(inv.dueDate.year, inv.dueDate.month, inv.dueDate.day);
+        final d =
+            DateTime(inv.dueDate.year, inv.dueDate.month, inv.dueDate.day);
         final k = _fmtDate(d);
         if (!dueSet.contains(k)) {
           dueDates.add(d);
@@ -1523,6 +1931,100 @@ class PdfExportService {
         'firstRow=${rows.isNotEmpty ? rows.first.join(' | ') : 'EMPTY'}',
       );
 
+      final contractPeriod =
+          'من ${_fmtDate(contract.startDate)} إلى ${_fmtDate(contract.endDate)}';
+      final rentTotalText = '${_fmtMoney(totalRentValue)} ريال';
+      final waterTotalText = '${_fmtMoney(totalWaterValue)} ريال';
+      final grandTotalText = '${_fmtMoney(grandTotalValue)} ريال';
+      final installmentText = '${_fmtMoney(installmentWithWaterValue)} ريال';
+      final amountRows = <List<String>>[
+        ['إجمالي قيمة الإيجار', rentTotalText],
+        if (waterTotals != null) ['إجمالي قيمة المياه', waterTotalText],
+        ['إجمالي العقد', grandTotalText],
+        ['قيمة الدفعة', installmentText],
+      ];
+
+      pw.Widget detailItem(
+        String label,
+        String value, {
+        bool accent = false,
+      }) {
+        return pw.Container(
+          width: double.infinity,
+          margin: const pw.EdgeInsets.only(top: 5),
+          padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: pw.BoxDecoration(
+            color: PdfColor.fromInt(0xFFF8FBFF),
+            border: pw.Border.all(color: PdfColor.fromInt(0xFFE2E8F0)),
+            borderRadius: pw.BorderRadius.circular(6),
+          ),
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Container(
+                width: 76,
+                child: pw.Text(label, style: detailLabelStyle),
+              ),
+              pw.SizedBox(width: 7),
+              pw.Expanded(
+                child: pw.Text(
+                  _txt(value, fallback: '-'),
+                  textDirection: pw.TextDirection.rtl,
+                  style: accent ? detailAccentStyle : detailValueStyle,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
+      pw.Widget detailCard(String title, List<List<String>> items) {
+        return pw.Container(
+          width: double.infinity,
+          padding: const pw.EdgeInsets.all(10),
+          decoration: pw.BoxDecoration(
+            color: PdfColor.fromInt(0xFFFFFFFF),
+            border: pw.Border.all(color: borderColor),
+            borderRadius: pw.BorderRadius.circular(8),
+          ),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Row(
+                children: [
+                  pw.Container(
+                    width: 4,
+                    height: 18,
+                    decoration: pw.BoxDecoration(
+                      color: accentColor,
+                      borderRadius: pw.BorderRadius.circular(3),
+                    ),
+                  ),
+                  pw.SizedBox(width: 6),
+                  pw.Text(
+                    title,
+                    textDirection: pw.TextDirection.rtl,
+                    style: pw.TextStyle(
+                      font: bold,
+                      fontSize: 14.5,
+                      color: primaryColor,
+                    ),
+                  ),
+                ],
+              ),
+              ...items.map(
+                (item) => detailItem(
+                  item.first,
+                  item.length > 1 ? item[1] : '-',
+                  accent: item.first == 'اسم المستأجر' ||
+                      item.first == 'إجمالي العقد',
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
       doc.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
@@ -1593,12 +2095,6 @@ class PdfExportService {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Align(
-                    alignment: pw.Alignment.center,
-                    child: pw.Text('بيانات المكتب',
-                        style: pw.TextStyle(font: bold, fontSize: 17)),
-                  ),
-                  pw.SizedBox(height: 6),
                   pw.Row(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
@@ -1612,7 +2108,7 @@ class PdfExportService {
                                 style:
                                     pw.TextStyle(font: regular, fontSize: 15)),
                             pw.Text(
-                              'الجوال: $officeMobile   |   الهاتف: $officePhone',
+                              officeContactLine,
                               style: pw.TextStyle(font: regular, fontSize: 15),
                             ),
                             pw.Text('رقم السجل: $officeCommercial',
@@ -1656,119 +2152,134 @@ class PdfExportService {
                 ],
               ),
             ),
-            pw.SizedBox(height: 78),
+            pw.SizedBox(height: 14),
             pw.Container(
               width: double.infinity,
-              padding: const pw.EdgeInsets.all(12),
+              padding: const pw.EdgeInsets.all(14),
               decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: PdfColor.fromInt(0xFFCBD5E1)),
-                borderRadius: pw.BorderRadius.circular(8),
+                border: pw.Border.all(color: borderColor),
+                borderRadius: pw.BorderRadius.circular(10),
                 color: PdfColor.fromInt(0xFFFCFDFF),
               ),
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Align(
-                    alignment: pw.Alignment.center,
-                    child: pw.Text('تفاصيل العقد', style: sectionTitleStyle),
+                  pw.Row(
+                    children: [
+                      pw.Container(
+                        width: 6,
+                        height: 30,
+                        decoration: pw.BoxDecoration(
+                          color: primaryColor,
+                          borderRadius: pw.BorderRadius.circular(4),
+                        ),
+                      ),
+                      pw.SizedBox(width: 8),
+                      pw.Text('تفاصيل العقد', style: sectionTitleStyle),
+                    ],
                   ),
                   pw.SizedBox(height: 10),
                   pw.Container(
                     width: double.infinity,
                     padding: const pw.EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 9),
+                        horizontal: 12, vertical: 10),
                     decoration: pw.BoxDecoration(
-                      color: PdfColor.fromInt(0xFFEAF2FF),
-                      borderRadius: pw.BorderRadius.circular(6),
+                      color: softBlueColor,
+                      border:
+                          pw.Border.all(color: PdfColor.fromInt(0xFFBFDBFE)),
+                      borderRadius: pw.BorderRadius.circular(8),
                     ),
-                    child: pw.RichText(
-                      textDirection: pw.TextDirection.rtl,
-                      text: pw.TextSpan(
-                        style: summaryStyle,
-                        children: [
-                          pw.TextSpan(text: 'عقد السيد المستأجر '),
-                          pw.TextSpan(text: tenantName, style: answerStyle),
-                          pw.TextSpan(text: ' | مرجع العقار: '),
-                          pw.TextSpan(text: propertyRef, style: answerStyle),
-                          pw.TextSpan(text: ' | مدة العقد: '),
-                          pw.TextSpan(
-                            text:
-                                '$termLabelDisplay من ${_fmtDate(contract.startDate)} إلى ${_fmtDate(contract.endDate)}',
-                            style: answerStyle,
+                    child: pw.Row(
+                      children: [
+                        pw.Expanded(
+                          child: pw.Text(
+                            'عقد المستأجر $tenantName',
+                            textDirection: pw.TextDirection.rtl,
+                            style: detailAccentStyle,
                           ),
-                          pw.TextSpan(text: ' | الدفع: '),
-                          pw.TextSpan(
-                              text: paymentLabelDisplay, style: answerStyle),
-                          pw.TextSpan(text: ' | إجمالي قيمة الإيجار: '),
-                          pw.TextSpan(
-                            text: '${_fmtMoney(contract.totalAmount)} ريال',
-                            style: answerStyle,
-                          ),
-                          if (waterTotals != null) ...[
-                            pw.TextSpan(text: ' | إجمالي قيمة المياه: '),
-                            pw.TextSpan(
-                              text: '${_fmtMoney(waterTotals.total)} ريال',
-                              style: answerStyle,
-                            ),
-                          ],
-                          pw.TextSpan(text: ' | إجمالي الدفعات: '),
-                          pw.TextSpan(
-                            text: '$installmentsCount',
-                            style: answerStyle,
-                          ),
-                          pw.TextSpan(text: ' | قيمة الدفعة: '),
-                          pw.TextSpan(
-                            text:
-                                '${_fmtMoney(installmentWithWaterValue)} ريال',
-                            style: answerStyle,
-                          ),
-                        ],
-                      ),
+                        ),
+                        pw.SizedBox(width: 8),
+                        pw.Text(
+                          'رقم العقد: $ejarNo',
+                          textDirection: pw.TextDirection.rtl,
+                          style: detailValueStyle,
+                        ),
+                      ],
                     ),
                   ),
                   pw.SizedBox(height: 10),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.only(bottom: 4),
-                    child: pw.RichText(
-                      textDirection: pw.TextDirection.rtl,
-                      text: pw.TextSpan(
-                        style: bodyStyle,
-                        children: [
-                          const pw.TextSpan(text: 'رقم العقد: '),
-                          pw.TextSpan(text: ejarNo, style: answerStyle),
-                        ],
+                  pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Expanded(
+                        child: detailCard('بيانات المستأجر', [
+                          ['اسم المستأجر', tenantName],
+                          ['رقم الهوية', tenantNationalId],
+                          ['رقم الجوال', tenantPhone],
+                        ]),
                       ),
-                    ),
+                      pw.SizedBox(width: 10),
+                      pw.Expanded(
+                        child: detailCard('بيانات العقار', [
+                          ['مرجع العقار', propertyRef],
+                          ['عنوان العقار', propertyAddress],
+                          ['رقم العقد', ejarNo],
+                        ]),
+                      ),
+                    ],
                   ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.only(bottom: 4),
-                    child: pw.RichText(
-                      textDirection: pw.TextDirection.rtl,
-                      text: pw.TextSpan(
-                        style: bodyStyle,
-                        children: [
-                          const pw.TextSpan(text: 'عنوان العقار: '),
-                          pw.TextSpan(
-                              text: propertyAddress, style: answerStyle),
-                        ],
+                  pw.SizedBox(height: 10),
+                  pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Expanded(
+                        child: detailCard('بيانات العقد', [
+                          ['مدة العقد', termLabelDisplay],
+                          ['فترة العقد', contractPeriod],
+                          ['الدفع', paymentLabelDisplay],
+                          ['إجمالي الدفعات', '$installmentsCount'],
+                        ]),
                       ),
-                    ),
+                      pw.SizedBox(width: 10),
+                      pw.Expanded(
+                        child: detailCard('القيم المالية', amountRows),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
             pw.SizedBox(height: 10),
             pw.NewPage(),
-            pw.Align(
-              alignment: pw.Alignment.center,
-              child: pw.Text('جدول الدفعات المجدولة', style: sectionTitleStyle),
+            pw.Container(
+              width: double.infinity,
+              padding: const pw.EdgeInsets.symmetric(vertical: 10),
+              decoration: pw.BoxDecoration(
+                color: primaryColor,
+                borderRadius: pw.BorderRadius.circular(8),
+              ),
+              child: pw.Center(
+                child: pw.Text(
+                  'جدول الدفعات المجدولة',
+                  textDirection: pw.TextDirection.rtl,
+                  style: pw.TextStyle(
+                    font: bold,
+                    fontSize: 18,
+                    color: PdfColor.fromInt(0xFFFFFFFF),
+                  ),
+                ),
+              ),
             ),
             pw.SizedBox(height: 8),
             pw.TableHelper.fromTextArray(
               headers: ['الحالة', 'تاريخ الاستحقاق', 'القيمة', 'الدفعة'],
               data: rows,
               cellAlignment: pw.Alignment.centerRight,
-              headerStyle: pw.TextStyle(font: bold, fontSize: 15),
+              headerStyle: pw.TextStyle(
+                font: bold,
+                fontSize: 15,
+                color: primaryColor,
+              ),
               cellStyle: pw.TextStyle(
                 font: regular,
                 fontSize: 14,
@@ -1814,8 +2325,7 @@ class PdfExportService {
                   ),
                 );
               },
-              headerDecoration:
-                  const pw.BoxDecoration(color: PdfColor.fromInt(0xFFE5E7EB)),
+              headerDecoration: pw.BoxDecoration(color: softBlueColor),
               cellPadding:
                   const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             ),
@@ -2064,14 +2574,18 @@ class PdfExportService {
       final isOwnerPayout = _pdfInvoiceIsOwnerPayout(invoice);
       final isOwnerAdjustment = _pdfInvoiceIsOwnerAdjustment(invoice);
       final isOwnerVoucher = isOwnerPayout || isOwnerAdjustment;
-      final isContractReceipt =
-          !isManualReceipt && (contract != null || invoice.contractId.isNotEmpty);
+      final isContractReceipt = !isManualReceipt &&
+          (contract != null || invoice.contractId.isNotEmpty);
       final useReceiptLayout = isContractReceipt || isManualReceipt;
 
       final officeName = _txt(office['name'], fallback: '-');
       final officeAddress = _txt(office['address'], fallback: '-');
       final officeMobile = _txt(office['mobile'], fallback: '-');
+      final officeMobileExtra = _txt(office['mobile_extra'], fallback: '');
       final officePhone = _txt(office['phone'], fallback: '-');
+      final officeContactLine = officeMobileExtra.trim().isEmpty
+          ? 'الجوال: $officeMobile   |   الهاتف: $officePhone'
+          : 'الجوال: $officeMobile   |   الجوال الإضافي: $officeMobileExtra   |   الهاتف: $officePhone';
       final officeCommercial = _txt(office['commercial'], fallback: '-');
       final officeLogoBytes = await _decodeOfficeLogoBytes(office);
       final officeTax = _txt(
@@ -2123,7 +2637,8 @@ class PdfExportService {
       final noteText = _pdfInvoiceDisplayNote(invoice.note);
       final displayStatementText =
           _txt(statementText, fallback: noteText).trim();
-      final receiptStatementText = _txt(displayStatementText, fallback: '').trim();
+      final receiptStatementText =
+          _txt(displayStatementText, fallback: '').trim();
       final partyValue = isManualReceipt
           ? _txt(manualParty ?? tenant?.fullName, fallback: '-')
           : _txt(tenant?.fullName, fallback: '-');
@@ -2154,7 +2669,7 @@ class PdfExportService {
       final tableHeaders = isManualReceipt
           ? ['المبلغ', _pdfInvoiceTableDateHeader(invoice), 'البيان']
           : const ['المبلغ', 'الفترة/التاريخ', 'البيان'];
-      final dateColumnIndex = 1;
+      const dateColumnIndex = 1;
       final manualTableColumnWidths = isManualReceipt
           ? const <int, pw.TableColumnWidth>{
               0: pw.FlexColumnWidth(2.2),
@@ -2190,11 +2705,11 @@ class PdfExportService {
                   ],
                 ]
               : <List<String>>[
-              if (rentValue > 0)
-                ['${_fmtMoney(rentValue)} ريال', rentPeriod, 'إيجار'],
-              if (waterValue > 0)
-                ['${_fmtMoney(waterValue)} ريال', rentPeriod, 'مياه'],
-            ];
+                  if (rentValue > 0)
+                    ['${_fmtMoney(rentValue)} ريال', rentPeriod, 'إيجار'],
+                  if (waterValue > 0)
+                    ['${_fmtMoney(waterValue)} ريال', rentPeriod, 'مياه'],
+                ];
       if (lineItems.isEmpty) {
         lineItems.add([
           '${_fmtMoney(totalValue)} ريال',
@@ -2276,12 +2791,6 @@ class PdfExportService {
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        pw.Align(
-                          alignment: pw.Alignment.center,
-                          child: pw.Text('بيانات المكتب',
-                              style: pw.TextStyle(font: bold, fontSize: 16)),
-                        ),
-                        pw.SizedBox(height: 6),
                         pw.Row(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
@@ -2295,8 +2804,7 @@ class PdfExportService {
                                   pw.Text('العنوان: $officeAddress',
                                       style: pw.TextStyle(
                                           font: regular, fontSize: 13)),
-                                  pw.Text(
-                                      'الجوال: $officeMobile   |   الهاتف: $officePhone',
+                                  pw.Text(officeContactLine,
                                       style: pw.TextStyle(
                                           font: regular, fontSize: 13)),
                                   pw.Text('رقم السجل: $officeCommercial',
@@ -2353,12 +2861,6 @@ class PdfExportService {
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        pw.Align(
-                          alignment: pw.Alignment.center,
-                          child: pw.Text('بيانات السند',
-                              style: pw.TextStyle(font: bold, fontSize: 16)),
-                        ),
-                        pw.SizedBox(height: 6),
                         _kv('رقم السند', _txt(invoice.serialNo ?? invoice.id),
                             pw.TextStyle(font: regular, fontSize: 13)),
                         _kv('نوع السند', typeLabel,
@@ -2372,7 +2874,7 @@ class PdfExportService {
                         else
                           _kv(
                             'استلمنا من',
-                            'السيد/ ${_txt(tenant?.fullName ?? '-')} (المستأجر)',
+                            '${_txt(tenant?.fullName ?? '-')} (المستأجر)',
                             pw.TextStyle(font: regular, fontSize: 13),
                           ),
                         if (showPaymentMethod)
@@ -2497,7 +2999,8 @@ class PdfExportService {
                   ),
                   _kv('العقار', propertyValue, bodyStyle),
                   if (!isManualReceipt)
-                    _kv('رقم عقد الإيجار',
+                    _kv(
+                        'رقم عقد الإيجار',
                         _txt(contract?.serialNo ?? invoice.contractId),
                         bodyStyle),
                   _kv('تاريخ الإصدار', _fmtDate(invoice.issueDate), bodyStyle),
@@ -2507,7 +3010,9 @@ class PdfExportService {
                     bodyStyle,
                   ),
                   if (isDailyContract && dailyRate != null)
-                    _kv('قيمة اليوم', '${_fmtMoney(dailyRate)} ${invoice.currency}',
+                    _kv(
+                        'قيمة اليوم',
+                        '${_fmtMoney(dailyRate)} ${invoice.currency}',
                         bodyStyle),
                   _kv(
                       'قيمة الدفعة (الإيجار)',
@@ -2564,7 +3069,11 @@ class PdfExportService {
       final officeName = _txt(office['name'], fallback: '-');
       final officeAddress = _txt(office['address'], fallback: '-');
       final officeMobile = _txt(office['mobile'], fallback: '-');
+      final officeMobileExtra = _txt(office['mobile_extra'], fallback: '');
       final officePhone = _txt(office['phone'], fallback: '-');
+      final officeContactLine = officeMobileExtra.trim().isEmpty
+          ? 'الجوال: $officeMobile   |   الهاتف: $officePhone'
+          : 'الجوال: $officeMobile   |   الجوال الإضافي: $officeMobileExtra   |   الهاتف: $officePhone';
       final officeCommercial = _txt(office['commercial'], fallback: '-');
       final officeLogoBytes = await _decodeOfficeLogoBytes(office);
       final officeTax = _txt(
@@ -2583,7 +3092,8 @@ class PdfExportService {
       final isWaterCompanyOfficeExpenseVoucher =
           _pdfIsWaterCompanyOfficeExpenseVoucher(details, relatedInvoices);
       final isSharedServiceVoucher = sharedServiceVoucherLabel.isNotEmpty;
-      final cycleDateValue = _fmtDate(_pdfMaintenanceEffectiveCycleDate(details));
+      final cycleDateValue =
+          _fmtDate(_pdfMaintenanceEffectiveCycleDate(details));
       final tableDateHeader =
           (isSharedServiceVoucher || isWaterCompanyOfficeExpenseVoucher)
               ? 'تاريخ الدورة'
@@ -2616,11 +3126,14 @@ class PdfExportService {
           ? relatedInvoices
               .map((i) => <String>[
                     '${_fmtMoney(i.amount.abs())} ريال',
-                    (isSharedServiceVoucher || isWaterCompanyOfficeExpenseVoucher)
+                    (isSharedServiceVoucher ||
+                            isWaterCompanyOfficeExpenseVoucher)
                         ? cycleDateValue
                         : _fmtDate(i.dueDate),
                     _pdfMaintenanceCompactStatementText(
-                      (i.note ?? '').trim().isEmpty ? details.description : i.note,
+                      (i.note ?? '').trim().isEmpty
+                          ? details.description
+                          : i.note,
                       propertyRef: propertyRef,
                       fallback: details.description,
                       includeTitle: !isWaterCompanyOfficeExpenseVoucher,
@@ -2713,12 +3226,6 @@ class PdfExportService {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Align(
-                    alignment: pw.Alignment.center,
-                    child: pw.Text('بيانات المكتب',
-                        style: pw.TextStyle(font: bold, fontSize: 16)),
-                  ),
-                  pw.SizedBox(height: 6),
                   pw.Row(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
@@ -2731,8 +3238,7 @@ class PdfExportService {
                             pw.Text('العنوان: $officeAddress',
                                 style:
                                     pw.TextStyle(font: regular, fontSize: 13)),
-                            pw.Text(
-                                'الجوال: $officeMobile   |   الهاتف: $officePhone',
+                            pw.Text(officeContactLine,
                                 style:
                                     pw.TextStyle(font: regular, fontSize: 13)),
                             pw.Text('رقم السجل: $officeCommercial',
@@ -2787,12 +3293,6 @@ class PdfExportService {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Align(
-                    alignment: pw.Alignment.center,
-                    child: pw.Text('بيانات السند',
-                        style: pw.TextStyle(font: bold, fontSize: 16)),
-                  ),
-                  pw.SizedBox(height: 6),
                   _kv('رقم السند', receiptNo, receiptInfoStyle),
                   _kv(
                     'نوع السند',
@@ -2975,7 +3475,11 @@ class PdfExportService {
       final officeName = _txt(office['name'], fallback: '-');
       final officeAddress = _txt(office['address'], fallback: '-');
       final officeMobile = _txt(office['mobile'], fallback: '-');
+      final officeMobileExtra = _txt(office['mobile_extra'], fallback: '');
       final officePhone = _txt(office['phone'], fallback: '-');
+      final officeContactLine = officeMobileExtra.trim().isEmpty
+          ? 'الجوال: $officeMobile   |   الهاتف: $officePhone'
+          : 'الجوال: $officeMobile   |   الجوال الإضافي: $officeMobileExtra   |   الهاتف: $officePhone';
       final officeCommercial = _txt(office['commercial'], fallback: '-');
       final officeLogoBytes = await _decodeOfficeLogoBytes(office);
       final officeTax = _txt(
@@ -3082,12 +3586,6 @@ class PdfExportService {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Align(
-                    alignment: pw.Alignment.center,
-                    child: pw.Text('بيانات المكتب',
-                        style: pw.TextStyle(font: bold, fontSize: 16)),
-                  ),
-                  pw.SizedBox(height: 6),
                   pw.Row(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
@@ -3100,8 +3598,7 @@ class PdfExportService {
                             pw.Text('العنوان: $officeAddress',
                                 style:
                                     pw.TextStyle(font: regular, fontSize: 13)),
-                            pw.Text(
-                                'الجوال: $officeMobile   |   الهاتف: $officePhone',
+                            pw.Text(officeContactLine,
                                 style:
                                     pw.TextStyle(font: regular, fontSize: 13)),
                             pw.Text('رقم السجل: $officeCommercial',
@@ -3587,6 +4084,3 @@ class PdfExportService {
     }
   }
 }
-
-
-

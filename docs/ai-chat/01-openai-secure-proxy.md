@@ -1,4 +1,4 @@
-# إعداد OpenAI الآمن في دارفو
+# إعداد OpenAI الآمن في Ejarz Pro
 
 ## القاعدة الأساسية
 
@@ -18,7 +18,7 @@ Flutter
 ## متغيرات التشغيل
 
 ```bash
---dart-define=DARFO_AI_PROXY_URL=https://YOUR_BACKEND/ai/chat
+--dart-define=EJARZ_PRO_AI_PROXY_URL=https://YOUR_BACKEND/ai/chat
 --dart-define=OPENAI_MODEL_FAST=gpt-5-mini
 --dart-define=OPENAI_MODEL_DEFAULT=gpt-5-mini
 --dart-define=OPENAI_MODEL_REASONING=gpt-5

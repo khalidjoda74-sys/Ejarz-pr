@@ -1,5 +1,5 @@
 // lib/data/repos/invoices_repo.dart
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_user_collections.dart';
@@ -71,7 +71,8 @@ class InvoicesRepo {
       'paidAmount': inv.paidAmount, // 👈 مهم لظهور الحالة "مدفوع"
       'paidAt': paid ? inv.issueDate.millisecondsSinceEpoch : null,
       'paymentDate': paid ? inv.issueDate.millisecondsSinceEpoch : null,
-      'remainingAmount': (inv.amount.abs() - inv.paidAmount).clamp(0.0, double.infinity),
+      'remainingAmount':
+          (inv.amount.abs() - inv.paidAmount).clamp(0.0, double.infinity),
       'currency': inv.currency,
       'paymentMethod': inv.paymentMethod,
       'attachmentPaths': inv.attachmentPaths,
@@ -99,7 +100,8 @@ class InvoicesRepo {
       issueDate: _toDate(m['issueDate']) ?? KsaTime.now(),
       dueDate: _toDate(m['dueDate']) ?? KsaTime.now(),
       amount: amount,
-      paidAmount: _resolvedPaidAmount(m, amount), // يقرأ paidAmount أو يستنتجه من paidAt للبيانات القديمة
+      paidAmount: _resolvedPaidAmount(
+          m, amount), // يقرأ paidAmount أو يستنتجه من paidAt للبيانات القديمة
       currency: (m['currency'] as String?) ?? 'SAR',
       paymentMethod: (m['paymentMethod'] as String?) ?? 'نقدًا',
       attachmentPaths:
@@ -137,9 +139,9 @@ class InvoicesRepo {
       isCreate: !before.exists,
     );
     await ref.set(
-          payload,
-          SetOptions(merge: true),
-        );
+      payload,
+      SetOptions(merge: true),
+    );
     unawaited(ActivityLogService.instance.logEntityAction(
       actionType: before.exists ? 'update' : 'create',
       entityType: 'invoice',
@@ -238,8 +240,10 @@ class InvoicesRepo {
       'amount': inv.amount,
       'paidAmount': inv.paidAmount,
       'paidAt': _isPaidInvoice(inv) ? inv.issueDate.toIso8601String() : null,
-      'paymentDate': _isPaidInvoice(inv) ? inv.issueDate.toIso8601String() : null,
-      'remainingAmount': (inv.amount.abs() - inv.paidAmount).clamp(0.0, double.infinity),
+      'paymentDate':
+          _isPaidInvoice(inv) ? inv.issueDate.toIso8601String() : null,
+      'remainingAmount':
+          (inv.amount.abs() - inv.paidAmount).clamp(0.0, double.infinity),
       'currency': inv.currency,
       'paymentMethod': inv.paymentMethod,
       'attachmentPaths': inv.attachmentPaths,
@@ -263,11 +267,16 @@ class InvoicesRepo {
       'dueDate': _toDate(m['dueDate'])?.toIso8601String(),
       'amount': _toD(m['amount']),
       'paidAmount': _resolvedPaidAmount(m, _toD(m['amount'])),
-      'paidAt': _toDate(m['paidAt'])?.toIso8601String() ?? _toDate(m['paymentDate'])?.toIso8601String(),
-      'remainingAmount': (_toD(m['amount']).abs() - _resolvedPaidAmount(m, _toD(m['amount']))).clamp(0.0, double.infinity),
+      'paidAt': _toDate(m['paidAt'])?.toIso8601String() ??
+          _toDate(m['paymentDate'])?.toIso8601String(),
+      'remainingAmount':
+          (_toD(m['amount']).abs() - _resolvedPaidAmount(m, _toD(m['amount'])))
+              .clamp(0.0, double.infinity),
       'currency': (m['currency'] ?? '').toString(),
       'paymentMethod': (m['paymentMethod'] ?? '').toString(),
-      'attachmentPaths': (m['attachmentPaths'] as List?)?.whereType<String>().toList() ?? const <String>[],
+      'attachmentPaths':
+          (m['attachmentPaths'] as List?)?.whereType<String>().toList() ??
+              const <String>[],
       'maintenanceRequestId': (m['maintenanceRequestId'] ?? '').toString(),
       'waterAmount': _toD(m['waterAmount']),
       'isArchived': m['isArchived'] == true,
@@ -276,6 +285,3 @@ class InvoicesRepo {
     };
   }
 }
-
-
-

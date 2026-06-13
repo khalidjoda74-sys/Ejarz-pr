@@ -44,7 +44,11 @@ class AiChatPermissions {
       if (role == 'office' || role == 'office_owner') {
         resolvedRole = ChatUserRole.officeOwner;
       } else if (role == 'office_staff') {
-        resolvedRole = ChatUserRole.officeStaff;
+        final permission =
+            await OfficeClientGuard.currentOfficeStaffPermission();
+        resolvedRole = permission == 'full'
+            ? ChatUserRole.officeOwner
+            : ChatUserRole.officeStaff;
       }
     } catch (_) {}
 
@@ -74,8 +78,7 @@ class AiChatPermissions {
   }
 
   static bool canReadAllClients(ChatUserRole role) {
-    return role == ChatUserRole.officeOwner ||
-        role == ChatUserRole.officeStaff;
+    return role == ChatUserRole.officeOwner || role == ChatUserRole.officeStaff;
   }
 
   static bool isReadOnlyRole(ChatUserRole role) {

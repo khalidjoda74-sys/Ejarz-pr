@@ -1,7 +1,7 @@
-import 'package:darvoo/ui/ai_chat/ai_chat_permissions.dart';
-import 'package:darvoo/ui/ai_chat/ai_chat_service.dart';
-import 'package:darvoo/ui/ai_chat/core/ai_permission_guard.dart';
-import 'package:darvoo/ui/ai_chat/core/ai_tool_registry.dart';
+import 'package:ejarz_pro/ui/ai_chat/ai_chat_permissions.dart';
+import 'package:ejarz_pro/ui/ai_chat/ai_chat_service.dart';
+import 'package:ejarz_pro/ui/ai_chat/core/ai_permission_guard.dart';
+import 'package:ejarz_pro/ui/ai_chat/core/ai_tool_registry.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

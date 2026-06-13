@@ -1,9 +1,10 @@
 // lib/ui/login_screen.dart
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io';
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -167,6 +168,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<bool> _hasUsableInternet() async {
+    if (kIsWeb) return true;
+
     try {
       final r = await InternetAddress.lookup('firestore.googleapis.com')
           .timeout(const Duration(seconds: 2));
@@ -212,6 +215,8 @@ class _LoginScreenState extends State<LoginScreen> {
         (m['officePermission'] ?? '').toString().toLowerCase();
     final permission = (m['permission'] ?? '').toString().toLowerCase();
     return role == 'office_staff' ||
+        role == 'office-user' ||
+        role == 'staff' ||
         accountType == 'office_staff' ||
         entityType == 'office_user' ||
         targetRole == 'office' ||
@@ -219,6 +224,70 @@ class _LoginScreenState extends State<LoginScreen> {
         officePermission == 'view' ||
         permission == 'full' ||
         permission == 'view';
+  }
+
+  String _officePermissionFromMap(Map<String, dynamic> m) {
+    final officePermission =
+        OfficeClientGuard.normalizeOfficePermission(m['officePermission']);
+    if (officePermission.isNotEmpty) return officePermission;
+    return OfficeClientGuard.normalizeOfficePermission(m['permission']);
+  }
+
+  Future<String> _resolveOfficeStaffPermission({
+    required User user,
+    required String officeUid,
+    required Map<String, dynamic> tokenClaims,
+    required Map<String, dynamic> userProfileData,
+  }) async {
+    final fromClaims = _officePermissionFromMap(tokenClaims);
+    if (fromClaims.isNotEmpty) return fromClaims;
+
+    final fromProfile = _officePermissionFromMap(userProfileData);
+    if (fromProfile.isNotEmpty) return fromProfile;
+
+    final ref = FirebaseFirestore.instance
+        .collection('offices')
+        .doc(officeUid)
+        .collection('clients');
+    final email = (user.email ?? '').trim().toLowerCase();
+
+    try {
+      final byUidDoc = await ref.doc(user.uid).get();
+      final permission = _officePermissionFromMap(
+          byUidDoc.data() ?? const <String, dynamic>{});
+      if (permission.isNotEmpty) return permission;
+    } catch (_) {}
+
+    if (email.isNotEmpty) {
+      try {
+        final byEmailDoc = await ref.doc(email).get();
+        final permission = _officePermissionFromMap(
+            byEmailDoc.data() ?? const <String, dynamic>{});
+        if (permission.isNotEmpty) return permission;
+      } catch (_) {}
+    }
+
+    try {
+      final byUid = await ref.where('uid', isEqualTo: user.uid).limit(1).get();
+      if (byUid.docs.isNotEmpty) {
+        final permission = _officePermissionFromMap(byUid.docs.first.data());
+        if (permission.isNotEmpty) return permission;
+      }
+    } catch (_) {}
+
+    if (email.isNotEmpty) {
+      try {
+        final byEmail =
+            await ref.where('email', isEqualTo: email).limit(1).get();
+        if (byEmail.docs.isNotEmpty) {
+          final permission =
+              _officePermissionFromMap(byEmail.docs.first.data());
+          if (permission.isNotEmpty) return permission;
+        }
+      } catch (_) {}
+    }
+
+    return 'view';
   }
 
   bool _isExplicitOfficeClientMap(Map<String, dynamic> m) {
@@ -305,9 +374,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     final effectiveTitle = showCancel ? title : 'تنبيه';
     final isOfflineFirstLoginAlert = message.contains('أول مرة عبر الإنترنت') ||
-        message.contains('Ù…Ø±Ø© Ø¹Ø¨Ø± Ø§Ù„Ø¥Ù†ØªØ±Ù†Øª') ||
-        title.contains('بدون إنترنت') ||
-        title.contains('Ø¨Ø¯ÙˆÙ† Ø¥Ù†ØªØ±Ù†Øª');
+        title.contains('بدون إنترنت');
     final computedShowCancel = isOfflineFirstLoginAlert ? false : showCancel;
     final computedTitle = computedShowCancel ? effectiveTitle : 'تنبيه';
     await CustomConfirmDialog.show(
@@ -319,6 +386,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  // ignore: unused_element
   Future<void> _showDisabledLoginDialog() async {
     if (!mounted) return;
     await CustomConfirmDialog.show(
@@ -492,10 +560,9 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     }
     if (!blockedInUserDoc && !blockedInOfficeRecords) {
-      final confirmedUnblocked =
-          (userDocReadOk || officeCheckConfirmed) &&
-              !blockedInUserDoc &&
-              !blockedInOfficeRecords;
+      final confirmedUnblocked = (userDocReadOk || officeCheckConfirmed) &&
+          !blockedInUserDoc &&
+          !blockedInOfficeRecords;
       return _BlockedLoginDecision(
         shouldBlock: false,
         confirmedUnblocked: confirmedUnblocked,
@@ -539,7 +606,7 @@ class _LoginScreenState extends State<LoginScreen> {
           behavior: SnackBarBehavior.floating,
           content: Text(
             'تمت ترقية حسابك إلى أدمن.',
-            style: GoogleFonts.tajawal(fontWeight: FontWeight.w700),
+            style: GoogleFonts.cairo(fontWeight: FontWeight.w700),
           ),
         ),
       );
@@ -556,7 +623,7 @@ class _LoginScreenState extends State<LoginScreen> {
           behavior: SnackBarBehavior.floating,
           content: Text(
             'تعذر طلب الترقية: ${e.message ?? e.code}',
-            style: GoogleFonts.tajawal(fontWeight: FontWeight.w700),
+            style: GoogleFonts.cairo(fontWeight: FontWeight.w700),
           ),
         ),
       );
@@ -572,7 +639,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     if (!_formKey.currentState!.validate()) return;
 
-    final hasInternet = await ConnectivityService.instance.refresh();
+    final hasInternet = kIsWeb || await ConnectivityService.instance.refresh();
     if (!hasInternet) {
       await _showLoginAlert(
         title: 'يجب الاتصال بالإنترنت',
@@ -682,6 +749,7 @@ class _LoginScreenState extends State<LoginScreen> {
           title: 'انتهاء الاشتراك',
           message: msg,
           confirmLabel: 'حسنًا',
+          showCancel: false,
         );
 
         await FirebaseAuth.instance.signOut();
@@ -700,12 +768,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
       String rawRole = 'client';
       String role = 'client';
+      Map<String, dynamic> tokenClaims = const <String, dynamic>{};
       Map<String, dynamic> userProfileData = const <String, dynamic>{};
       try {
         final t = await user.getIdTokenResult(true);
         final claims = (t.claims ?? {}).map<String, dynamic>(
           (key, value) => MapEntry(key.toString(), value),
         );
+        tokenClaims = claims;
         final r = t.claims?['role']?.toString();
         if (r != null && r.isNotEmpty) {
           rawRole = r.toLowerCase();
@@ -738,7 +808,9 @@ class _LoginScreenState extends State<LoginScreen> {
       String? resolvedOfficeUid;
       final likelyOfficeStaff = rawRole == 'office' ||
           rawRole == 'office_owner' ||
-          rawRole == 'office_staff';
+          rawRole == 'office_staff' ||
+          rawRole == 'office-user' ||
+          rawRole == 'staff';
       if (likelyOfficeStaff) {
         resolvedOfficeUid = await _resolveParentOfficeUidForStaff()
             .timeout(const Duration(seconds: 4), onTimeout: () => null);
@@ -759,7 +831,10 @@ class _LoginScreenState extends State<LoginScreen> {
       _traceWorkspace(
         'login-classification uid=${user.uid} rawRole=$rawRole role=$role workspaceUid=$workspaceUid',
       );
-      if (rawRole == 'office_staff' && role != 'office') {
+      if ((rawRole == 'office_staff' ||
+              rawRole == 'office-user' ||
+              rawRole == 'staff') &&
+          role != 'office') {
         try {
           await FirebaseAuth.instance.signOut();
         } catch (_) {}
@@ -773,6 +848,23 @@ class _LoginScreenState extends State<LoginScreen> {
           confirmLabel: 'حسنًا',
         );
         return;
+      }
+      final isOfficeStaffAccount = (rawRole == 'office_staff' ||
+              rawRole == 'office-user' ||
+              rawRole == 'staff') &&
+          role == 'office';
+      final officeStaffPermission = isOfficeStaffAccount
+          ? await _resolveOfficeStaffPermission(
+              user: user,
+              officeUid: workspaceUid,
+              tokenClaims: tokenClaims,
+              userProfileData: userProfileData,
+            )
+          : '';
+      if (isOfficeStaffAccount) {
+        _traceWorkspace(
+          'office-staff-session officeUid=$workspaceUid permission=$officeStaffPermission',
+        );
       }
       final isOfficeClient = role == 'office'
           ? false
@@ -837,6 +929,13 @@ class _LoginScreenState extends State<LoginScreen> {
       await session.put('isOfficeClient', isOfficeClient);
       await session.put('clientNeedsInternet', isOfficeClient == true);
       await session.put('officeImpersonation', false);
+      if (isOfficeStaffAccount) {
+        await session.put('officeStaffPermission', officeStaffPermission);
+        await session.put('officeStaffOfficeUid', workspaceUid);
+      } else {
+        await session.delete('officeStaffPermission');
+        await session.delete('officeStaffOfficeUid');
+      }
       await session.put('workspaceOwnerUid', workspaceUid);
       await session.put('workspaceOwnerName', pickWorkspaceOwnerName());
 
@@ -852,9 +951,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (role == 'office') {
         _traceWorkspace('navigate /office workspaceUid=$workspaceUid');
+        // ignore: use_build_context_synchronously
         Navigator.of(context).pushReplacementNamed('/office');
       } else {
         _traceWorkspace('navigate /home workspaceUid=$workspaceUid');
+        // ignore: use_build_context_synchronously
         Navigator.of(context).pushReplacementNamed('/home');
       }
     } on FirebaseAuthException catch (e) {
@@ -1039,6 +1140,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // ignore: unused_element
   Future<bool> _isOfficeStaffUser() async {
     try {
       final u = FirebaseAuth.instance.currentUser;
@@ -1302,6 +1404,7 @@ class _LoginScreenState extends State<LoginScreen> {
     await SyncManager.instance.startAll();
   }
 
+  // ignore: unused_element
   Future<bool> _tryOfflineLogin(String email, String pass) async {
     await _showLoginAlert(
       title: 'يجب الاتصال بالإنترنت',
@@ -1316,10 +1419,10 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     return false;
 
+    // ignore: dead_code
     try {
       final normalizedEmail = OfficeClientGuard.normalizeEmail(email);
-      final localState =
-          await _localBlockedStateForInputEmail(normalizedEmail);
+      final localState = await _localBlockedStateForInputEmail(normalizedEmail);
       if (localState == OfficeLocalBlockState.confirmedBlocked) {
         _traceWorkspace(
           'offline-login blocked-before-credentials email=$normalizedEmail',
@@ -1421,7 +1524,7 @@ class _LoginScreenState extends State<LoginScreen> {
         SnackBar(
           behavior: SnackBarBehavior.floating,
           content: Text('تم إرسال رابط إعادة التعيين إلى بريدك.',
-              style: GoogleFonts.tajawal(fontWeight: FontWeight.w700)),
+              style: GoogleFonts.cairo(fontWeight: FontWeight.w700)),
         ),
       );
     } on FirebaseAuthException catch (e) {
@@ -1436,15 +1539,17 @@ class _LoginScreenState extends State<LoginScreen> {
       context: context,
       title: 'الدعم الفني',
       message:
-          'تواجه صعوبة في تسجيل الدخول؟\nيرجى التواصل مع فريق الدعم الفني عبر البريد التالي:\nsupport@darvoo.com',
+          'تواجه صعوبة في تسجيل الدخول؟\nيرجى التواصل مع فريق الدعم الفني عبر البريد التالي:\nInfo@ejarzpro.sa',
       confirmLabel: 'حسنًا',
       showCancel: false,
       confirmColor: const Color(0xFF0F766E),
     );
     return;
+    // ignore: dead_code
     const primary = Color(0xFF0F766E);
 
     showDialog(
+      // ignore: use_build_context_synchronously
       context: context,
       builder: (_) => Directionality(
         textDirection: TextDirection.rtl,
@@ -1460,7 +1565,7 @@ class _LoginScreenState extends State<LoginScreen> {
               SizedBox(width: 8.w),
               Text(
                 'الدعم الفني',
-                style: GoogleFonts.tajawal(fontWeight: FontWeight.w800),
+                style: GoogleFonts.cairo(fontWeight: FontWeight.w800),
               ),
             ],
           ),
@@ -1470,16 +1575,16 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               Text(
                 'تواجه صعوبة في تسجيل الدخول؟\nراسل فريق الدعم الفني:',
-                style: GoogleFonts.tajawal(
+                style: GoogleFonts.cairo(
                   fontSize: 14.sp,
                   height: 1.5,
-                  color: Colors.black.withOpacity(0.80),
+                  color: Colors.black.withValues(alpha: 0.80),
                 ),
               ),
               SizedBox(height: 8.h),
               SelectableText(
-                'support@darvoo.com',
-                style: GoogleFonts.tajawal(
+                'Info@ejarzpro.sa',
+                style: GoogleFonts.cairo(
                   fontSize: 15.sp,
                   fontWeight: FontWeight.w800,
                   color: primary,
@@ -1495,7 +1600,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     icon: const Icon(Icons.refresh_rounded),
                     label: Text(
                       'إرسال رابط إعادة تعيين كلمة المرور',
-                      style: GoogleFonts.tajawal(fontWeight: FontWeight.w800),
+                      style: GoogleFonts.cairo(fontWeight: FontWeight.w800),
                     ),
                   ),
                 ),
@@ -1507,7 +1612,7 @@ class _LoginScreenState extends State<LoginScreen> {
               onPressed: () => Navigator.of(context).pop(),
               child: Text(
                 'إغلاق',
-                style: GoogleFonts.tajawal(
+                style: GoogleFonts.cairo(
                   fontSize: 14.sp,
                   fontWeight: FontWeight.w700,
                 ),
@@ -1522,6 +1627,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     const primary = Color(0xFF0F766E);
+    // ignore: unused_local_variable
     const bgNeutral = Color(0xFFECEFF1);
 
     return Directionality(
@@ -1591,15 +1697,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                 vertical: 24.h,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.86),
+                                color: Colors.white.withValues(alpha: 0.86),
                                 borderRadius: BorderRadius.circular(28.r),
                                 border: Border.all(
-                                  color: Colors.white.withOpacity(0.95),
+                                  color: Colors.white.withValues(alpha: 0.95),
                                   width: 1.2,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.12),
+                                    color: Colors.black.withValues(alpha: 0.12),
                                     blurRadius: 18.r,
                                     offset: Offset(0, 10.h),
                                   )
@@ -1622,38 +1728,38 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildForm(BuildContext context, Color primary) {
-    final titleStyle = GoogleFonts.tajawal(
+    final titleStyle = GoogleFonts.cairo(
       fontSize: 26.sp,
       fontWeight: FontWeight.w700,
-      color: Colors.black.withOpacity(0.88),
+      color: Colors.black.withValues(alpha: 0.88),
       height: 1.25,
     );
 
-    final subtitleStyle = GoogleFonts.tajawal(
+    final subtitleStyle = GoogleFonts.cairo(
       fontSize: 14.sp,
       fontWeight: FontWeight.w500,
-      color: Colors.black.withOpacity(0.60),
+      color: Colors.black.withValues(alpha: 0.60),
     );
 
-    final labelStyle = GoogleFonts.tajawal(
+    final labelStyle = GoogleFonts.cairo(
       fontSize: 14.sp,
       fontWeight: FontWeight.w600,
-      color: Colors.black.withOpacity(0.78),
+      color: Colors.black.withValues(alpha: 0.78),
     );
 
-    final inputTextStyle = GoogleFonts.tajawal(
+    final inputTextStyle = GoogleFonts.cairo(
       fontSize: 15.sp,
       fontWeight: FontWeight.w600,
-      color: Colors.black.withOpacity(0.92),
+      color: Colors.black.withValues(alpha: 0.92),
     );
 
-    final hintStyle = GoogleFonts.tajawal(
+    final hintStyle = GoogleFonts.cairo(
       fontSize: 14.sp,
-      color: Colors.black.withOpacity(0.35),
+      color: Colors.black.withValues(alpha: 0.35),
       fontWeight: FontWeight.w500,
     );
 
-    final errorStyle = GoogleFonts.tajawal(
+    final errorStyle = GoogleFonts.cairo(
       fontSize: 13.sp,
       color: Colors.red.shade700,
       fontWeight: FontWeight.w700,
@@ -1661,7 +1767,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final border = OutlineInputBorder(
       borderRadius: BorderRadius.circular(16.r),
-      borderSide: BorderSide(color: Colors.black.withOpacity(0.12), width: 1),
+      borderSide:
+          BorderSide(color: Colors.black.withValues(alpha: 0.12), width: 1),
     );
 
     final focusedBorder = OutlineInputBorder(
@@ -1696,10 +1803,10 @@ class _LoginScreenState extends State<LoginScreen> {
               width: double.infinity,
               padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
               decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.08),
+                color: Colors.red.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(12.r),
-                border:
-                    Border.all(color: Colors.red.withOpacity(0.35), width: 1),
+                border: Border.all(
+                    color: Colors.red.withValues(alpha: 0.35), width: 1),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1792,17 +1899,17 @@ class _LoginScreenState extends State<LoginScreen> {
                 onChanged: (v) => setState(() => _rememberEmail = v ?? true),
               ),
               Text('تذكّر البريد',
-                  style: GoogleFonts.tajawal(fontWeight: FontWeight.w700)),
+                  style: GoogleFonts.cairo(fontWeight: FontWeight.w700)),
               const Spacer(),
               TextButton.icon(
                 onPressed: _showSupportDialog,
                 icon: const Icon(Icons.support_agent_rounded),
                 label: Text(
                   'نسيت كلمة المرور؟',
-                  style: GoogleFonts.tajawal(
+                  style: GoogleFonts.cairo(
                     fontSize: 13.5.sp,
                     fontWeight: FontWeight.w700,
-                    color: Colors.black.withOpacity(0.70),
+                    color: Colors.black.withValues(alpha: 0.70),
                     decoration: TextDecoration.underline,
                   ),
                 ),
@@ -1821,7 +1928,7 @@ class _LoginScreenState extends State<LoginScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF0F766E),
                 disabledBackgroundColor:
-                    const Color(0xFF0F766E).withOpacity(0.5),
+                    const Color(0xFF0F766E).withValues(alpha: 0.5),
                 elevation: 2,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16.r),
@@ -1838,7 +1945,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     )
                   : Text(
                       'تسجيل الدخول',
-                      style: GoogleFonts.tajawal(
+                      style: GoogleFonts.cairo(
                         fontSize: 16.sp,
                         fontWeight: FontWeight.w800,
                         color: Colors.white,
@@ -1850,10 +1957,10 @@ class _LoginScreenState extends State<LoginScreen> {
           Text(
             'تسجيل الدخول مخصص لإدارة عقاراتك وعقودك.',
             textAlign: TextAlign.center,
-            style: GoogleFonts.tajawal(
+            style: GoogleFonts.cairo(
               fontSize: 13.5.sp,
               fontWeight: FontWeight.w700,
-              color: Colors.black.withOpacity(0.60),
+              color: Colors.black.withValues(alpha: 0.60),
             ),
           ),
         ],
@@ -1900,8 +2007,8 @@ class RealEstateScatterPainter extends CustomPainter {
       final icon = icons[rnd.nextInt(icons.length)];
       final baseSize = (layer == 0) ? minDist * 0.95 : minDist * 0.78;
       final fontSize = baseSize * (0.85 + rnd.nextDouble() * 0.50);
-      final color = tint.withOpacity(
-        baseOpacityNear + rnd.nextDouble() * extraOpacityNear,
+      final color = tint.withValues(
+        alpha: baseOpacityNear + rnd.nextDouble() * extraOpacityNear,
       );
       final angle = (rnd.nextDouble() - 0.5) * (math.pi / 3);
 
@@ -1968,4 +2075,3 @@ class RealEstateScatterPainter extends CustomPainter {
         oldDelegate.extraOpacityNear != extraOpacityNear;
   }
 }
-

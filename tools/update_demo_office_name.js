@@ -1,11 +1,12 @@
-process.env.GOOGLE_CLOUD_PROJECT = 'darvoo';
-process.env.GCLOUD_PROJECT = 'darvoo';
-process.env.FIREBASE_CONFIG = JSON.stringify({ projectId: 'darvoo' });
+const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || 'ejarzpro';
+process.env.GOOGLE_CLOUD_PROJECT = firebaseProjectId;
+process.env.GCLOUD_PROJECT = firebaseProjectId;
+process.env.FIREBASE_CONFIG = JSON.stringify({ projectId: firebaseProjectId });
 
 const admin = require('C:\\Users\\khali\\Desktop\\web\\admin_panel\\functions\\node_modules\\firebase-admin');
 const sa = require('C:\\Users\\khali\\Desktop\\web\\admin_panel\\functions\\serviceAccountKey.json');
 
-const DEMO_OFFICE_NAME = 'مكتب درافيو للعقارات';
+const DEMO_OFFICE_NAME = 'Ù…ÙƒØªØ¨ Ø¯Ø±Ø§ÙÙŠÙˆ Ù„Ù„Ø¹Ù‚Ø§Ø±Ø§Øª';
 
 if (!admin.apps.length) {
   admin.initializeApp({

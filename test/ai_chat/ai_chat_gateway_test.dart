@@ -1,17 +1,17 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:darvoo/data/constants/boxes.dart';
-import 'package:darvoo/data/services/user_scope.dart';
-import 'package:darvoo/models/property.dart';
-import 'package:darvoo/ui/ai_chat/ai_chat_executor.dart';
-import 'package:darvoo/ui/ai_chat/ai_chat_permissions.dart';
-import 'package:darvoo/ui/ai_chat/ai_chat_service.dart';
-import 'package:darvoo/ui/ai_chat/core/ai_chat_gateway.dart';
-import 'package:darvoo/ui/ai_chat/core/ai_chat_types.dart';
-import 'package:darvoo/ui/ai_chat/core/ai_confirmation_service.dart';
-import 'package:darvoo/ui/ai_chat/core/ai_read_back_verifier.dart';
-import 'package:darvoo/ui/ai_chat/core/ai_tool_executor.dart';
+import 'package:ejarz_pro/data/constants/boxes.dart';
+import 'package:ejarz_pro/data/services/user_scope.dart';
+import 'package:ejarz_pro/models/property.dart';
+import 'package:ejarz_pro/ui/ai_chat/ai_chat_executor.dart';
+import 'package:ejarz_pro/ui/ai_chat/ai_chat_permissions.dart';
+import 'package:ejarz_pro/ui/ai_chat/ai_chat_service.dart';
+import 'package:ejarz_pro/ui/ai_chat/core/ai_chat_gateway.dart';
+import 'package:ejarz_pro/ui/ai_chat/core/ai_chat_types.dart';
+import 'package:ejarz_pro/ui/ai_chat/core/ai_confirmation_service.dart';
+import 'package:ejarz_pro/ui/ai_chat/core/ai_read_back_verifier.dart';
+import 'package:ejarz_pro/ui/ai_chat/core/ai_tool_executor.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 
@@ -35,7 +35,8 @@ class _FakeLegacyExecutor extends AiChatExecutor {
         type: PropertyType.apartment,
         address: (args['address'] ?? '').toString(),
       );
-      await Hive.box<Property>(boxName(kPropertiesBox)).put(property.id, property);
+      await Hive.box<Property>(boxName(kPropertiesBox))
+          .put(property.id, property);
       return jsonEncode(<String, dynamic>{
         'success': true,
         'message': 'Property created',
@@ -75,7 +76,7 @@ void main() {
   late _FakeLegacyExecutor legacyExecutor;
 
   setUpAll(() async {
-    tempDir = await initAiTestHive('darvoo_ai_gateway_test_');
+    tempDir = await initAiTestHive('ejarz_pro_ai_gateway_test_');
     await openAiCoreBoxes();
     await openDomainBoxes();
   });
@@ -91,7 +92,7 @@ void main() {
     await closeAiTestHive(tempDir);
   });
 
-  AiChatGateway _buildGateway(
+  AiChatGateway buildGateway(
     ChatUserRole role, {
     AiReadBackVerifier? verifier,
   }) {
@@ -114,7 +115,7 @@ void main() {
   }
 
   test('creates confirmation preview for write tool', () async {
-    final gateway = _buildGateway(ChatUserRole.owner);
+    final gateway = buildGateway(ChatUserRole.owner);
     final response = await gateway.handleToolCalls(
       <Map<String, dynamic>>[
         <String, dynamic>{
@@ -139,7 +140,7 @@ void main() {
   });
 
   test('denies write tool when role lacks permission', () async {
-    final gateway = _buildGateway(ChatUserRole.officeStaff);
+    final gateway = buildGateway(ChatUserRole.officeStaff);
     final response = await gateway.handleToolCalls(
       <Map<String, dynamic>>[
         <String, dynamic>{
@@ -161,8 +162,9 @@ void main() {
     expect(response.type, AiAssistantResponseType.permissionDenied);
   });
 
-  test('reuses executed pending action by idempotency key on second confirmation', () async {
-    final gateway = _buildGateway(ChatUserRole.owner);
+  test('reuses executed action by idempotency key on duplicate request',
+      () async {
+    final gateway = buildGateway(ChatUserRole.owner);
 
     Future<AiGatewayResponse> createPending() {
       return gateway.handleToolCalls(
@@ -194,19 +196,15 @@ void main() {
     expect(firstConfirmed.type, AiAssistantResponseType.toolResult);
     expect(legacyExecutor.addPropertyCalls, 1);
 
-    final secondPending = await createPending();
-    final secondConfirmed = await gateway.confirmPendingAction(
-      secondPending.pendingActionId!,
-      confirmed: true,
-    );
+    final duplicateResponse = await createPending();
 
-    expect(secondConfirmed.type, AiAssistantResponseType.toolResult);
-    expect(secondConfirmed.payload['idempotent_reuse'], isTrue);
+    expect(duplicateResponse.type, AiAssistantResponseType.toolResult);
+    expect(duplicateResponse.payload['idempotent_reuse'], isTrue);
     expect(legacyExecutor.addPropertyCalls, 1);
   });
 
   test('cancels pending action when user declines confirmation', () async {
-    final gateway = _buildGateway(ChatUserRole.owner);
+    final gateway = buildGateway(ChatUserRole.owner);
     final pending = await gateway.handleToolCalls(
       <Map<String, dynamic>>[
         <String, dynamic>{
@@ -237,8 +235,9 @@ void main() {
     expect(stored!.status, 'cancelled');
   });
 
-  test('returns verification failed when read-back verification does not pass', () async {
-    final gateway = _buildGateway(
+  test('returns verification failed when read-back verification does not pass',
+      () async {
+    final gateway = buildGateway(
       ChatUserRole.owner,
       verifier: const _FailingVerifier(),
     );
@@ -272,8 +271,9 @@ void main() {
     expect(stored!.status, 'failed');
   });
 
-  test('blocks duplicate confirmation while the request is already claimed', () async {
-    final gateway = _buildGateway(ChatUserRole.owner);
+  test('blocks duplicate confirmation while the request is already claimed',
+      () async {
+    final gateway = buildGateway(ChatUserRole.owner);
     final pending = await gateway.handleToolCalls(
       <Map<String, dynamic>>[
         <String, dynamic>{

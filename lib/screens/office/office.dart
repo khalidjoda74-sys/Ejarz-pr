@@ -12,13 +12,14 @@
 // - ï¿½o. Ø´Ø§Ø´Ø© Ø§ï¿½"تعد�S�" ØªÙØ¶ï¿½'�" تعد�S�"ات�f ا�"�.ح�"�Sة ا�"�.ع�"�'ï¿½,Ø© ï¿½^ï¿½"ا تع�Sد ا�"ï¿½,ï¿½Sï¿½. Ø§ï¿½"�,د�S�.ة.
 //
 // ignore_for_file: use_build_context_synchronously
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -31,22 +32,22 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
-import 'package:darvoo/data/services/offline_sync_service.dart';
-import 'package:darvoo/data/services/user_scope.dart' as scope;
-import 'package:darvoo/widgets/custom_confirm_dialog.dart';
+import 'package:ejarz_pro/data/services/offline_sync_service.dart';
+import 'package:ejarz_pro/data/services/user_scope.dart' as scope;
+import 'package:ejarz_pro/widgets/custom_confirm_dialog.dart';
 
 import 'widgets/office_side_drawer.dart';
-import 'package:darvoo/data/services/subscription_alerts.dart';
-import 'package:darvoo/data/services/hive_service.dart';
-import 'package:darvoo/data/services/subscription_expiry.dart';
-import 'package:darvoo/data/services/office_client_guard.dart';
-import 'package:darvoo/data/services/package_limit_service.dart';
-import 'package:darvoo/data/sync/sync_bridge.dart';
-import 'package:darvoo/data/services/firestore_user_collections.dart';
-import 'package:darvoo/data/repos/tenants_repo.dart';
-import 'package:darvoo/ui/widgets/entity_audit_info_button.dart';
+import 'package:ejarz_pro/data/services/subscription_alerts.dart';
+import 'package:ejarz_pro/data/services/hive_service.dart';
+import 'package:ejarz_pro/data/services/subscription_expiry.dart';
+import 'package:ejarz_pro/data/services/office_client_guard.dart';
+import 'package:ejarz_pro/data/services/package_limit_service.dart';
+import 'package:ejarz_pro/data/sync/sync_bridge.dart';
+import 'package:ejarz_pro/data/services/firestore_user_collections.dart';
+import 'package:ejarz_pro/data/repos/tenants_repo.dart';
+import 'package:ejarz_pro/ui/widgets/entity_audit_info_button.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:darvoo/ui/ai_chat/ai_chat_icon.dart';
+import 'package:ejarz_pro/ui/ai_chat/ai_chat_icon.dart';
 
 /// ======================== OfficeSession ========================
 class OfficeSession {
@@ -113,6 +114,7 @@ class OfficeSession {
 
     if (authUid.isNotEmpty && targetUid != authUid) {
       var claimOfficeId = '';
+      var docOfficeId = '';
       var role = '';
       try {
         final token = await user?.getIdTokenResult();
@@ -121,9 +123,28 @@ class OfficeSession {
             (claims['officeId'] ?? claims['office_id'] ?? '').toString().trim();
         role = (claims['role'] ?? '').toString().toLowerCase().trim();
       } catch (_) {}
-      final isOfficeStaff =
-          role == 'office_staff' || role == 'office-user' || role == 'staff';
-      final allowScoped = isOfficeStaff && claimOfficeId == targetUid;
+      try {
+        final data = (await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(authUid)
+                    .get())
+                .data() ??
+            const <String, dynamic>{};
+        docOfficeId =
+            (data['officeId'] ?? data['office_id'] ?? '').toString().trim();
+      } catch (_) {}
+      final sessionOfficeId =
+          await OfficeClientGuard.currentOfficeStaffOfficeUid();
+      final sessionIsOfficeStaff =
+          await OfficeClientGuard.isOfficeStaffSession();
+      final isOfficeStaff = role == 'office_staff' ||
+          role == 'office-user' ||
+          role == 'staff' ||
+          sessionIsOfficeStaff;
+      final allowScoped = isOfficeStaff &&
+          ((claimOfficeId.isNotEmpty && claimOfficeId == targetUid) ||
+              (docOfficeId.isNotEmpty && docOfficeId == targetUid) ||
+              (sessionOfficeId.isNotEmpty && sessionOfficeId == targetUid));
       if (!allowScoped) {
         targetUid = authUid;
       }
@@ -276,19 +297,18 @@ Future<Map<String, dynamic>> _safeReadDocData(
 }
 
 Future<bool> _hasInternetConnection() async {
-  bool online = false;
   try {
     final results = await Connectivity().checkConnectivity();
-    online = results.any((r) => r != ConnectivityResult.none);
-    if (online) {
-      final lookup = await InternetAddress.lookup('google.com')
-          .timeout(const Duration(seconds: 2));
-      online = lookup.isNotEmpty && lookup.first.rawAddress.isNotEmpty;
-    }
+    final online = results.any((r) => r != ConnectivityResult.none);
+    if (!online || kIsWeb) return online;
+
+    final lookup = await InternetAddress.lookup('google.com')
+        .timeout(const Duration(seconds: 2));
+    return lookup.isNotEmpty && lookup.first.rawAddress.isNotEmpty;
   } catch (_) {
-    online = false;
+    if (kIsWeb) return true;
+    return false;
   }
-  return online;
 }
 
 Future<void> _showInternetRequiredDialog(
@@ -312,7 +332,7 @@ Future<void> _showInternetRequiredDialog(
                 height: 54,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFFDC2626).withOpacity(0.2),
+                  color: const Color(0xFFDC2626).withValues(alpha: 0.2),
                   border: Border.all(color: const Color(0x66EF4444)),
                 ),
                 child: const Icon(
@@ -563,7 +583,7 @@ class _DarkCard extends StatelessWidget {
           border: Border.all(color: const Color(0x26FFFFFF)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.25),
+              color: Colors.black.withValues(alpha: 0.25),
               blurRadius: 18,
               offset: const Offset(0, 10),
             ),
@@ -632,10 +652,10 @@ class _IconCircleBtn extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         shape: BoxShape.circle,
-        border: Border.all(color: Colors.white.withOpacity(0.15)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.20),
+              color: Colors.black.withValues(alpha: 0.20),
               blurRadius: 10,
               offset: const Offset(0, 4)),
         ],
@@ -682,13 +702,13 @@ class _FullScreenLoader extends StatelessWidget {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.20),
+                  color: Colors.black.withValues(alpha: 0.20),
                   blurRadius: 18,
                   offset: const Offset(0, 6),
                 ),
               ],
               border: Border.all(
-                color: Colors.white.withOpacity(0.35),
+                color: Colors.white.withValues(alpha: 0.35),
                 width: 2,
               ),
             ),
@@ -969,7 +989,7 @@ class _OfficeNotificationsBellState extends State<OfficeNotificationsBell> {
             ? const Color(0xFFFEF2F2)
             : const Color(0xFFEFF6FF));
     final cardBorderColor = officeAlert != null
-        ? const Color(0xFFF59E0B).withOpacity(0.45)
+        ? const Color(0xFFF59E0B).withValues(alpha: 0.45)
         : (firstClientAlert!.isExpiredToday
             ? const Color(0xFFFECACA)
             : const Color(0xFFBFDBFE));
@@ -1020,18 +1040,18 @@ class _OfficeNotificationsBellState extends State<OfficeNotificationsBell> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(cardTitle,
-                                  style: GoogleFonts.tajawal(
+                                  style: GoogleFonts.cairo(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w800)),
                               const SizedBox(height: 6),
                               Text(cardBody,
-                                  style: GoogleFonts.tajawal(
+                                  style: GoogleFonts.cairo(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
                                       color: const Color(0xFF111827))),
                               const SizedBox(height: 8),
                               Text(cardDateLabel,
-                                  style: GoogleFonts.tajawal(
+                                  style: GoogleFonts.cairo(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w700,
                                       color: const Color(0xFF6B7280))),
@@ -1172,7 +1192,10 @@ class _OfficeHomePageState extends State<OfficeHomePage> {
     bool online = hasNetwork;
     bool weak = false;
 
-    if (hasNetwork) {
+    if (hasNetwork && kIsWeb) {
+      online = true;
+      weak = false;
+    } else if (hasNetwork) {
       // �?حا�^�" �?ع�.�" ط�"ب بس�Sط �"�"تأ�fد �.�? أ�? ا�"إ�?تر�?ت فع�"ا�< شغ�'Ø§ï¿½"
       try {
         final lookup = await InternetAddress.lookup('google.com')
@@ -1224,6 +1247,7 @@ class _OfficeHomePageState extends State<OfficeHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: _onWillPop, // ï¿½Y'^ �?�?ا ربط�?ا زر ا�"رج�^ع
       child: Directionality(
@@ -1273,12 +1297,13 @@ class _OfficeHomePageState extends State<OfficeHomePage> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildOfflineBlocker(BuildContext context) {
     return Positioned.fill(
       child: IgnorePointer(
         ignoring: false, // ï¿½?ï¿½.ï¿½?Ø¹ Ø£ï¿½S ï¿½"�.س تحت ا�"Ø·Ø¨ï¿½,Ø©
         child: Container(
-          color: Colors.black.withOpacity(0.70),
+          color: Colors.black.withValues(alpha: 0.70),
           alignment: Alignment.center,
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1408,8 +1433,10 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
   String? _requestedScopeUid;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _clientsStreamCache;
 
+  // ignore: unused_field
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  // ignore: unused_element
   User? get _me => FirebaseAuth.instance.currentUser;
   bool _impersonating =
       false; // Ø§ï¿½"�"ï¿½^Ø¯Ø± ï¿½SØ¸ï¿½?Ø± Ùï¿½,Ø· Ø¹ï¿½?Ø¯ Ø§ï¿½"ا�?تحا�"
@@ -1418,12 +1445,15 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
   static const _orderBoxLogical = '_officeClientsOrder';
   Map<String, int> _orderMap = {};
   int _orderLast = 0;
+  // ignore: unused_field
   bool _orderLoaded = false;
 
   // ï¿½o. Ø®Ø±ï¿½SØ·Ø© ï¿½"ح�"ï¿½' UID ا�"سحاب�S �"ع�.�"اء �.ح�"�S�S�? عبر ا�"بر�Sد (�.حج�^زة �"�"ت�^س�'Ø¹ ï¿½"اح�,�<ا)
+  // ignore: unused_field
   final Map<String, String> _resolvedUidByEmail = {};
 
   // �?خز�? آخر �.ج�.�^عة Pending �"ï¿½.Ø¹Ø±ÙØ© Ø§ï¿½"جد�Sد �.�?�?ا (�.حج�^زة �"ï¿½"ت�^س�'ع �"Ø§Ø­ï¿½,ï¿½<Ø§)
+  // ignore: unused_field
   final Set<String> _lastPendingEmails = {};
 
   // ==== ï¿½.Ø±Ø§ï¿½,Ø¨Ø© Ø§ï¿½"اتصا�" (Ø§Ø®Øªï¿½SØ§Ø±ï¿½S ï¿½"�"Ø¨Ùï¿½?ï¿½? Ø§ï¿½"داخ�"ï¿½SØ©) ====
@@ -1555,6 +1585,8 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
 
     var claimOfficeId = '';
     var docOfficeId = '';
+    final sessionOfficeId =
+        await OfficeClientGuard.currentOfficeStaffOfficeUid();
     var role = '';
     try {
       final token = await user?.getIdTokenResult();
@@ -1571,13 +1603,17 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
       docOfficeId = (um['officeId'] ?? um['office_id'] ?? '').toString().trim();
     } catch (_) {}
 
-    final isOfficeStaff =
-        role == 'office_staff' || role == 'office-user' || role == 'staff';
+    final sessionIsOfficeStaff = await OfficeClientGuard.isOfficeStaffSession();
+    final isOfficeStaff = role == 'office_staff' ||
+        role == 'office-user' ||
+        role == 'staff' ||
+        sessionIsOfficeStaff;
     final allowScoped = candidateUid.isNotEmpty &&
         candidateUid != authUid &&
         isOfficeStaff &&
         ((claimOfficeId.isNotEmpty && claimOfficeId == candidateUid) ||
-            (docOfficeId.isNotEmpty && docOfficeId == candidateUid));
+            (docOfficeId.isNotEmpty && docOfficeId == candidateUid) ||
+            (sessionOfficeId.isNotEmpty && sessionOfficeId == candidateUid));
 
     if (allowScoped) {
       _officeUidAtStart = candidateUid;
@@ -1724,9 +1760,9 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
           return;
         }
 
-        final msg = 'انتهى اشتراك المكتب (وفق آخر مزامنة مباشرة).';
+        const msg = 'انتهى اشتراك المكتب (وفق آخر مزامنة مباشرة).';
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(msg)));
+            .showSnackBar(const SnackBar(content: Text(msg)));
 
         // ï¿½Y"� تسج�S�" Ø®Ø±ï¿½^Ø¬ ï¿½fØ§ï¿½.ï¿½" �.�? حساب ا�"ï¿½.ï¿½fØªØ¨
         try {
@@ -1868,6 +1904,8 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
 
   // ===== أحداث �^اج�?ة =====
   Future<void> _onAdd() async {
+    if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
+
     final online = await _hasInternetConnection();
     if (!online) {
       await _showInternetRequiredDialog(
@@ -1914,6 +1952,8 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
     required String clientUidOrLocal,
     required String displayName,
   }) async {
+    if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
+
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -1952,6 +1992,7 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
     }
   }
 
+  // ignore: unused_element
   Future<void> _onDelete(String clientUid, String clientName) async {
     // Ø§Ø­ØªÙÙØ¸ Ø¨ï¿½?Ø§ ï¿½"�"Ø§Ø³ØªØ®Ø¯Ø§ï¿½. Ø§ï¿½"داخ�"ï¿½S Ø¥ï¿½? Ø§Ø­ØªØ¬Øª (ï¿½?Ø³ØªØ¹ï¿½.ï¿½" _confirmDelete ا�"Ø¢ï¿½?)
     await _confirmDelete(
@@ -1969,6 +2010,8 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
     String? phone,
     String? notes,
   }) async {
+    if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
+
     await showDialog(
       context: context,
       barrierColor: Colors.black54,
@@ -1999,17 +2042,20 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
   }
 
   // �o. زر ا�"Øµï¿½"اح�Sات �Sفتح دائ�.�<ا حت�? بد�^�? �?ت (�"Ø§ Ø´Ø±ï¿½^Ø·)
-  void _handleAccessPressed({
+  Future<void> _handleAccessPressed({
     required bool isLocalItem,
     required String email,
     required String clientUidOrLocal,
     required bool initialBlocked,
-  }) {
+  }) async {
+    if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
+
     _openAccess(clientUidOrLocal, email, initialBlocked);
   }
 
   // Ø§ï¿½"جرس ا�"Ø­ï¿½,ï¿½Sï¿½,ï¿½S ï¿½"�"Ø¹ï¿½.ï¿½"اء ا�"Ø³Ø­Ø§Ø¨ï¿½Sï¿½Sï¿½?
   // Ø§ï¿½"جرس ا�"Ø­ï¿½,ï¿½Sï¿½,ï¿½S ï¿½"�"Ø¹ï¿½.ï¿½"اء ا�"Ø³Ø­Ø§Ø¨ï¿½Sï¿½Sï¿½? ï¿½?" �.رب�^ط بعدد ا�"Øªï¿½?Ø¨ï¿½Sï¿½?Ø§Øª Ùï¿½S ØªØ·Ø¨ï¿½Sï¿½, Ø§ï¿½"ع�.�S�"
+  // ignore: non_constant_identifier_names
   Widget _NotifBell(String clientUid) {
     final officeUid =
         _officeUidAtStart ?? FirebaseAuth.instance.currentUser?.uid;
@@ -2087,6 +2133,7 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
   }
 
   // Placeholder �"ï¿½"ع�.�S�" Ø§ï¿½"�.ح�"ï¿½S (ï¿½SØ¸ï¿½?Ø± Ø£ï¿½Sï¿½,ï¿½^ï¿½?Ø© Ùï¿½,Ø·)
+  // ignore: non_constant_identifier_names
   Widget _NotifBellPlaceholder() {
     return const Padding(
       padding: EdgeInsets.all(6.0),
@@ -2310,6 +2357,8 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
     required double? initialPrice,
     required int initialReminderDays,
   }) async {
+    if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
+
     final successTimeDf = DateFormat('hh:mm:ss a', 'en_US');
     if (isPendingLocal || clientUid.startsWith('local_')) {
       _showSnack(
@@ -2456,16 +2505,14 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
       final contractBoxName = HiveService.contractsBoxName();
       final maintenanceBoxName = HiveService.maintenanceBoxName();
 
-      final propertyBox = Hive.isBoxOpen(propertyBoxName)
-          ? Hive.box(propertyBoxName)
-          : null;
+      final propertyBox =
+          Hive.isBoxOpen(propertyBoxName) ? Hive.box(propertyBoxName) : null;
       final tenantBox =
           Hive.isBoxOpen(tenantBoxName) ? Hive.box(tenantBoxName) : null;
       final invoiceBox =
           Hive.isBoxOpen(invoiceBoxName) ? Hive.box(invoiceBoxName) : null;
-      final contractBox = Hive.isBoxOpen(contractBoxName)
-          ? Hive.box(contractBoxName)
-          : null;
+      final contractBox =
+          Hive.isBoxOpen(contractBoxName) ? Hive.box(contractBoxName) : null;
       final maintenanceBox = Hive.isBoxOpen(maintenanceBoxName)
           ? Hive.box(maintenanceBoxName)
           : null;
@@ -2483,7 +2530,9 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
           : tenantBox.values
               .take(3)
               .map(
-                (e) => (e is Map ? e['fullName'] : null) ?? (e as dynamic).fullName,
+                (e) =>
+                    (e is Map ? e['fullName'] : null) ??
+                    (e as dynamic).fullName,
               )
               .whereType<Object?>()
               .map((e) => e.toString())
@@ -2706,6 +2755,7 @@ class _OfficeClientsPageState extends State<OfficeClientsPage> {
   @override
   Widget build(BuildContext context) {
     final stream = _clientsStream();
+    // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: () async => !_impersonating,
       child: Directionality(
@@ -3259,7 +3309,7 @@ class _ClientSubscriptionDialogState extends State<_ClientSubscriptionDialog> {
                       ),
                       const SizedBox(height: 10),
                       DropdownButtonFormField<int>(
-                        value: _reminderDays,
+                        initialValue: _reminderDays,
                         dropdownColor: const Color(0xFF0F172A),
                         style: GoogleFonts.cairo(
                           color: Colors.white,
@@ -3390,6 +3440,7 @@ class _AddOfficeClientDialogState extends State<AddOfficeClientDialog> {
 
   Future<void> _submit() async {
     if (_submitting) return;
+    if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
     if (!_formKey.currentState!.validate()) return;
 
     final name = _nameCtrl.text.trim();
@@ -3518,10 +3569,10 @@ class _AddOfficeClientDialogState extends State<AddOfficeClientDialog> {
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Colors.white),
@@ -3857,6 +3908,8 @@ class _EditOfficeClientDialogState extends State<EditOfficeClientDialog> {
   }
 
   Future<void> _save() async {
+    if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
+
     final name = _nameCtrl.text.trim();
     final notes = _notesCtrl.text.trim();
 
@@ -3901,10 +3954,10 @@ class _EditOfficeClientDialogState extends State<EditOfficeClientDialog> {
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Colors.white),
@@ -4070,6 +4123,7 @@ class _ClientAccessDialogState extends State<ClientAccessDialog> {
   bool _loadingLink = false;
   bool _toggling = false;
   bool? _blocked;
+  // ignore: unused_field
   bool _loadingBlocked = true;
 
   String _currentOfficeUid() {
@@ -4153,6 +4207,8 @@ class _ClientAccessDialogState extends State<ClientAccessDialog> {
   }
 
   Future<void> _genLink() async {
+    if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
+
     // تح�,�'�, �.سب�,: إ�? �"ï¿½. ï¿½Sï¿½^Ø¬Ø¯ Ø¥ï¿½?ØªØ±ï¿½?Øª ï¿½?Ø¸ï¿½?Ø± Øªï¿½?Ø¨ï¿½Sï¿½? ï¿½^Ø§Ø¶Ø­
     final online = await _hasInternetConnection();
     if (!online) {
@@ -4205,6 +4261,8 @@ class _ClientAccessDialogState extends State<ClientAccessDialog> {
   }
 
   Future<void> _toggleBlocked(bool value) async {
+    if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
+
     final ok = await showDialog<bool>(
       context: context,
       barrierColor: Colors.black54,
@@ -4313,14 +4371,15 @@ class _ClientAccessDialogState extends State<ClientAccessDialog> {
     }
   }
 
+  // ignore: unused_element
   InputDecoration _dd(String label) => InputDecoration(
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Colors.white),

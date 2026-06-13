@@ -29,6 +29,8 @@ class OfficeClientGuard {
   static const String _sessionBoxName = 'sessionBox';
   static const String _flagKey = 'isOfficeClient';
   static const String _impersonationKey = 'officeImpersonation';
+  static const String _officeStaffPermissionKey = 'officeStaffPermission';
+  static const String _officeStaffOfficeUidKey = 'officeStaffOfficeUid';
   static const String _clientNeedsInternetKey = 'clientNeedsInternet';
   static const String _loggedInKey = 'loggedIn';
   static const String _officeBlockedKey = 'office_client_blocked';
@@ -42,6 +44,15 @@ class OfficeClientGuard {
 
   static const String blockedOfficeClientMessage =
       'تم إيقاف دخولك من المكتب، لا يمكن استخدام الحساب حتى يقوم المكتب بإعادة تفعيله.';
+
+  static const String officeClientWriteMessage =
+      'ليس لديك صلاحية لتنفيذ هذا الإجراء. هذا الحساب يدار بالكامل عن طريق مكتب العقار.';
+
+  static const String readOnlyOfficeStaffMessage =
+      'ليس لديك صلاحية لتنفيذ هذا الإجراء. هذا المستخدم للمشاهدة فقط.';
+
+  static const String officeProfileStaffMessage =
+      'بيانات المكتب لا يمكن تعديلها من مستخدم المكتب. يرجى الدخول من حساب المكتب الرئيسي.';
 
   static bool? _cachedIsOfficeClient;
 
@@ -96,7 +107,67 @@ class OfficeClientGuard {
       await box.put(_flagKey, false);
       await box.put(_clientNeedsInternetKey, false);
       await box.put(_impersonationKey, false);
+      await box.delete(_officeStaffPermissionKey);
+      await box.delete(_officeStaffOfficeUidKey);
     } catch (_) {}
+  }
+
+  static String normalizeOfficePermission(Object? value) {
+    final raw = (value ?? '').toString().trim().toLowerCase();
+    if (raw == 'full' || raw == 'control' || raw == 'write' || raw == 'admin') {
+      return 'full';
+    }
+    if (raw == 'view' || raw == 'read' || raw == 'readonly') {
+      return 'view';
+    }
+    return '';
+  }
+
+  static Future<String> currentOfficeStaffPermission() async {
+    try {
+      final box = await _sessionBox();
+      return normalizeOfficePermission(box.get(_officeStaffPermissionKey));
+    } catch (_) {
+      return '';
+    }
+  }
+
+  static Future<String> currentOfficeStaffOfficeUid() async {
+    try {
+      final box = await _sessionBox();
+      return (box.get(_officeStaffOfficeUidKey, defaultValue: '') ?? '')
+          .toString()
+          .trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  static Future<bool> isOfficeStaffSession() async {
+    final permission = await currentOfficeStaffPermission();
+    final officeUid = await currentOfficeStaffOfficeUid();
+    return permission.isNotEmpty || officeUid.isNotEmpty;
+  }
+
+  static Future<bool> canWriteCurrentWorkspace() async {
+    if (await isOfficeClient()) return false;
+    final permission = await currentOfficeStaffPermission();
+    if (permission.isEmpty) return true;
+    return permission == 'full';
+  }
+
+  static Future<bool> isReadOnlyOfficeStaff() async {
+    final permission = await currentOfficeStaffPermission();
+    return permission == 'view';
+  }
+
+  static void _showGuardSnack(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   static Future<void> setIntentionalLogoutInProgress(bool value) async {
@@ -118,23 +189,33 @@ class OfficeClientGuard {
   static Future<bool> blockIfOfficeClient(BuildContext context) async {
     final isClient = await isOfficeClient();
     if (!isClient) {
+      final readOnlyStaff = await isReadOnlyOfficeStaff();
+      if (!readOnlyStaff) {
+        debugPrint(
+          '[OfficeClientGuard] blockIfOfficeClient allow reason=write-allowed',
+        );
+        return false;
+      }
       debugPrint(
-        '[OfficeClientGuard] blockIfOfficeClient allow reason=not-office-client',
+        '[OfficeClientGuard] blockIfOfficeClient blocked reason=office-staff-view',
       );
-      return false;
+      _showGuardSnack(context, readOnlyOfficeStaffMessage);
+      return true;
     }
 
     debugPrint(
       '[OfficeClientGuard] blockIfOfficeClient blocked reason=office-client',
     );
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'ليس لديك صلاحية لتنفيذ هذا الإجراء. هذا الحساب يدار بالكامل عن طريق مكتب العقار.',
-        ),
-        behavior: SnackBarBehavior.floating,
-      ),
+    _showGuardSnack(context, officeClientWriteMessage);
+    return true;
+  }
+
+  static Future<bool> blockIfOfficeStaff(BuildContext context) async {
+    if (!await isOfficeStaffSession()) return false;
+    debugPrint(
+      '[OfficeClientGuard] blockIfOfficeStaff blocked reason=office-staff',
     );
+    _showGuardSnack(context, officeProfileStaffMessage);
     return true;
   }
 
@@ -160,7 +241,8 @@ class OfficeClientGuard {
         await box.put(_officeBlockedEmailKey, normalizedEmail);
         await box.put(_officeBlockedUidKey, normalizedUid);
         await box.put(_officeBlockedConfirmedKey, true);
-        await box.put(_officeBlockedAtKey, DateTime.now().millisecondsSinceEpoch);
+        await box.put(
+            _officeBlockedAtKey, DateTime.now().millisecondsSinceEpoch);
       } else {
         await box.delete(_officeBlockedEmailKey);
         await box.delete(_officeBlockedUidKey);

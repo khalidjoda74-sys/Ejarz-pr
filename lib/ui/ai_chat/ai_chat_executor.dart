@@ -29,7 +29,7 @@ import '../../ui/contracts_screen.dart'
         ContractTerm,
         PaymentCycle,
         isContractOverdueForHome,
-        missingRequiredPeriodicServicesForProperty;
+        missingRequiredPeriodicServiceSetupsForProperty;
 import '../../ui/invoices_screen.dart' show Invoice;
 import '../../ui/maintenance_screen.dart'
     show
@@ -70,11 +70,11 @@ class AiChatExecutor {
     this.chatScope = const AiChatScope.ownerSelf(),
   });
 
-  Future<String> execute(
-      String functionName, Map<String, dynamic> args) async {
+  Future<String> execute(String functionName, Map<String, dynamic> args) async {
     try {
       if (AiChatTools.isOfficeWideReadTool(functionName) && !_canReadAll) {
-        return _err('ليس لديك صلاحية للاطلاع على بيانات المكتب العامة من هذا الحساب.');
+        return _err(
+            'ليس لديك صلاحية للاطلاع على بيانات المكتب العامة من هذا الحساب.');
       }
       if (AiChatTools.isWriteTool(functionName) && !_canWrite) {
         return _err(AiChatPermissions.denyMessage(userRole));
@@ -369,7 +369,8 @@ class AiChatExecutor {
       return null;
     }
 
-    final isExpired = DateTime.now().difference(entry.createdAt) > _readCacheTtl;
+    final isExpired =
+        DateTime.now().difference(entry.createdAt) > _readCacheTtl;
     if (isExpired) {
       _readCache.remove(key);
       return null;
@@ -513,7 +514,8 @@ class AiChatExecutor {
       if (_canReadAll) {
         return _getOfficeDashboard();
       }
-      return _err('هذا الحساب لا يملك صلاحية قراءة لوحة المكتب العامة من الدردشة.');
+      return _err(
+          'هذا الحساب لا يملك صلاحية قراءة لوحة المكتب العامة من الدردشة.');
     }
 
     double receivables = 0;
@@ -536,8 +538,8 @@ class AiChatExecutor {
       }
     }
 
-    final notificationsPayload =
-        _decodeJsonMap(_getNotifications(const <String, dynamic>{'limit': 100}));
+    final notificationsPayload = _decodeJsonMap(
+        _getNotifications(const <String, dynamic>{'limit': 100}));
     final notificationItems = _asMapList(notificationsPayload['notifications']);
     final notificationsCount = _toIntValue(
       notificationsPayload['total'],
@@ -717,19 +719,23 @@ class AiChatExecutor {
     final occupiedTopLevel = topLevelProperties
         .where((property) => _isTopLevelPropertyOccupied(property, properties))
         .length;
-    final registeredBuildingUnits =
-        properties.where((property) => _isBuildingUnitProperty(property)).length;
+    final registeredBuildingUnits = properties
+        .where((property) => _isBuildingUnitProperty(property))
+        .length;
     final configuredBuildingUnits = buildings.fold<int>(
       0,
-      (sum, building) => sum + _configuredUnitsForBuilding(building, properties),
+      (total, building) =>
+          total + _configuredUnitsForBuilding(building, properties),
     );
     final occupiedBuildingUnits = buildings.fold<int>(
       0,
-      (sum, building) => sum + _occupiedUnitsForBuilding(building, properties),
+      (total, building) =>
+          total + _occupiedUnitsForBuilding(building, properties),
     );
     final vacantBuildingUnits = buildings.fold<int>(
       0,
-      (sum, building) => sum + _vacantUnitsForBuilding(building, properties),
+      (total, building) =>
+          total + _vacantUnitsForBuilding(building, properties),
     );
 
     var activeContracts = 0;
@@ -742,33 +748,31 @@ class AiChatExecutor {
     var totalInstallments = 0;
     var overdueInstallments = 0;
 
-    final contractsPreview = contracts
-        .map((contract) {
-          final status = _contractStatusLabel(contract);
-          if (status == 'نشط') {
-            activeContracts++;
-          } else if (status == 'منهي') {
-            terminatedContracts++;
-          } else {
-            endedContracts++;
-          }
-          if (_contractExpiringSoon(contract)) {
-            expiringContracts++;
-          }
+    final contractsPreview = contracts.map((contract) {
+      final status = _contractStatusLabel(contract);
+      if (status == 'نشط') {
+        activeContracts++;
+      } else if (status == 'منهي') {
+        terminatedContracts++;
+      } else {
+        endedContracts++;
+      }
+      if (_contractExpiringSoon(contract)) {
+        expiringContracts++;
+      }
 
-          final linkedInvoices = _linkedContractInvoices(contract.id, invoices);
-          final metrics = _contractInvoiceMetrics(linkedInvoices);
-          totalContractAmount += contract.totalAmount;
-          paidContractAmount +=
-              ((metrics['paidAmount'] as num?) ?? 0).toDouble();
-          remainingContractAmount +=
-              ((metrics['remainingTotal'] as num?) ?? 0).toDouble();
-          totalInstallments += ((metrics['totalInstallments'] as num?) ?? 0).toInt();
-          overdueInstallments +=
-              ((metrics['overdueInstallments'] as num?) ?? 0).toInt();
-          return _contractPortfolioItem(contract, invoices);
-        })
-        .toList(growable: false);
+      final linkedInvoices = _linkedContractInvoices(contract.id, invoices);
+      final metrics = _contractInvoiceMetrics(linkedInvoices);
+      totalContractAmount += contract.totalAmount;
+      paidContractAmount += ((metrics['paidAmount'] as num?) ?? 0).toDouble();
+      remainingContractAmount +=
+          ((metrics['remainingTotal'] as num?) ?? 0).toDouble();
+      totalInstallments +=
+          ((metrics['totalInstallments'] as num?) ?? 0).toInt();
+      overdueInstallments +=
+          ((metrics['overdueInstallments'] as num?) ?? 0).toInt();
+      return _contractPortfolioItem(contract, invoices);
+    }).toList(growable: false);
 
     contractsPreview.sort((a, b) {
       final aRemaining = ((a['remainingAmount'] as num?) ?? 0).toDouble();
@@ -792,7 +796,8 @@ class AiChatExecutor {
       'endedContracts': endedContracts,
       'terminatedContracts': terminatedContracts,
       'expiringContracts': expiringContracts,
-      'totalContractAmount': double.parse(totalContractAmount.toStringAsFixed(2)),
+      'totalContractAmount':
+          double.parse(totalContractAmount.toStringAsFixed(2)),
       'paidContractAmount': double.parse(paidContractAmount.toStringAsFixed(2)),
       'remainingContractAmount':
           double.parse(remainingContractAmount.toStringAsFixed(2)),
@@ -809,7 +814,9 @@ class AiChatExecutor {
   }
 
   Future<String> _getOfficeDashboard() async {
-    if (_officeClientsRef() == null) return _err('Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø§Ù„ÙˆØµÙˆÙ„ Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ù…ÙƒØªØ¨');
+    if (_officeClientsRef() == null) {
+      return _err('لا يمكن الوصول لبيانات المكتب');
+    }
 
     try {
       final clients = await _loadMergedOfficeClients();
@@ -906,7 +913,8 @@ class AiChatExecutor {
         totalVacantBuildingUnits +=
             ((item['vacantBuildingUnits'] as num?) ?? 0).toInt();
         totalOfficeContracts += ((item['totalContracts'] as num?) ?? 0).toInt();
-        totalActiveContracts += ((item['activeContracts'] as num?) ?? 0).toInt();
+        totalActiveContracts +=
+            ((item['activeContracts'] as num?) ?? 0).toInt();
         totalEndedContracts += ((item['endedContracts'] as num?) ?? 0).toInt();
         totalTerminatedContracts +=
             ((item['terminatedContracts'] as num?) ?? 0).toInt();
@@ -986,8 +994,14 @@ class AiChatExecutor {
               : 'تم احتساب إجمالي العقارات والعقود من ${clientsWithWorkspaceData.toString()} عميل/عملاء داخل المكتب.',
         },
         'quickActions': const <Map<String, dynamic>>[
-          <String, dynamic>{'label': 'عملاء المكتب', 'screen': 'office_clients'},
-          <String, dynamic>{'label': 'مستخدمي المكتب', 'screen': 'office_users'},
+          <String, dynamic>{
+            'label': 'عملاء المكتب',
+            'screen': 'office_clients'
+          },
+          <String, dynamic>{
+            'label': 'مستخدمي المكتب',
+            'screen': 'office_users'
+          },
           <String, dynamic>{'label': 'سجل النشاط', 'screen': 'activity_log'},
           <String, dynamic>{'label': 'التنبيهات', 'screen': 'notifications'},
         ],
@@ -1022,8 +1036,7 @@ class AiChatExecutor {
                   'buildings': item['buildings'] ?? 0,
                   'configuredBuildingUnits':
                       item['configuredBuildingUnits'] ?? 0,
-                  'occupiedBuildingUnits':
-                      item['occupiedBuildingUnits'] ?? 0,
+                  'occupiedBuildingUnits': item['occupiedBuildingUnits'] ?? 0,
                   'vacantBuildingUnits': item['vacantBuildingUnits'] ?? 0,
                   'totalContracts': item['totalContracts'] ?? 0,
                   'activeContracts': item['activeContracts'] ?? 0,
@@ -1038,7 +1051,11 @@ class AiChatExecutor {
     }
   }
 
-  bool get _isOfficeMode => chatScope.usesOfficeModeForArchitecture;
+  bool get _isOfficeMode =>
+      chatScope.usesOfficeModeForArchitecture ||
+      userRole == ChatUserRole.officeOwner ||
+      userRole == ChatUserRole.officeStaff ||
+      userRole == ChatUserRole.officeClient;
 
   bool get _canWrite => AiChatPermissions.canExecuteWriteOperations(userRole);
 
@@ -1169,7 +1186,8 @@ class AiChatExecutor {
   bool _invoiceNoteContainsMarker(dynamic invoice, String marker) {
     try {
       final note = invoice is Map
-          ? ((invoice['note'] ?? invoice['notes'])?.toString().toLowerCase() ?? '')
+          ? ((invoice['note'] ?? invoice['notes'])?.toString().toLowerCase() ??
+              '')
           : ((invoice as dynamic).note?.toString().toLowerCase() ?? '');
       return note.contains(marker.toLowerCase());
     } catch (_) {
@@ -1183,7 +1201,26 @@ class AiChatExecutor {
 
   String _contractStatusLabel(Contract contract) {
     if (contract.isTerminated) return 'منهي';
-    if (contract.endDate.isBefore(KsaTime.now())) return 'منتهي';
+    final now = KsaTime.now();
+    if (contract.term == ContractTerm.daily) {
+      if (now.isBefore(contract.dailyStartBoundary)) return 'قبل البدء';
+      if (!now.isBefore(contract.dailyEndBoundary)) return 'منتهي';
+      return 'نشط';
+    }
+
+    final today = DateTime(now.year, now.month, now.day);
+    final start = DateTime(
+      contract.startDate.year,
+      contract.startDate.month,
+      contract.startDate.day,
+    );
+    final end = DateTime(
+      contract.endDate.year,
+      contract.endDate.month,
+      contract.endDate.day,
+    );
+    if (today.isBefore(start)) return 'قبل البدء';
+    if (today.isAfter(end)) return 'منتهي';
     return 'نشط';
   }
 
@@ -1266,8 +1303,8 @@ class AiChatExecutor {
       payload['requiresScreenCompletion'] = true;
       payload['suggestedScreen'] = 'tenants_new';
     } else {
-      payload['error'] =
-          result.firstIssueMessage ?? 'تعذر إكمال العملية بسبب بيانات غير صالحة.';
+      payload['error'] = result.firstIssueMessage ??
+          'تعذر إكمال العملية بسبب بيانات غير صالحة.';
     }
 
     payload['clientType'] = normalizedType;
@@ -1317,8 +1354,8 @@ class AiChatExecutor {
       requiredFields: requiredFields,
     );
     final payload = <String, dynamic>{
-      'error':
-          result.firstIssueMessage ?? 'تعذر إكمال العملية بسبب بيانات غير صالحة.',
+      'error': result.firstIssueMessage ??
+          'تعذر إكمال العملية بسبب بيانات غير صالحة.',
       ...extra,
     };
 
@@ -1407,7 +1444,8 @@ class AiChatExecutor {
       <String, dynamic>{
         'mode': 'screen',
         'label': screenLabel,
-        'description': 'هذا أسرع ومناسب للحالات التي تحتوي على عدة حقول أو مرفقات.',
+        'description':
+            'هذا أسرع ومناسب للحالات التي تحتوي على عدة حقول أو مرفقات.',
         'tool': screenTool,
         'preferred': true,
       },
@@ -1502,7 +1540,9 @@ class AiChatExecutor {
     final entityLabel =
         property.parentBuildingId != null ? 'هذه الوحدة' : 'هذا العقار';
     final usageContext = forService ? 'الخدمات' : 'التأجير';
-    final error = parentArchived && !selfArchived && property.parentBuildingId != null
+    final error = parentArchived &&
+            !selfArchived &&
+            property.parentBuildingId != null
         ? 'هذه الوحدة تابعة لعمارة مؤرشفة، لذلك لا يمكن استخدامها في $usageContext قبل فك أرشفة العمارة أولًا.'
         : '$entityLabel مؤرشف حاليًا، لذلك لا يمكن استخدامه في $usageContext قبل فك الأرشفة.';
     return jsonEncode(<String, dynamic>{
@@ -1543,14 +1583,16 @@ class AiChatExecutor {
     }
 
     if (property.type == PropertyType.building) {
-      if (property.rentalMode != RentalMode.perUnit && property.occupiedUnits > 0) {
+      if (property.rentalMode != RentalMode.perUnit &&
+          property.occupiedUnits > 0) {
         return true;
       }
       final box = _propertiesBox();
       if (box == null) return false;
       for (final unit
           in box.values.where((item) => item.parentBuildingId == property.id)) {
-        if (_hasActiveContractForPropertyId(unit.id) || unit.occupiedUnits > 0) {
+        if (_hasActiveContractForPropertyId(unit.id) ||
+            unit.occupiedUnits > 0) {
           return true;
         }
       }
@@ -1646,7 +1688,8 @@ class AiChatExecutor {
     }).firstOrNull;
   }
 
-  String _periodicConfigKey(String propertyId, String type) => '$propertyId::$type';
+  String _periodicConfigKey(String propertyId, String type) =>
+      '$propertyId::$type';
 
   Map<String, String> _parsePropertySpec(String? description) {
     final text = (description ?? '').trim();
@@ -1732,8 +1775,9 @@ class AiChatExecutor {
       'description': property.description,
       'documentType': property.documentType,
       'documentNumber': property.documentNumber,
-      'documentDate':
-          property.documentDate == null ? null : _fmtDate(property.documentDate!),
+      'documentDate': property.documentDate == null
+          ? null
+          : _fmtDate(property.documentDate!),
       'documentAttachmentPaths': documentPaths,
       'isArchived': property.isArchived,
     };
@@ -1765,8 +1809,7 @@ class AiChatExecutor {
     if (buildingId.isEmpty) return const <Property>[];
     return properties
         .where(
-          (property) =>
-              (property.parentBuildingId ?? '').trim() == buildingId,
+          (property) => (property.parentBuildingId ?? '').trim() == buildingId,
         )
         .toList(growable: false);
   }
@@ -1832,9 +1875,7 @@ class AiChatExecutor {
   ) {
     final parentId = (unit.parentBuildingId ?? '').trim();
     if (parentId.isEmpty) return null;
-    return properties
-        .where((property) => property.id == parentId)
-        .firstOrNull;
+    return properties.where((property) => property.id == parentId).firstOrNull;
   }
 
   String _propertySemanticSummary(
@@ -1844,7 +1885,8 @@ class AiChatExecutor {
     if (_isBuildingUnitProperty(property)) {
       final building = _parentBuildingForUnit(property, properties);
       final buildingName = building?.name.trim() ?? '';
-      final unitName = property.name.trim().isEmpty ? property.id : property.name;
+      final unitName =
+          property.name.trim().isEmpty ? property.id : property.name;
       final occupied = property.occupiedUnits > 0 ? 'مشغولة' : 'خالية';
       if (buildingName.isNotEmpty) {
         return 'هذه وحدة ضمن عمارة $buildingName باسم $unitName، وعدد الغرف ${property.rooms ?? 0}، وحالتها الآن $occupied.';
@@ -1914,9 +1956,11 @@ class AiChatExecutor {
       payload.addAll(<String, dynamic>{
         'structureKind': 'building',
         'structureLabel': 'عمارة',
-        'managementMode': _isPerUnitBuilding(property) ? 'units' : 'whole_building',
-        'managementModeLabel':
-            _isPerUnitBuilding(property) ? 'إدارة بالوحدات' : 'تأجير كامل العمارة',
+        'managementMode':
+            _isPerUnitBuilding(property) ? 'units' : 'whole_building',
+        'managementModeLabel': _isPerUnitBuilding(property)
+            ? 'إدارة بالوحدات'
+            : 'تأجير كامل العمارة',
         'totalUnits': configuredUnits,
         'configuredUnits': configuredUnits,
         'registeredUnits': registeredUnits,
@@ -1939,18 +1983,6 @@ class AiChatExecutor {
       'semanticGuidance':
           'هذا عقار رئيسي مستقل، وعدد الغرف يخص هذا العقار نفسه وليس وحدات داخل عمارة.',
     });
-    return payload;
-  }
-
-  Map<String, dynamic> _topLevelPropertyListItem(
-    Property property,
-    List<Property> properties,
-  ) {
-    final payload = _propertySemanticPayload(property, properties);
-    payload['propertyId'] = property.id;
-    if (property.type == PropertyType.building) {
-      payload['childUnitsCount'] = _registeredUnitsForBuilding(property, properties);
-    }
     return payload;
   }
 
@@ -2041,7 +2073,8 @@ class AiChatExecutor {
     final payload = _propertySemanticPayloadStrict(property, properties);
     payload['propertyId'] = property.id;
     if (property.type == PropertyType.building) {
-      payload['childUnitsCount'] = _registeredUnitsForBuilding(property, properties);
+      payload['childUnitsCount'] =
+          _registeredUnitsForBuilding(property, properties);
     }
     return payload;
   }
@@ -2085,7 +2118,8 @@ class AiChatExecutor {
     DocumentReference<Map<String, dynamic>> ref,
   ) async {
     try {
-      final snap = await ref.get(const GetOptions(source: Source.serverAndCache));
+      final snap =
+          await ref.get(const GetOptions(source: Source.serverAndCache));
       return snap.data() ?? const <String, dynamic>{};
     } catch (_) {
       return const <String, dynamic>{};
@@ -2286,7 +2320,8 @@ class AiChatExecutor {
       'anchorDate': _notificationDateOnly(anchor).toIso8601String(),
       if ((contractId ?? '').trim().isNotEmpty) 'contractId': contractId,
       if ((invoiceId ?? '').trim().isNotEmpty) 'invoiceId': invoiceId,
-      if ((maintenanceId ?? '').trim().isNotEmpty) 'maintenanceId': maintenanceId,
+      if ((maintenanceId ?? '').trim().isNotEmpty)
+        'maintenanceId': maintenanceId,
       if ((propertyId ?? '').trim().isNotEmpty) 'propertyId': propertyId,
       if ((serviceType ?? '').trim().isNotEmpty) 'serviceType': serviceType,
       if ((serviceTargetId ?? '').trim().isNotEmpty)
@@ -2545,10 +2580,10 @@ class AiChatExecutor {
 
   DateTime? _notificationServiceCurrentCycleDate(Map<String, dynamic> cfg) {
     final type = (cfg['serviceType'] ?? '').toString().trim();
-    final isPeriodicMaintenanceService =
-        type == 'cleaning' ||
+    final isPeriodicMaintenanceService = type == 'cleaning' ||
         type == 'elevator' ||
-        (type == 'internet' && _notificationInternetBillingMode(cfg) == 'owner');
+        (type == 'internet' &&
+            _notificationInternetBillingMode(cfg) == 'owner');
     final lastGenerated = _notificationServiceLastGeneratedDate(cfg);
     final startDate = _notificationServiceStartDate(cfg);
     if (isPeriodicMaintenanceService &&
@@ -2725,7 +2760,8 @@ class AiChatExecutor {
     if (maintenance == null) return null;
 
     bool valid(MaintenanceRequest request) {
-      return _notificationCanTrackPeriodicMaintenanceRequest(request, invoices) &&
+      return _notificationCanTrackPeriodicMaintenanceRequest(
+              request, invoices) &&
           _notificationMatchesPeriodicMaintenanceRequest(
             request,
             propertyId: propertyId,
@@ -2785,79 +2821,6 @@ class AiChatExecutor {
     return trackedId;
   }
 
-  PropertyType _parsePropertyType(String s) {
-    switch (s.toLowerCase()) {
-      case 'villa':
-        return PropertyType.villa;
-      case 'building':
-        return PropertyType.building;
-      case 'land':
-        return PropertyType.land;
-      case 'office':
-        return PropertyType.office;
-      case 'shop':
-        return PropertyType.shop;
-      case 'warehouse':
-        return PropertyType.warehouse;
-      default:
-        return PropertyType.apartment;
-    }
-  }
-
-  ContractTerm _parseTerm(String? s) {
-    switch ((s ?? '').toLowerCase()) {
-      case 'daily':
-        return ContractTerm.daily;
-      case 'quarterly':
-        return ContractTerm.quarterly;
-      case 'semiannual':
-        return ContractTerm.semiAnnual;
-      case 'annual':
-        return ContractTerm.annual;
-      default:
-        return ContractTerm.monthly;
-    }
-  }
-
-  PaymentCycle _parsePaymentCycle(String? s) {
-    switch ((s ?? '').toLowerCase()) {
-      case 'quarterly':
-        return PaymentCycle.quarterly;
-      case 'semiannual':
-        return PaymentCycle.semiAnnual;
-      case 'annual':
-        return PaymentCycle.annual;
-      default:
-        return PaymentCycle.monthly;
-    }
-  }
-
-  MaintenancePriority _parsePriority(String? s) {
-    switch ((s ?? '').toLowerCase()) {
-      case 'low':
-        return MaintenancePriority.low;
-      case 'high':
-        return MaintenancePriority.high;
-      case 'urgent':
-        return MaintenancePriority.urgent;
-      default:
-        return MaintenancePriority.medium;
-    }
-  }
-
-  MaintenanceStatus _parseStatus(String? s) {
-    switch ((s ?? '').toLowerCase()) {
-      case 'inprogress':
-        return MaintenanceStatus.inProgress;
-      case 'completed':
-        return MaintenanceStatus.completed;
-      case 'canceled':
-        return MaintenanceStatus.canceled;
-      default:
-        return MaintenanceStatus.open;
-    }
-  }
-
   String _nextSerial(String prefix, Iterable<String?> existing) {
     final year = KsaTime.now().year;
     int max = 0;
@@ -2869,65 +2832,6 @@ class AiChatExecutor {
       }
     }
     return '$p${(max + 1).toString().padLeft(4, '0')}';
-  }
-
-  // ================================================================
-  //  قراءة - عقارات
-  // ================================================================
-
-  String _getPropertiesSummary() {
-    final box = _propertiesBox();
-    if (box == null) return _err('لا توجد بيانات');
-    final all = box.values.where((p) => p.isArchived != true).toList();
-    final total = all.length;
-    final occupied = all.where((p) => p.occupiedUnits > 0).length;
-    return jsonEncode({
-      'total': total,
-      'occupied': occupied,
-      'vacant': total - occupied,
-      'vacancy_rate': total > 0
-          ? '${((total - occupied) / total * 100).toStringAsFixed(0)}%'
-          : '0%',
-    });
-  }
-
-  String _getPropertiesList() {
-    final box = _propertiesBox();
-    if (box == null) return jsonEncode([]);
-    final list = box.values
-        .where((p) => p.isArchived != true)
-        .map((p) => {
-              'name': p.name,
-              'type': p.type.toString().split('.').last,
-              'address': p.address,
-              'rooms': p.rooms,
-              'area': p.area,
-              'price': p.price,
-            })
-        .toList();
-    return jsonEncode(list);
-  }
-
-  String _getPropertyDetails(String query) {
-    final p = _findProperty(query);
-    if (p == null) return _err('لم يتم العثور على عقار بهذا الاسم');
-    return jsonEncode({
-      'name': p.name,
-      'type': p.type.toString().split('.').last,
-      'address': p.address,
-      'rooms': p.rooms,
-      'area': p.area,
-      'price': p.price,
-      'floors': p.floors,
-      'totalUnits': p.totalUnits,
-      'occupiedUnits': p.occupiedUnits,
-      'description': p.description,
-      'documentType': p.documentType,
-      'documentNumber': p.documentNumber,
-      'electricityNumber': p.electricityNumber,
-      'waterNumber': p.waterNumber,
-      'isArchived': p.isArchived,
-    });
   }
 
   // ================================================================
@@ -2952,15 +2856,15 @@ class AiChatExecutor {
         all.where((property) => _isBuildingUnitProperty(property)).length;
     final configuredBuildingUnits = buildings.fold<int>(
       0,
-      (sum, building) => sum + _configuredUnitsForBuilding(building, all),
+      (total, building) => total + _configuredUnitsForBuilding(building, all),
     );
     final occupiedBuildingUnits = buildings.fold<int>(
       0,
-      (sum, building) => sum + _occupiedUnitsForBuilding(building, all),
+      (total, building) => total + _occupiedUnitsForBuilding(building, all),
     );
     final vacantBuildingUnits = buildings.fold<int>(
       0,
-      (sum, building) => sum + _vacantUnitsForBuilding(building, all),
+      (total, building) => total + _vacantUnitsForBuilding(building, all),
     );
     final items = topLevel
         .map((property) => _topLevelPropertyListItemV2(property, all))
@@ -3006,19 +2910,11 @@ class AiChatExecutor {
     });
   }
 
-  String _getPropertiesListV2() {
-    final all = _activePropertiesList();
-    if (all.isEmpty) return jsonEncode([]);
-    final list = _topLevelProperties(all)
-        .map((property) => _topLevelPropertyListItem(property, all))
-        .toList(growable: false);
-    return jsonEncode(list);
-  }
-
   String _getPropertyDetailsV2(String query) {
     final property = _findProperty(query);
     if (property == null) return _err('لم يتم العثور على عقار بهذا الاسم');
-    return jsonEncode(_propertySemanticPayload(property, _activePropertiesList()));
+    return jsonEncode(
+        _propertySemanticPayload(property, _activePropertiesList()));
   }
 
   String _getPropertiesListV3() {
@@ -3028,14 +2924,6 @@ class AiChatExecutor {
         .map((property) => _topLevelPropertyListItemV2(property, all))
         .toList(growable: false);
     return jsonEncode(list);
-  }
-
-  String _getPropertyDetailsV3(String query) {
-    final property = _findProperty(query);
-    if (property == null) return _err('Ù„Ù… ÙŠØªÙ… Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ Ø¹Ù‚Ø§Ø± Ø¨Ù‡Ø°Ø§ Ø§Ù„Ø§Ø³Ù…');
-    return jsonEncode(
-      _propertySemanticPayloadStrict(property, _activePropertiesList()),
-    );
   }
 
   String _getPropertyDetailsV4(String query) {
@@ -3090,27 +2978,17 @@ class AiChatExecutor {
   String _getContractsList() {
     final box = _contractsBox();
     if (box == null) return jsonEncode([]);
-    final now = KsaTime.now();
-    final list = box.values
-        .where((c) => (c as dynamic).isArchived != true)
-        .map((c) {
-      final d = c as dynamic;
-      final end = d.endDate as DateTime;
-      final terminated = d.isTerminated == true;
-      final expired = end.isBefore(now);
-      String status = 'نشط';
-      if (terminated) {
-        status = 'منهي';
-      } else if (expired) {
-        status = 'منتهي';
-      }
+    final list =
+        box.values.where((c) => (c as dynamic).isArchived != true).map((c) {
+      final d = c;
+      final end = d.endDate;
       return {
         'serialNo': d.serialNo,
         'tenant': d.tenantSnapshot?['fullName'] ?? '',
         'property': d.propertySnapshot?['name'] ?? '',
-        'status': status,
+        'status': _contractStatusLabel(d),
         'totalAmount': d.totalAmount,
-        'startDate': _fmtDate(d.startDate as DateTime),
+        'startDate': _fmtDate(d.startDate),
         'endDate': _fmtDate(end),
       };
     }).toList();
@@ -3120,11 +2998,10 @@ class AiChatExecutor {
   String _getActiveContracts() {
     final box = _contractsBox();
     if (box == null) return jsonEncode([]);
-    final now = KsaTime.now();
     final list = box.values.where((c) {
-      final d = c as dynamic;
+      final d = c;
       if (d.isArchived == true || d.isTerminated == true) return false;
-      return !(d.endDate as DateTime).isBefore(now);
+      return d.isActiveNow;
     }).map((c) {
       final d = c as dynamic;
       return {
@@ -3206,7 +3083,8 @@ class AiChatExecutor {
   // ================================================================
 
   double _invoiceRemaining(Invoice invoice) {
-    return double.parse((invoice.amount - invoice.paidAmount).toStringAsFixed(2));
+    return double.parse(
+        (invoice.amount - invoice.paidAmount).toStringAsFixed(2));
   }
 
   bool _invoiceIsPaid(Invoice invoice) {
@@ -3241,7 +3119,7 @@ class AiChatExecutor {
       'status': _invoiceStatusLabel(invoice),
       'issueDate': _fmtDate(invoice.issueDate),
       'dueDate': _fmtDate(invoice.dueDate),
-      if ((invoice.paymentMethod ?? '').trim().isNotEmpty)
+      if (invoice.paymentMethod.trim().isNotEmpty)
         'paymentMethod': invoice.paymentMethod,
       if ((invoice.note ?? '').trim().isNotEmpty) 'note': invoice.note,
     };
@@ -3249,7 +3127,8 @@ class AiChatExecutor {
 
   Invoice? _currentContractInvoice(List<Invoice> invoices) {
     final unpaid = invoices
-        .where((invoice) => invoice.isCanceled != true && !_invoiceIsPaid(invoice))
+        .where(
+            (invoice) => invoice.isCanceled != true && !_invoiceIsPaid(invoice))
         .toList(growable: false)
       ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
     if (unpaid.isEmpty) return null;
@@ -3258,7 +3137,8 @@ class AiChatExecutor {
 
   Invoice? _nextUnpaidContractInvoice(List<Invoice> invoices) {
     final unpaid = invoices
-        .where((invoice) => invoice.isCanceled != true && !_invoiceIsPaid(invoice))
+        .where(
+            (invoice) => invoice.isCanceled != true && !_invoiceIsPaid(invoice))
         .toList(growable: false)
       ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
     return unpaid.firstOrNull;
@@ -3266,7 +3146,8 @@ class AiChatExecutor {
 
   Invoice? _lastPaidContractInvoice(List<Invoice> invoices) {
     final paid = invoices
-        .where((invoice) => invoice.isCanceled != true && _invoiceIsPaid(invoice))
+        .where(
+            (invoice) => invoice.isCanceled != true && _invoiceIsPaid(invoice))
         .toList(growable: false)
       ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
     return paid.isEmpty ? null : paid.last;
@@ -3289,15 +3170,17 @@ class AiChatExecutor {
         .where((invoice) => invoice.isCanceled != true)
         .toList(growable: false);
     final paidInvoices = active.where(_invoiceIsPaid).length;
-    final unpaidInvoices = active.where((invoice) => !_invoiceIsPaid(invoice)).length;
-    final canceledInvoices = invoices.where((invoice) => invoice.isCanceled == true).length;
+    final unpaidInvoices =
+        active.where((invoice) => !_invoiceIsPaid(invoice)).length;
+    final canceledInvoices =
+        invoices.where((invoice) => invoice.isCanceled == true).length;
     final paidAmount = active.fold<double>(
       0,
-      (sum, invoice) => sum + invoice.paidAmount,
+      (total, invoice) => total + invoice.paidAmount,
     );
     final remainingTotal = active.fold<double>(
       0,
-      (sum, invoice) => sum + _invoiceRemaining(invoice),
+      (total, invoice) => total + _invoiceRemaining(invoice),
     );
     final currentInvoice = _currentContractInvoice(invoices);
     final nextUnpaidInvoice = _nextUnpaidContractInvoice(invoices);
@@ -3342,8 +3225,8 @@ class AiChatExecutor {
 
   bool _contractExpiringSoon(Contract contract) {
     if (contract.isTerminated == true) return false;
+    if (!contract.isActiveNow) return false;
     final now = KsaTime.now();
-    if (contract.endDate.isBefore(now)) return false;
     final today = DateTime(now.year, now.month, now.day);
     final end = DateTime(
       contract.endDate.year,
@@ -3457,11 +3340,14 @@ class AiChatExecutor {
       'cost': d.cost,
       'requestType': d.requestType,
       'assignedTo': d.assignedTo,
-      'createdAt': d.createdAt != null ? _fmtDate(d.createdAt as DateTime) : null,
-      'scheduledDate':
-          d.scheduledDate != null ? _fmtDate(d.scheduledDate as DateTime) : null,
-      'completedDate':
-          d.completedDate != null ? _fmtDate(d.completedDate as DateTime) : null,
+      'createdAt':
+          d.createdAt != null ? _fmtDate(d.createdAt as DateTime) : null,
+      'scheduledDate': d.scheduledDate != null
+          ? _fmtDate(d.scheduledDate as DateTime)
+          : null,
+      'completedDate': d.completedDate != null
+          ? _fmtDate(d.completedDate as DateTime)
+          : null,
     });
   }
 
@@ -3516,7 +3402,9 @@ class AiChatExecutor {
             workspaceUid != 'guest' &&
             workspaceUid != user.uid
         ? await _readDocMap(
-            FirebaseFirestore.instance.collection('user_prefs').doc(workspaceUid),
+            FirebaseFirestore.instance
+                .collection('user_prefs')
+                .doc(workspaceUid),
           )
         : const <String, dynamic>{};
 
@@ -3553,7 +3441,8 @@ class AiChatExecutor {
     final payload = <String, dynamic>{
       'screen': 'settings',
       'title': 'الإعدادات',
-      'supportsChatWrite': AiChatPermissions.canExecuteWriteOperations(userRole),
+      'supportsChatWrite':
+          AiChatPermissions.canExecuteWriteOperations(userRole),
       'editableSections': <String>[
         'language',
         'calendar',
@@ -3751,7 +3640,7 @@ class AiChatExecutor {
           );
           continue;
         }
-        payload['${storePrefix}${year}y_days'] = value;
+        payload['$storePrefix${year}y_days'] = value;
         if (year == 1) payload[baseStoreKey] = value;
       }
       if (!hasAny) {
@@ -3910,7 +3799,8 @@ class AiChatExecutor {
 
     if (issues.isNotEmpty) {
       return jsonEncode(<String, dynamic>{
-        'error': issues.first['message'] ?? 'تعذر تعديل الإعدادات بسبب بيانات غير صالحة.',
+        'error': issues.first['message'] ??
+            'تعذر تعديل الإعدادات بسبب بيانات غير صالحة.',
         'suggestedScreen': 'settings',
         'missingFields': issues,
       });
@@ -3923,14 +3813,14 @@ class AiChatExecutor {
     final currentPrefs = await _readDocMap(
       FirebaseFirestore.instance.collection('user_prefs').doc(user.uid),
     );
-    final finalMonthlyDays =
-        payload['notif_monthly_days'] ?? _toIntValue(currentPrefs['notif_monthly_days'], 7);
+    final finalMonthlyDays = payload['notif_monthly_days'] ??
+        _toIntValue(currentPrefs['notif_monthly_days'], 7);
     final finalQuarterlyDays = payload['notif_quarterly_days'] ??
         _toIntValue(currentPrefs['notif_quarterly_days'], 15);
     final finalSemiAnnualDays = payload['notif_semiannual_days'] ??
         _toIntValue(currentPrefs['notif_semiannual_days'], 30);
-    final finalAnnualDays =
-        payload['notif_annual_days'] ?? _toIntValue(currentPrefs['notif_annual_days'], 45);
+    final finalAnnualDays = payload['notif_annual_days'] ??
+        _toIntValue(currentPrefs['notif_annual_days'], 45);
 
     try {
       await FirebaseFirestore.instance
@@ -4005,7 +3895,7 @@ class AiChatExecutor {
       Map<String, int>? buildAppliedYears(String prefix) {
         final result = <String, int>{};
         for (var year = 1; year <= 10; year++) {
-          final key = '${prefix}${year}y_days';
+          final key = '$prefix${year}y_days';
           if (!payload.containsKey(key)) continue;
           result[year.toString()] = _toIntValue(payload[key], 0);
         }
@@ -4096,37 +3986,6 @@ class AiChatExecutor {
   //  وحدات المبنى
   // ================================================================
 
-  String _getBuildingUnits(String buildingName) {
-    final box = _propertiesBox();
-    if (box == null) return _err('لا توجد بيانات');
-    final q = buildingName.trim().toLowerCase();
-    final building = box.values.cast<Property>().where((p) {
-      return p.name.toLowerCase().contains(q) &&
-          p.type == PropertyType.building &&
-          p.isArchived != true;
-    }).firstOrNull;
-    if (building == null) return _err('لم يتم العثور على مبنى بهذا الاسم');
-
-    final units = box.values
-        .cast<Property>()
-        .where((p) => p.parentBuildingId == building.id && p.isArchived != true)
-        .map((u) => {
-              'name': u.name,
-              'type': u.type.toString().split('.').last,
-              'rooms': u.rooms,
-              'area': u.area,
-              'price': u.price,
-            })
-        .toList();
-
-    return jsonEncode({
-      'building': building.name,
-      'totalUnits': building.totalUnits,
-      'occupiedUnits': building.occupiedUnits,
-      'units': units,
-    });
-  }
-
   // ================================================================
   //  فواتير/سندات - فلترة ومحفوظات
   // ================================================================
@@ -4159,9 +4018,11 @@ class AiChatExecutor {
     return jsonEncode({
       'building': building.name,
       'buildingTypeLabel': building.type.label,
-      'managementMode': _isPerUnitBuilding(building) ? 'units' : 'whole_building',
-      'managementModeLabel':
-          _isPerUnitBuilding(building) ? 'إدارة بالوحدات' : 'تأجير كامل العمارة',
+      'managementMode':
+          _isPerUnitBuilding(building) ? 'units' : 'whole_building',
+      'managementModeLabel': _isPerUnitBuilding(building)
+          ? 'إدارة بالوحدات'
+          : 'تأجير كامل العمارة',
       'totalUnits': _configuredUnitsForBuilding(building, all),
       'registeredUnits': _registeredUnitsForBuilding(building, all),
       'occupiedUnits': _occupiedUnitsForBuilding(building, all),
@@ -4184,11 +4045,13 @@ class AiChatExecutor {
       case 'contract':
         filtered = all.where((i) =>
             i.contractId.isNotEmpty &&
-            (i.maintenanceRequestId == null || i.maintenanceRequestId!.isEmpty));
+            (i.maintenanceRequestId == null ||
+                i.maintenanceRequestId!.isEmpty));
         break;
       case 'maintenance':
         filtered = all.where((i) =>
-            i.maintenanceRequestId != null && i.maintenanceRequestId!.isNotEmpty);
+            i.maintenanceRequestId != null &&
+            i.maintenanceRequestId!.isNotEmpty);
         break;
       case 'manual':
         filtered = all.where((i) => i.contractId.isEmpty);
@@ -4197,21 +4060,24 @@ class AiChatExecutor {
         filtered = all;
     }
 
-    final list = filtered.take(30).map((i) => {
-          'serialNo': i.serialNo,
-          'amount': i.amount,
-          'paidAmount': i.paidAmount,
-          'remaining': i.amount - i.paidAmount,
-          'isPaid': (i.amount - i.paidAmount) < 0.01,
-          'isCanceled': i.isCanceled == true,
-          'dueDate': _fmtDate(i.dueDate),
-          'origin': i.maintenanceRequestId != null &&
-                  i.maintenanceRequestId!.isNotEmpty
-              ? 'خدمات'
-              : i.contractId.isNotEmpty
-                  ? 'عقد'
-                  : 'يدوي',
-        }).toList();
+    final list = filtered
+        .take(30)
+        .map((i) => {
+              'serialNo': i.serialNo,
+              'amount': i.amount,
+              'paidAmount': i.paidAmount,
+              'remaining': i.amount - i.paidAmount,
+              'isPaid': (i.amount - i.paidAmount) < 0.01,
+              'isCanceled': i.isCanceled == true,
+              'dueDate': _fmtDate(i.dueDate),
+              'origin': i.maintenanceRequestId != null &&
+                      i.maintenanceRequestId!.isNotEmpty
+                  ? 'خدمات'
+                  : i.contractId.isNotEmpty
+                      ? 'عقد'
+                      : 'يدوي',
+            })
+        .toList();
     return jsonEncode(list);
   }
 
@@ -4230,7 +4096,7 @@ class AiChatExecutor {
       'status': _invoiceStatusLabel(inv),
       'isPaid': _invoiceIsPaid(inv),
       'isCanceled': inv.isCanceled == true,
-      if ((inv.paymentMethod ?? '').trim().isNotEmpty)
+      if (inv.paymentMethod.trim().isNotEmpty)
         'paymentMethod': inv.paymentMethod,
       if ((inv.note ?? '').trim().isNotEmpty) 'note': inv.note,
       'issueDate': _fmtDate(inv.issueDate),
@@ -4287,9 +4153,10 @@ class AiChatExecutor {
                 'dueDate': _fmtDate(invoice.dueDate),
                 'isCanceled': invoice.isCanceled == true,
                 'isPaid': _invoiceIsPaid(invoice),
-                if ((invoice.paymentMethod ?? '').trim().isNotEmpty)
+                if (invoice.paymentMethod.trim().isNotEmpty)
                   'paymentMethod': invoice.paymentMethod,
-                if ((invoice.note ?? '').trim().isNotEmpty) 'note': invoice.note,
+                if ((invoice.note ?? '').trim().isNotEmpty)
+                  'note': invoice.note,
               })
           .toList(growable: false),
       if (metrics.containsKey('currentInvoice'))
@@ -4325,6 +4192,7 @@ class AiChatExecutor {
     }
   }
 
+  // ignore: unused_element
   String _getNotificationsLegacy(Map<String, dynamic> args) {
     final requestedKind = _normalizeNotificationKind(args['kind']);
     final limit = _toIntValue(args['limit'], 30).clamp(1, 100);
@@ -4462,7 +4330,8 @@ class AiChatExecutor {
     }
 
     if (alerts.isEmpty) {
-      return jsonEncode({'info': 'لا توجد إشعارات حالياً. كل شيء على ما يرام.'});
+      return jsonEncode(
+          {'info': 'لا توجد إشعارات حالياً. كل شيء على ما يرام.'});
     }
 
     final filtered = requestedKind == 'all'
@@ -4501,8 +4370,13 @@ class AiChatExecutor {
     final limit = _toIntValue(args['limit'], 30).clamp(1, 100).toInt();
     final rawIncludeDismissed = args['includeDismissed'];
     final includeDismissed = rawIncludeDismissed == true ||
-        <String>{'1', 'true', 'yes', 'y', 'on'}
-            .contains((rawIncludeDismissed ?? '').toString().trim().toLowerCase());
+        <String>{
+          '1',
+          'true',
+          'yes',
+          'y',
+          'on'
+        }.contains((rawIncludeDismissed ?? '').toString().trim().toLowerCase());
     final today = _notificationDateOnly(KsaTime.now());
     final notifications = <Map<String, dynamic>>[];
 
@@ -4558,9 +4432,8 @@ class AiChatExecutor {
     }
 
     String contractDisplayName(Contract contract) {
-      final tenant = (contract.tenantSnapshot?['fullName'] ?? '')
-          .toString()
-          .trim();
+      final tenant =
+          (contract.tenantSnapshot?['fullName'] ?? '').toString().trim();
       if (tenant.isNotEmpty) return tenant;
       return 'العميل';
     }
@@ -4771,20 +4644,17 @@ class AiChatExecutor {
         if (!_serviceTypes.contains(serviceType)) continue;
         if (!_notificationServiceHasProvider(serviceType, cfg)) continue;
 
-        final isWaterSharedFixed =
-            serviceType == 'water' &&
+        final isWaterSharedFixed = serviceType == 'water' &&
             (cfg['waterBillingMode'] ?? '').toString().trim().toLowerCase() ==
                 'shared' &&
             (cfg['waterSharedMethod'] ?? '').toString().trim().toLowerCase() ==
                 'fixed';
-        final isWaterSharedPercent =
-            serviceType == 'water' &&
+        final isWaterSharedPercent = serviceType == 'water' &&
             (cfg['waterBillingMode'] ?? '').toString().trim().toLowerCase() ==
                 'shared' &&
             (cfg['waterSharedMethod'] ?? '').toString().trim().toLowerCase() ==
                 'percent';
-        final isElectricitySharedPercent =
-            serviceType == 'electricity' &&
+        final isElectricitySharedPercent = serviceType == 'electricity' &&
             (cfg['electricityBillingMode'] ?? '')
                     .toString()
                     .trim()
@@ -4797,8 +4667,7 @@ class AiChatExecutor {
                 'percent';
         final isPercentBased =
             isWaterSharedPercent || isElectricitySharedPercent;
-        final isPeriodicMaintenanceService =
-            serviceType == 'cleaning' ||
+        final isPeriodicMaintenanceService = serviceType == 'cleaning' ||
             serviceType == 'elevator' ||
             (serviceType == 'internet' &&
                 _notificationInternetBillingMode(cfg) == 'owner');
@@ -4846,9 +4715,7 @@ class AiChatExecutor {
           final trackedDelta = _notificationDaysBetween(today, trackedDue);
           final remind = _notificationServiceRemindDays(cfg);
           if (trackedDelta == 0 ||
-              (trackedDelta > 0 &&
-                  remind > 0 &&
-                  trackedDelta == remind) ||
+              (trackedDelta > 0 && remind > 0 && trackedDelta == remind) ||
               trackedDelta < 0) {
             final requestTitle = trackedPeriodicRequest.title.trim();
             final title = trackedDelta < 0
@@ -4960,7 +4827,8 @@ class AiChatExecutor {
         if (isPeriodicMaintenanceService &&
             lastGenerated != null &&
             _notificationDaysBetween(today, lastGenerated) < 0) {
-          final activeGeneratedRequest = _notificationActivePeriodicMaintenanceRequest(
+          final activeGeneratedRequest =
+              _notificationActivePeriodicMaintenanceRequest(
             maintenance: mBox,
             invoices: iBox,
             propertyId: propertyId,
@@ -4968,7 +4836,8 @@ class AiChatExecutor {
             anchor: lastGenerated,
           );
           if (activeGeneratedRequest != null &&
-              _notificationDateOnly(activeGeneratedRequest.createdAt) == today) {
+              _notificationDateOnly(activeGeneratedRequest.createdAt) ==
+                  today) {
             final requestTitle = activeGeneratedRequest.title.trim();
             addNotification(
               kind: 'maintenance_today',
@@ -5014,8 +4883,7 @@ class AiChatExecutor {
         final daysUntilDue = _notificationDaysBetween(today, due);
         if (daysUntilDue < 0) continue;
         final remind = _notificationServiceRemindDays(cfg);
-        if (daysUntilDue != 0 &&
-            !(remind > 0 && daysUntilDue == remind)) {
+        if (daysUntilDue != 0 && !(remind > 0 && daysUntilDue == remind)) {
           continue;
         }
 
@@ -5194,8 +5062,8 @@ class AiChatExecutor {
           return _err('بيانات الخدمة المرتبطة بالإشعار غير مكتملة.');
         }
         final cfg = _notificationServiceConfigFor(propertyId, serviceType);
-        final opensSharedUtilityDirectly =
-            cfg != null && _notificationIsSharedUtilityService(serviceType, cfg);
+        final opensSharedUtilityDirectly = cfg != null &&
+            _notificationIsSharedUtilityService(serviceType, cfg);
         final targetId = opensSharedUtilityDirectly
             ? ''
             : (refData['serviceTargetId'] ?? '').toString().trim();
@@ -5274,7 +5142,8 @@ class AiChatExecutor {
   // ================================================================
 
   Future<String> _getPropertiesReport(Map<String, dynamic> args) {
-    return _runReportBridge(() => AiChatReportsBridge.getPropertiesReport(args));
+    return _runReportBridge(
+        () => AiChatReportsBridge.getPropertiesReport(args));
   }
 
   Future<String> _getClientsReport(Map<String, dynamic> args) {
@@ -5302,7 +5171,8 @@ class AiChatExecutor {
   }
 
   Future<String> _getReportsOwnerDetails(Map<String, dynamic> args) {
-    return _runReportBridge(() => AiChatReportsBridge.getOwnerReportDetails(args));
+    return _runReportBridge(
+        () => AiChatReportsBridge.getOwnerReportDetails(args));
   }
 
   Future<String> _previewReportsOwnerSettlement(Map<String, dynamic> args) {
@@ -5318,11 +5188,13 @@ class AiChatExecutor {
   }
 
   Future<String> _getReportsOwnerBankAccounts(Map<String, dynamic> args) {
-    return _runReportBridge(() => AiChatReportsBridge.getOwnerBankAccounts(args));
+    return _runReportBridge(
+        () => AiChatReportsBridge.getOwnerBankAccounts(args));
   }
 
   Future<String> _assignReportsPropertyOwner(Map<String, dynamic> args) async {
-    final validation = AiChatDomainRulesService.validateReportsAssignPropertyOwner(
+    final validation =
+        AiChatDomainRulesService.validateReportsAssignPropertyOwner(
       propertyQuery: args['propertyQuery'],
       ownerQuery: args['ownerQuery'],
     );
@@ -5358,7 +5230,8 @@ class AiChatExecutor {
     if (!validation.isValid) {
       return _domainValidationError(
         validation,
-        requiredFields: AiChatDomainRulesService.reportsOfficeVoucherRequiredFields(),
+        requiredFields:
+            AiChatDomainRulesService.reportsOfficeVoucherRequiredFields(),
         nextStep: 'collect_missing_or_invalid_reports_fields_then_retry',
         extra: const <String, dynamic>{
           'module': 'reports',
@@ -5378,7 +5251,8 @@ class AiChatExecutor {
     );
   }
 
-  Future<String> _recordReportsOfficeWithdrawal(Map<String, dynamic> args) async {
+  Future<String> _recordReportsOfficeWithdrawal(
+      Map<String, dynamic> args) async {
     final validation = AiChatDomainRulesService.validateReportsOfficeWithdrawal(
       amount: args['amount'],
       transferDate: args['transferDate'],
@@ -5451,7 +5325,8 @@ class AiChatExecutor {
     if (!validation.isValid) {
       return _domainValidationError(
         validation,
-        requiredFields: AiChatDomainRulesService.reportsOwnerPayoutRequiredFields(),
+        requiredFields:
+            AiChatDomainRulesService.reportsOwnerPayoutRequiredFields(),
         nextStep: 'collect_missing_or_invalid_reports_fields_then_retry',
         extra: const <String, dynamic>{
           'module': 'reports',
@@ -5474,7 +5349,8 @@ class AiChatExecutor {
     );
   }
 
-  Future<String> _recordReportsOwnerAdjustment(Map<String, dynamic> args) async {
+  Future<String> _recordReportsOwnerAdjustment(
+      Map<String, dynamic> args) async {
     final validation = AiChatDomainRulesService.validateReportsOwnerAdjustment(
       ownerQuery: args['ownerQuery'],
       propertyQuery: args['propertyQuery'],
@@ -5556,8 +5432,8 @@ class AiChatExecutor {
     if (!validation.isValid) {
       return _domainValidationError(
         validation,
-        requiredFields:
-            AiChatDomainRulesService.reportsOwnerBankAccountEditRequiredFields(),
+        requiredFields: AiChatDomainRulesService
+            .reportsOwnerBankAccountEditRequiredFields(),
         nextStep: 'collect_missing_or_invalid_reports_fields_then_retry',
         extra: const <String, dynamic>{
           'module': 'reports',
@@ -5578,7 +5454,8 @@ class AiChatExecutor {
     );
   }
 
-  Future<String> _deleteReportsOwnerBankAccount(Map<String, dynamic> args) async {
+  Future<String> _deleteReportsOwnerBankAccount(
+      Map<String, dynamic> args) async {
     final validation =
         AiChatDomainRulesService.validateReportsOwnerBankAccountDelete(
       ownerQuery: args['ownerQuery'],
@@ -5587,8 +5464,8 @@ class AiChatExecutor {
     if (!validation.isValid) {
       return _domainValidationError(
         validation,
-        requiredFields:
-            AiChatDomainRulesService.reportsOwnerBankAccountDeleteRequiredFields(),
+        requiredFields: AiChatDomainRulesService
+            .reportsOwnerBankAccountDeleteRequiredFields(),
         nextStep: 'collect_missing_or_invalid_reports_fields_then_retry',
         extra: const <String, dynamic>{
           'module': 'reports',
@@ -5645,10 +5522,14 @@ class AiChatExecutor {
       companyName: args['companyName']?.toString(),
       companyCommercialRegister: args['companyCommercialRegister']?.toString(),
       companyTaxNumber: args['companyTaxNumber']?.toString(),
-      companyRepresentativeName:
-          args['companyRepresentativeName']?.toString(),
+      companyRepresentativeName: args['companyRepresentativeName']?.toString(),
       companyRepresentativePhone:
           args['companyRepresentativePhone']?.toString(),
+      companyRepresentativeNationalId:
+          args['companyRepresentativeNationalId']?.toString(),
+      companyRepresentativeDateOfBirth: _parseDate(
+        args['companyRepresentativeDateOfBirth']?.toString(),
+      ),
       serviceSpecialization: args['serviceSpecialization']?.toString(),
       attachmentPaths: args['attachmentPaths'],
       existingTenants: box.values.cast<Tenant>(),
@@ -5706,14 +5587,20 @@ class AiChatExecutor {
       companyTaxNumber: args.containsKey('companyTaxNumber')
           ? args['companyTaxNumber']?.toString()
           : t.companyTaxNumber,
-      companyRepresentativeName:
-          args.containsKey('companyRepresentativeName')
-              ? args['companyRepresentativeName']?.toString()
-              : t.companyRepresentativeName,
-      companyRepresentativePhone:
-          args.containsKey('companyRepresentativePhone')
-              ? args['companyRepresentativePhone']?.toString()
-              : t.companyRepresentativePhone,
+      companyRepresentativeName: args.containsKey('companyRepresentativeName')
+          ? args['companyRepresentativeName']?.toString()
+          : t.companyRepresentativeName,
+      companyRepresentativePhone: args.containsKey('companyRepresentativePhone')
+          ? args['companyRepresentativePhone']?.toString()
+          : t.companyRepresentativePhone,
+      companyRepresentativeNationalId:
+          args.containsKey('companyRepresentativeNationalId')
+              ? args['companyRepresentativeNationalId']?.toString()
+              : t.companyRepresentativeNationalId,
+      companyRepresentativeDateOfBirth:
+          args.containsKey('companyRepresentativeDateOfBirth')
+              ? _parseDate(args['companyRepresentativeDateOfBirth']?.toString())
+              : t.companyRepresentativeDateOfBirth,
       serviceSpecialization: args.containsKey('serviceSpecialization')
           ? args['serviceSpecialization']?.toString()
           : t.serviceSpecialization,
@@ -5911,11 +5798,12 @@ class AiChatExecutor {
       halls: args['halls'] ?? _propertySpecInt(spec, 'صالات'),
       apartmentFloor: args['apartmentFloor'] ?? _propertySpecInt(spec, 'الدور'),
       furnished: args['furnished'] ?? _propertySpecFurnished(spec),
-      description: args['description'] ?? _extractFreePropertyDescription(p.description),
+      description:
+          args['description'] ?? _extractFreePropertyDescription(p.description),
       documentType: args['documentType'] ?? p.documentType,
       documentNumber: args['documentNumber'] ?? p.documentNumber,
-      documentDate:
-          args['documentDate'] ?? (p.documentDate == null ? null : _fmtDate(p.documentDate!)),
+      documentDate: args['documentDate'] ??
+          (p.documentDate == null ? null : _fmtDate(p.documentDate!)),
       documentAttachmentPaths: args['documentAttachmentPaths'] ??
           args['attachmentPaths'] ??
           p.documentAttachmentPaths ??
@@ -5923,7 +5811,8 @@ class AiChatExecutor {
               ? const <String>[]
               : <String>[p.documentAttachmentPath!.trim()]),
       existing: p,
-      isLinkedForEdit: _hasActiveContract(p) || _existingUnitsCountForBuilding(p.id) > 0,
+      isLinkedForEdit:
+          _hasActiveContract(p) || _existingUnitsCountForBuilding(p.id) > 0,
       existingUnitsCount: _existingUnitsCountForBuilding(p.id),
     );
     if (!validation.isValid) {
@@ -5959,9 +5848,11 @@ class AiChatExecutor {
     p.documentType = draft.documentType;
     p.documentNumber = draft.documentNumber;
     p.documentDate = draft.documentDate;
-    p.documentAttachmentPaths = List<String>.from(draft.documentAttachmentPaths);
-    p.documentAttachmentPath =
-        draft.documentAttachmentPaths.isEmpty ? null : draft.documentAttachmentPaths.first;
+    p.documentAttachmentPaths =
+        List<String>.from(draft.documentAttachmentPaths);
+    p.documentAttachmentPath = draft.documentAttachmentPaths.isEmpty
+        ? null
+        : draft.documentAttachmentPaths.first;
     p.updatedAt = KsaTime.now();
     p.save();
     OfflineSyncService.instance.enqueueUpsertProperty(p);
@@ -6006,18 +5897,24 @@ class AiChatExecutor {
       return _err('لا يمكن الوصول للبيانات');
     }
 
-    final tenantName = (args['tenantName'] ?? '').toString().trim().toLowerCase();
+    final tenantName =
+        (args['tenantName'] ?? '').toString().trim().toLowerCase();
     final tenant = tenantBox.values.cast<Tenant>().where((t) {
       return t.fullName.toLowerCase().contains(tenantName) &&
           t.isArchived != true;
     }).firstOrNull;
-    if (tenant == null) return _err('لم يتم العثور على مستأجر باسم "${args['tenantName']}"');
+    if (tenant == null) {
+      return _err('لم يتم العثور على مستأجر باسم "${args['tenantName']}"');
+    }
 
-    final propName = (args['propertyName'] ?? '').toString().trim().toLowerCase();
+    final propName =
+        (args['propertyName'] ?? '').toString().trim().toLowerCase();
     final prop = propBox.values.cast<Property>().where((p) {
       return p.name.toLowerCase().contains(propName) && p.isArchived != true;
     }).firstOrNull;
-    if (prop == null) return _err('لم يتم العثور على عقار باسم "${args['propertyName']}"');
+    if (prop == null) {
+      return _err('لم يتم العثور على عقار باسم "${args['propertyName']}"');
+    }
 
     if (_isPropertyOrParentArchived(prop)) {
       return _archivedPropertyActionError(prop, forService: false);
@@ -6042,10 +5939,9 @@ class AiChatExecutor {
         requestedTerm == ContractTerm.daily && !hasExplicitDailyCheckoutHour
             ? await _resolveSavedDailyContractCheckoutHour()
             : null;
-    final effectiveDailyCheckoutHour =
-        hasExplicitDailyCheckoutHour
-            ? rawDailyCheckoutHour
-            : savedDailyCheckoutHour;
+    final effectiveDailyCheckoutHour = hasExplicitDailyCheckoutHour
+        ? rawDailyCheckoutHour
+        : savedDailyCheckoutHour;
 
     final validation = AiChatDomainRulesService.validateContractCreate(
       startDate: args['startDate'],
@@ -6087,11 +5983,15 @@ class AiChatExecutor {
       });
     }
 
-    final missingServices = await missingRequiredPeriodicServicesForProperty(
+    final missingServiceSetups =
+        await missingRequiredPeriodicServiceSetupsForProperty(
       prop.id,
       property: prop,
     );
+    final missingServices =
+        missingServiceSetups.map((item) => item.label).toList(growable: false);
     if (missingServices.isNotEmpty) {
+      final firstTarget = missingServiceSetups.first;
       return jsonEncode(<String, dynamic>{
         'error':
             'الخدمات الدورية المطلوبة غير مضبوطة لهذا العقار: ${missingServices.join('، ')}.',
@@ -6101,9 +6001,11 @@ class AiChatExecutor {
         'nextStep': 'open_property_services_and_complete_then_retry',
         'propertyName': prop.name,
         'missingServices': missingServices,
+        'missingServiceTargets':
+            missingServiceSetups.map((item) => item.toMap()).toList(),
         'navigationAction': _navigationAction(
           '/property/services',
-          arguments: <String, dynamic>{'propertyId': prop.id},
+          arguments: firstTarget.navigationArguments,
         ),
       });
     }
@@ -6122,8 +6024,9 @@ class AiChatExecutor {
       propertyId: prop.id,
       tenantSnapshot: _buildTenantSnapshot(tenant),
       propertySnapshot: _buildPropertySnapshot(prop),
-      buildingSnapshot:
-          parentBuilding == null ? null : _buildPropertySnapshot(parentBuilding),
+      buildingSnapshot: parentBuilding == null
+          ? null
+          : _buildPropertySnapshot(parentBuilding),
       startDate: draft.startDate,
       endDate: draft.endDate,
       rentAmount: draft.rentAmount,
@@ -6232,8 +6135,8 @@ class AiChatExecutor {
     final draft = draftValidation.draft!;
     final id = const Uuid().v4();
     final now = KsaTime.now();
-    final invSerial = _nextSerial(
-        'I', invoiceBox.values.map((i) => i.serialNo));
+    final invSerial =
+        _nextSerial('I', invoiceBox.values.map((i) => i.serialNo));
 
     final invoice = Invoice(
       id: id,
@@ -6346,8 +6249,7 @@ class AiChatExecutor {
 
     final id = const Uuid().v4();
     final now = KsaTime.now();
-    final serial =
-        _nextSerial('V', invoiceBox.values.map((i) => i.serialNo));
+    final serial = _nextSerial('V', invoiceBox.values.map((i) => i.serialNo));
 
     final invoice = Invoice(
       id: id,
@@ -6382,9 +6284,8 @@ class AiChatExecutor {
     if (box == null) return _err('لا يمكن الوصول للبيانات');
 
     final serial = (args['contractSerialNo'] ?? '').toString().trim();
-    final match = box.values
-        .where((c) => (c as dynamic).serialNo == serial)
-        .firstOrNull;
+    final match =
+        box.values.where((c) => (c as dynamic).serialNo == serial).firstOrNull;
     if (match == null) return _err('لم يتم العثور على عقد بالرقم $serial');
 
     if (match.isTerminated) return _err('لا يمكن تعديل عقد منهي.');
@@ -6560,8 +6461,9 @@ class AiChatExecutor {
       furnished: args['furnished'],
       description: args['description'],
       isPerUnitBuilding: building.rentalMode == RentalMode.perUnit,
-      remainingCapacity:
-          building.totalUnits > 0 ? building.totalUnits - existingUnits : 999999,
+      remainingCapacity: building.totalUnits > 0
+          ? building.totalUnits - existingUnits
+          : 999999,
       hasLimitedCapacity: building.totalUnits > 0,
     );
     if (!validation.isValid) {
@@ -6649,10 +6551,12 @@ class AiChatExecutor {
     }
 
     final draft = validation.draft!;
-    final requestedStatus = AiChatDomainRulesService.normalizeStatus(args['status']);
+    final requestedStatus =
+        AiChatDomainRulesService.normalizeStatus(args['status']);
     if (requestedStatus == MaintenanceStatus.canceled) {
       return jsonEncode(<String, dynamic>{
-        'error': 'لا يمكن إنشاء طلب جديد بحالة ملغي من الدردشة لأن الشاشة نفسها لا تسمح بذلك عند الإنشاء.',
+        'error':
+            'لا يمكن إنشاء طلب جديد بحالة ملغي من الدردشة لأن الشاشة نفسها لا تسمح بذلك عند الإنشاء.',
         'code': 'maintenance_create_canceled_not_allowed',
       });
     }
@@ -6691,7 +6595,8 @@ class AiChatExecutor {
           provider == null ? null : buildMaintenanceProviderSnapshot(provider),
       cost: draft.cost,
       attachmentPaths: List<String>.from(draft.attachmentPaths),
-      completedDate: requestedStatus == MaintenanceStatus.completed ? now : null,
+      completedDate:
+          requestedStatus == MaintenanceStatus.completed ? now : null,
       createdAt: now,
     );
 
@@ -6709,8 +6614,7 @@ class AiChatExecutor {
     maintBox.put(id, req);
     return jsonEncode(<String, dynamic>{
       'success': true,
-      'message':
-          'تم إنشاء طلب الصيانة "$serial - ${req.title}" بنجاح.',
+      'message': 'تم إنشاء طلب الصيانة "$serial - ${req.title}" بنجاح.',
       'requestSerialNo': serial,
       'requestId': id,
       'status': AiChatDomainRulesService.statusLabel(requestedStatus),
@@ -6793,27 +6697,45 @@ class AiChatExecutor {
   //  خدمات دورية
   // ================================================================
 
-  static const _serviceTypes = ['cleaning', 'elevator', 'internet', 'water', 'electricity'];
+  static const _serviceTypes = [
+    'cleaning',
+    'elevator',
+    'internet',
+    'water',
+    'electricity'
+  ];
 
   static String _serviceLabel(String type) {
     switch (type) {
-      case 'cleaning': return 'نظافة عمارة';
-      case 'elevator': return 'صيانة مصعد';
-      case 'internet': return 'خدمة إنترنت';
-      case 'water': return 'خدمة مياه مشتركة';
-      case 'electricity': return 'خدمة كهرباء مشتركة';
-      default: return 'خدمات';
+      case 'cleaning':
+        return 'نظافة عمارة';
+      case 'elevator':
+        return 'صيانة مصعد';
+      case 'internet':
+        return 'خدمة إنترنت';
+      case 'water':
+        return 'خدمة مياه مشتركة';
+      case 'electricity':
+        return 'خدمة كهرباء مشتركة';
+      default:
+        return 'خدمات';
     }
   }
 
   static String _serviceTitle(String type) {
     switch (type) {
-      case 'cleaning': return 'طلب نظافة عمارة';
-      case 'elevator': return 'طلب صيانة مصعد';
-      case 'internet': return 'طلب تجديد خدمة إنترنت';
-      case 'water': return 'طلب فاتورة مياه مشتركة';
-      case 'electricity': return 'طلب فاتورة كهرباء مشتركة';
-      default: return 'طلب خدمة';
+      case 'cleaning':
+        return 'طلب نظافة عمارة';
+      case 'elevator':
+        return 'طلب صيانة مصعد';
+      case 'internet':
+        return 'طلب تجديد خدمة إنترنت';
+      case 'water':
+        return 'طلب فاتورة مياه مشتركة';
+      case 'electricity':
+        return 'طلب فاتورة كهرباء مشتركة';
+      default:
+        return 'طلب خدمة';
     }
   }
 
@@ -6827,9 +6749,17 @@ class AiChatExecutor {
     final lower = s.toLowerCase().trim();
     if (lower.contains('نظافة') || lower == 'cleaning') return 'cleaning';
     if (lower.contains('مصعد') || lower == 'elevator') return 'elevator';
-    if (lower.contains('إنترنت') || lower.contains('انترنت') || lower == 'internet') return 'internet';
-    if (lower.contains('مياه') || lower.contains('ماء') || lower == 'water') return 'water';
-    if (lower.contains('كهرباء') || lower == 'electricity') return 'electricity';
+    if (lower.contains('إنترنت') ||
+        lower.contains('انترنت') ||
+        lower == 'internet') {
+      return 'internet';
+    }
+    if (lower.contains('مياه') || lower.contains('ماء') || lower == 'water') {
+      return 'water';
+    }
+    if (lower.contains('كهرباء') || lower == 'electricity') {
+      return 'electricity';
+    }
     return lower;
   }
 
@@ -6995,7 +6925,8 @@ class AiChatExecutor {
         .where((request) {
           if (request.isArchived) return false;
           if (request.propertyId != propertyId) return false;
-          return _normalizeServiceType(request.periodicServiceType?.toString()) ==
+          return _normalizeServiceType(
+                  request.periodicServiceType?.toString()) ==
               type;
         })
         .cast<MaintenanceRequest>()
@@ -7018,18 +6949,21 @@ class AiChatExecutor {
       'status': request.status.name,
       'assignedTo': request.assignedTo,
       'cost': request.cost,
-      'scheduledDate':
-          request.scheduledDate == null ? null : _fmtDate(request.scheduledDate!),
+      'scheduledDate': request.scheduledDate == null
+          ? null
+          : _fmtDate(request.scheduledDate!),
       'executionDeadline': request.executionDeadline == null
           ? null
           : _fmtDate(request.executionDeadline!),
       'periodicCycleDate': request.periodicCycleDate == null
           ? null
           : _fmtDate(request.periodicCycleDate!),
-      'completedDate':
-          request.completedDate == null ? null : _fmtDate(request.completedDate!),
+      'completedDate': request.completedDate == null
+          ? null
+          : _fmtDate(request.completedDate!),
       'createdAt': _fmtDate(request.createdAt),
-      'invoiceId': (request.invoiceId ?? '').trim().isEmpty ? null : request.invoiceId,
+      'invoiceId':
+          (request.invoiceId ?? '').trim().isEmpty ? null : request.invoiceId,
     };
   }
 
@@ -7062,7 +6996,8 @@ class AiChatExecutor {
   ) {
     if (_periodicServiceIsBuildingWithUnits(property) &&
         (type == 'water' || type == 'electricity')) {
-      final mode = (cfg['sharedUnitsMode'] ?? '').toString().trim().toLowerCase();
+      final mode =
+          (cfg['sharedUnitsMode'] ?? '').toString().trim().toLowerCase();
       if (mode == 'units') return true;
       if (mode == 'shared_percent') {
         return _periodicServiceDate(cfg['nextDueDate']) != null &&
@@ -7122,7 +7057,8 @@ class AiChatExecutor {
         final billingMode = _periodicServiceElectricityBillingMode(cfg);
         if (billingMode == 'separate') return true;
         if (billingMode != 'shared') return false;
-        return (_periodicServiceNumber(cfg['electricitySharePercent']) ?? 0) > 0;
+        return (_periodicServiceNumber(cfg['electricitySharePercent']) ?? 0) >
+            0;
       default:
         return cfg.isNotEmpty;
     }
@@ -7154,9 +7090,9 @@ class AiChatExecutor {
     }
 
     if (type == 'water') {
-      final billingMode =
-          _normalizeSharedBillingMode(args['billingMode'] ?? args['waterBillingMode']) ??
-              _periodicServiceWaterBillingMode(existingConfig);
+      final billingMode = _normalizeSharedBillingMode(
+              args['billingMode'] ?? args['waterBillingMode']) ??
+          _periodicServiceWaterBillingMode(existingConfig);
       final sharedMethod = _normalizeWaterSharedMethod(
             args['sharedMethod'] ?? args['waterSharedMethod'],
           ) ??
@@ -7208,7 +7144,8 @@ class AiChatExecutor {
 
     if (_periodicServiceIsBuildingWithUnits(property) &&
         (type == 'water' || type == 'electricity')) {
-      final mode = (cfg['sharedUnitsMode'] ?? '').toString().trim().toLowerCase();
+      final mode =
+          (cfg['sharedUnitsMode'] ?? '').toString().trim().toLowerCase();
       if (type == 'water' && mode == 'units_fixed') {
         return 'الإدارة من الوحدات (مبلغ مقطوع)';
       }
@@ -7230,8 +7167,10 @@ class AiChatExecutor {
       final parent = _periodicServiceParentProperty(property);
       if (parent != null) {
         final parentCfg = _periodicServiceConfigForPropertyId(parent.id, type);
-        final mode =
-            (parentCfg['sharedUnitsMode'] ?? '').toString().trim().toLowerCase();
+        final mode = (parentCfg['sharedUnitsMode'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
         if (mode == 'shared_percent') {
           return 'يُدار من العمارة بالتساوي على الشقق المؤجرة';
         }
@@ -7260,12 +7199,14 @@ class AiChatExecutor {
       final billingMode = _periodicServiceElectricityBillingMode(cfg);
       if (billingMode == 'separate') return 'على المستأجر مباشرة';
       if (billingMode == 'shared') {
-        final percent = _periodicServiceNumber(cfg['electricitySharePercent']) ?? 0;
+        final percent =
+            _periodicServiceNumber(cfg['electricitySharePercent']) ?? 0;
         return 'مشترك بالنسبة ${percent.toStringAsFixed(2)}%';
       }
     }
 
-    final nextDue = _periodicServiceVisibleDueDate(property, type, cfg, requests);
+    final nextDue =
+        _periodicServiceVisibleDueDate(property, type, cfg, requests);
     if (nextDue != null) return 'الموعد القادم ${_fmtDate(nextDue)}';
     return 'مفعل';
   }
@@ -7307,7 +7248,8 @@ class AiChatExecutor {
     final openRequest = _firstWhereOrNull(maintBox.values, (request) {
       if (request.isArchived) return false;
       if (request.propertyId != property.id) return false;
-      if (_normalizeServiceType(request.periodicServiceType?.toString()) != type) {
+      if (_normalizeServiceType(request.periodicServiceType?.toString()) !=
+          type) {
         return false;
       }
       return request.status == MaintenanceStatus.open ||
@@ -7386,7 +7328,8 @@ class AiChatExecutor {
     final existingCfg = svcBox.get(cfgKey)?.cast<String, dynamic>() ?? {};
     if (isCreate && existingCfg.isNotEmpty) {
       return jsonEncode(<String, dynamic>{
-        'error': 'هذه الخدمة الدورية مضبوطة مسبقًا لهذا العقار. استخدم التحديث بدل الإنشاء.',
+        'error':
+            'هذه الخدمة الدورية مضبوطة مسبقًا لهذا العقار. استخدم التحديث بدل الإنشاء.',
         'code': 'periodic_service_already_exists',
         'propertyName': prop.name,
         'serviceType': type,
@@ -7394,7 +7337,8 @@ class AiChatExecutor {
     }
     if (!isCreate && existingCfg.isEmpty) {
       return jsonEncode(<String, dynamic>{
-        'error': 'هذه الخدمة الدورية غير مضبوطة بعد لهذا العقار. ابدأ بالإنشاء أولًا.',
+        'error':
+            'هذه الخدمة الدورية غير مضبوطة بعد لهذا العقار. ابدأ بالإنشاء أولًا.',
         'code': 'periodic_service_not_found',
         'propertyName': prop.name,
         'serviceType': type,
@@ -7444,9 +7388,8 @@ class AiChatExecutor {
       Map<String, dynamic> extraConfig = const <String, dynamic>{},
     }) {
       const allowedRecurrence = <int>{0, 1, 2, 3, 6, 12};
-      final providerQuery = (args['provider'] ?? args['providerName'] ?? '')
-          .toString()
-          .trim();
+      final providerQuery =
+          (args['provider'] ?? args['providerName'] ?? '').toString().trim();
       final existingProviderName =
           (existingCfg['providerName'] ?? existingCfg['provider'] ?? '')
               .toString()
@@ -7491,7 +7434,8 @@ class AiChatExecutor {
         return validationError(
           'تاريخ الدورة القادمة مطلوب لهذه الخدمة.',
           missingFields: <Map<String, String>>[
-            issue('nextDueDate', 'تاريخ الدورة القادمة', 'تاريخ الدورة القادمة مطلوب'),
+            issue('nextDueDate', 'تاريخ الدورة القادمة',
+                'تاريخ الدورة القادمة مطلوب'),
           ],
         );
       }
@@ -7631,9 +7575,9 @@ class AiChatExecutor {
           extraConfig: const <String, dynamic>{'internetBillingMode': 'owner'},
         );
       case 'water':
-        final billingMode =
-            _normalizeSharedBillingMode(args['billingMode'] ?? args['waterBillingMode']) ??
-                _periodicServiceWaterBillingMode(existingCfg);
+        final billingMode = _normalizeSharedBillingMode(
+                args['billingMode'] ?? args['waterBillingMode']) ??
+            _periodicServiceWaterBillingMode(existingCfg);
         if (billingMode.isEmpty) {
           return validationError(
             'يجب تحديد نمط فوترة المياه: shared أو separate.',
@@ -7650,7 +7594,8 @@ class AiChatExecutor {
               .toString()
               .trim();
           if (meterNo.isNotEmpty && !RegExp(r'^\d{4,20}$').hasMatch(meterNo)) {
-            return validationError('رقم عداد المياه يجب أن يكون بين 4 و20 رقمًا.');
+            return validationError(
+                'رقم عداد المياه يجب أن يكون بين 4 و20 رقمًا.');
           }
           final nextCfg = <String, dynamic>{
             ...existingCfg,
@@ -7721,7 +7666,8 @@ class AiChatExecutor {
             return validationError(
               'النسبة المطلوبة للمياه المشتركة يجب أن تكون أكبر من صفر.',
               missingFields: <Map<String, String>>[
-                issue('sharePercent', 'النسبة', 'النسبة مطلوبة ويجب أن تكون أكبر من صفر'),
+                issue('sharePercent', 'النسبة',
+                    'النسبة مطلوبة ويجب أن تكون أكبر من صفر'),
               ],
             );
           }
@@ -7733,7 +7679,8 @@ class AiChatExecutor {
             return validationError(
               'تاريخ الاستحقاق القادم مطلوب للمياه المشتركة بالنسبة.',
               missingFields: <Map<String, String>>[
-                issue('nextDueDate', 'تاريخ الاستحقاق', 'تاريخ الاستحقاق مطلوب'),
+                issue(
+                    'nextDueDate', 'تاريخ الاستحقاق', 'تاريخ الاستحقاق مطلوب'),
               ],
             );
           }
@@ -7782,7 +7729,8 @@ class AiChatExecutor {
           return validationError(
             'المبلغ الكلي للمياه المشتركة يجب أن يكون أكبر من صفر.',
             missingFields: <Map<String, String>>[
-              issue('totalAmount', 'المبلغ الكلي', 'المبلغ الكلي مطلوب ويجب أن يكون أكبر من صفر'),
+              issue('totalAmount', 'المبلغ الكلي',
+                  'المبلغ الكلي مطلوب ويجب أن يكون أكبر من صفر'),
             ],
           );
         }
@@ -7845,7 +7793,8 @@ class AiChatExecutor {
               .toString()
               .trim();
           if (meterNo.isNotEmpty && !RegExp(r'^\d{4,20}$').hasMatch(meterNo)) {
-            return validationError('رقم عداد الكهرباء يجب أن يكون بين 4 و20 رقمًا.');
+            return validationError(
+                'رقم عداد الكهرباء يجب أن يكون بين 4 و20 رقمًا.');
           }
           final nextCfg = <String, dynamic>{
             ...existingCfg,
@@ -7878,14 +7827,14 @@ class AiChatExecutor {
           });
         }
 
-        final sharePercent =
-            _periodicServiceNumber(args['sharePercent']) ??
-                _periodicServiceNumber(existingCfg['electricitySharePercent']);
+        final sharePercent = _periodicServiceNumber(args['sharePercent']) ??
+            _periodicServiceNumber(existingCfg['electricitySharePercent']);
         if (sharePercent == null || sharePercent <= 0) {
           return validationError(
             'نسبة الكهرباء المشتركة يجب أن تكون أكبر من صفر.',
             missingFields: <Map<String, String>>[
-              issue('sharePercent', 'النسبة', 'النسبة مطلوبة ويجب أن تكون أكبر من صفر'),
+              issue('sharePercent', 'النسبة',
+                  'النسبة مطلوبة ويجب أن تكون أكبر من صفر'),
             ],
           );
         }
@@ -7967,7 +7916,8 @@ class AiChatExecutor {
       requests,
       (item) => item.status == MaintenanceStatus.completed,
     );
-    final nextDue = _periodicServiceVisibleDueDate(property, type, cfg, requests);
+    final nextDue =
+        _periodicServiceVisibleDueDate(property, type, cfg, requests);
     final parent = _periodicServiceParentProperty(property);
     final writeBoundary = _periodicServiceWriteBoundaryReason(
       property: property,
@@ -7989,14 +7939,14 @@ class AiChatExecutor {
       'serviceLabel': _serviceLabel(type),
       'configured': configured,
       'statusLabel': _periodicServiceStatusLabel(property, type, cfg, requests),
-      'providerName': (cfg['providerName'] ?? cfg['provider'] ?? '')
-          .toString()
-          .trim(),
+      'providerName':
+          (cfg['providerName'] ?? cfg['provider'] ?? '').toString().trim(),
       'management': <String, dynamic>{
         'payer': (cfg['payer'] ?? '').toString(),
         'sharedUnitsMode': (cfg['sharedUnitsMode'] ?? '').toString(),
-        'internetBillingMode':
-            type == 'internet' ? _periodicServiceInternetBillingMode(cfg) : null,
+        'internetBillingMode': type == 'internet'
+            ? _periodicServiceInternetBillingMode(cfg)
+            : null,
         'waterBillingMode':
             type == 'water' ? _periodicServiceWaterBillingMode(cfg) : null,
         'waterSharedMethod':
@@ -8022,7 +7972,8 @@ class AiChatExecutor {
         'sharePercent': _periodicServiceNumber(cfg['sharePercent']),
         'electricitySharePercent':
             _periodicServiceNumber(cfg['electricitySharePercent']),
-        'waterPerInstallment': _periodicServiceNumber(cfg['waterPerInstallment']),
+        'waterPerInstallment':
+            _periodicServiceNumber(cfg['waterPerInstallment']),
       },
       'summary': <String, dynamic>{
         'totalRequests': requests.length,
@@ -8037,7 +7988,8 @@ class AiChatExecutor {
         'configHistoryRows': previewRows.length,
       },
       'currentOpenRequest': _serializePeriodicServiceRequest(openRequest),
-      'lastCompletedRequest': _serializePeriodicServiceRequest(lastCompletedRequest),
+      'lastCompletedRequest':
+          _serializePeriodicServiceRequest(lastCompletedRequest),
       'writeBoundary': <String, dynamic>{
         'requiresScreen': writeBoundary != null,
         'reason': writeBoundary,
@@ -8063,7 +8015,8 @@ class AiChatExecutor {
         'parentManagedMode': parent == null
             ? null
             : (type == 'water' || type == 'electricity')
-                ? (_periodicServiceConfigForPropertyId(parent.id, type)['sharedUnitsMode'] ??
+                ? (_periodicServiceConfigForPropertyId(
+                            parent.id, type)['sharedUnitsMode'] ??
                         '')
                     .toString()
                 : null,
@@ -8152,14 +8105,16 @@ class AiChatExecutor {
     } else if (type == 'internet') {
       historyKind = 'none';
       history = const <Map<String, dynamic>>[];
-      info = 'هذه الخدمة مضبوطة على المستأجر مباشرة ولا يوجد سجل طلبات دورية على المالك.';
+      info =
+          'هذه الخدمة مضبوطة على المستأجر مباشرة ولا يوجد سجل طلبات دورية على المالك.';
     } else if (type == 'water') {
       final billingMode = _periodicServiceWaterBillingMode(cfg);
       final method = _periodicServiceWaterSharedMethod(cfg);
       if (billingMode == 'separate') {
         historyKind = 'none';
         history = const <Map<String, dynamic>>[];
-        info = 'خدمة المياه هنا منفصلة على المستأجر ولا تملك سجلًا دوريًا مشتركًا.';
+        info =
+            'خدمة المياه هنا منفصلة على المستأجر ولا تملك سجلًا دوريًا مشتركًا.';
       } else if (method == 'percent') {
         historyKind = 'water_percent_requests';
         history = _periodicServicePreviewRows(
@@ -8168,11 +8123,13 @@ class AiChatExecutor {
         );
       } else {
         historyKind = 'water_installments';
-        history = _periodicServicePreviewRows(cfg['waterInstallments'], limit: 50);
+        history =
+            _periodicServicePreviewRows(cfg['waterInstallments'], limit: 50);
         final hasArchive =
             (cfg['waterLastContractId'] ?? '').toString().trim().isNotEmpty;
         if (hasArchive) {
-          info = 'يوجد أيضًا أرشيف سابق مرتبط بعقد منتهي أو غير نشط داخل إعدادات المياه.';
+          info =
+              'يوجد أيضًا أرشيف سابق مرتبط بعقد منتهي أو غير نشط داخل إعدادات المياه.';
         }
       }
     } else {
@@ -8296,7 +8253,8 @@ class AiChatExecutor {
     }
 
     final providerQuery = (args['provider'] ?? '').toString().trim();
-    final provider = providerQuery.isEmpty ? null : _findServiceProvider(providerQuery);
+    final provider =
+        providerQuery.isEmpty ? null : _findServiceProvider(providerQuery);
     if (providerQuery.isNotEmpty && provider == null) {
       unresolvedFields.add('مقدم الخدمة');
     }
@@ -8369,14 +8327,17 @@ class AiChatExecutor {
     if (target == null) {
       final title = (rawTarget['title'] ?? screen).toString();
       if (rawTarget['requiresOfficeWideRead'] == true && !_canReadAll) {
-        return _err('هذه الشاشة موجودة لكن هذا الحساب لا يملك صلاحية الاطلاع عليها: $title');
+        return _err(
+            'هذه الشاشة موجودة لكن هذا الحساب لا يملك صلاحية الاطلاع عليها: $title');
       }
       if (rawTarget['chatWriteSupported'] == true &&
           rawTarget['chatReadSupported'] != true &&
           !_canWrite) {
-        return _err('هذه الشاشة مخصصة للإدخال أو التعديل ولا يحق لهذا الحساب فتحها: $title');
+        return _err(
+            'هذه الشاشة مخصصة للإدخال أو التعديل ولا يحق لهذا الحساب فتحها: $title');
       }
-      return _err('هذه الشاشة موجودة في التطبيق لكنها غير متاحة لهذا الحساب: $title');
+      return _err(
+          'هذه الشاشة موجودة في التطبيق لكنها غير متاحة لهذا الحساب: $title');
     }
 
     if (target['chatNavigationEnabled'] != true) {
@@ -8405,7 +8366,8 @@ class AiChatExecutor {
     final didNavigate =
         onNavigate == null ? false : await onNavigate!.call(route);
     if (!didNavigate) {
-      return _err('تعذر فتح شاشة ${target['title']} فعليًا من واجهة الدردشة الحالية.');
+      return _err(
+          'تعذر فتح شاشة ${target['title']} فعليًا من واجهة الدردشة الحالية.');
     }
     return jsonEncode(<String, dynamic>{
       'success': true,
@@ -8461,9 +8423,11 @@ class AiChatExecutor {
     final ref = _officeClientsRef();
     if (ref == null) return const <Map<String, dynamic>>[];
 
-    final pendingCreates = OfflineSyncService.instance.listPendingOfficeCreates();
+    final pendingCreates =
+        OfflineSyncService.instance.listPendingOfficeCreates();
     final pendingEdits = OfflineSyncService.instance.mapPendingOfficeEdits();
-    final pendingDeleteIds = OfflineSyncService.instance.setPendingOfficeDeletesIds();
+    final pendingDeleteIds =
+        OfflineSyncService.instance.setPendingOfficeDeletesIds();
     final pendingEmails = <String>{
       for (final item in pendingCreates)
         _normalizeOfficeClientSearch(item['email']),
@@ -8518,8 +8482,9 @@ class AiChatExecutor {
         }
       }
 
-      final blocked =
-          (m['blocked'] == true) || (m['disabled'] == true) || (m['active'] == false);
+      final blocked = (m['blocked'] == true) ||
+          (m['disabled'] == true) ||
+          (m['active'] == false);
 
       clients.add(<String, dynamic>{
         'name': name,
@@ -8577,7 +8542,8 @@ class AiChatExecutor {
     DocumentReference<Map<String, dynamic>> ref,
   ) async {
     try {
-      final snap = await ref.get(const GetOptions(source: Source.serverAndCache));
+      final snap =
+          await ref.get(const GetOptions(source: Source.serverAndCache));
       return snap.data() ?? const <String, dynamic>{};
     } catch (_) {
       return const <String, dynamic>{};
@@ -8625,8 +8591,10 @@ class AiChatExecutor {
     }
 
     final blockedFromUsers = OfficeClientGuard.isBlockedClientData(userData);
-    final blockedFromOffice = officeMatches.any(OfficeClientGuard.isBlockedClientData);
-    final blocked = blockedFromUsers || blockedFromOffice || match['blocked'] == true;
+    final blockedFromOffice =
+        officeMatches.any(OfficeClientGuard.isBlockedClientData);
+    final blocked =
+        blockedFromUsers || blockedFromOffice || match['blocked'] == true;
 
     return <String, dynamic>{
       'blocked': blocked,
@@ -8788,8 +8756,7 @@ class AiChatExecutor {
         _officeClientCreatedAt(match['createdAtIso'] ?? match['createdAt']);
     final today = _officeKsaDateOnly(KsaTime.now());
     final fallbackStart = _officeKsaDateOnly(createdAt ?? KsaTime.now());
-    final initialEnabled =
-        officeRecord['subscriptionEnabled'] == true ||
+    final initialEnabled = officeRecord['subscriptionEnabled'] == true ||
         match['subscriptionEnabled'] == true;
     final initialStartDate = _officeClientDateOnlyValue(
       officeRecord,
@@ -8812,8 +8779,7 @@ class AiChatExecutor {
     final resolvedStart = initialStartDate ?? fallbackStart;
     final resolvedEnd =
         initialEndDate ?? _officeSubscriptionEndFromStart(resolvedStart);
-    final hasActiveSubscription =
-        initialEnabled && !today.isAfter(resolvedEnd);
+    final hasActiveSubscription = initialEnabled && !today.isAfter(resolvedEnd);
 
     late final DateTime suggestedStartDate;
     if (initialEnabled) {
@@ -8834,8 +8800,8 @@ class AiChatExecutor {
       'enabled': initialEnabled,
       'subscriptionType':
           ((officeRecord['subscriptionType'] ?? '').toString().trim().isEmpty)
-          ? 'monthly'
-          : officeRecord['subscriptionType'],
+              ? 'monthly'
+              : officeRecord['subscriptionType'],
       'price': initialPrice,
       'reminderDays': initialReminderDays,
       'startDate': initialStartDate,
@@ -8893,8 +8859,9 @@ class AiChatExecutor {
         'permission': _normalizeOfficeUserPermission(
           m['officePermission'] ?? m['permission'],
         ),
-        'blocked':
-            (m['blocked'] == true) || (m['disabled'] == true) || (m['active'] == false),
+        'blocked': (m['blocked'] == true) ||
+            (m['disabled'] == true) ||
+            (m['active'] == false),
         'createdAt': m['createdAt'],
         'updatedAt': m['updatedAt'],
         'role': (m['role'] ?? '').toString(),
@@ -8996,7 +8963,9 @@ class AiChatExecutor {
     final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final workspaceUid = effectiveUid().trim();
     if (currentUid.isEmpty) return false;
-    if (workspaceUid.isEmpty || workspaceUid == 'guest' || workspaceUid == currentUid) {
+    if (workspaceUid.isEmpty ||
+        workspaceUid == 'guest' ||
+        workspaceUid == currentUid) {
       return true;
     }
 
@@ -9120,7 +9089,9 @@ class AiChatExecutor {
 
   Future<String> _getActivityLog(Map<String, dynamic> args) async {
     final ref = _activityLogsRef();
-    if (ref == null) return _err('لا يمكن الوصول إلى سجل النشاط من هذا الحساب.');
+    if (ref == null) {
+      return _err('لا يمكن الوصول إلى سجل النشاط من هذا الحساب.');
+    }
 
     final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (currentUid.isEmpty) return _err('لا يوجد مستخدم مسجل حاليًا.');
@@ -9128,10 +9099,14 @@ class AiChatExecutor {
     final canViewAll = await _canViewAllActivityLog();
     final onlyMine = !canViewAll || args['onlyMine'] == true;
     final query = (args['query'] ?? '').toString().trim().toLowerCase();
-    final actorQuery = (args['actorQuery'] ?? '').toString().trim().toLowerCase();
-    final actionType = (args['actionType'] ?? '').toString().trim().toLowerCase();
-    final entityType = (args['entityType'] ?? '').toString().trim().toLowerCase();
-    final quickDate = (args['quickDate'] ?? 'all').toString().trim().toLowerCase();
+    final actorQuery =
+        (args['actorQuery'] ?? '').toString().trim().toLowerCase();
+    final actionType =
+        (args['actionType'] ?? '').toString().trim().toLowerCase();
+    final entityType =
+        (args['entityType'] ?? '').toString().trim().toLowerCase();
+    final quickDate =
+        (args['quickDate'] ?? 'all').toString().trim().toLowerCase();
     final fromDate = _parseDate((args['fromDate'] ?? '').toString().trim());
     final toDate = _parseDate((args['toDate'] ?? '').toString().trim());
     final limit = _toIntValue(args['limit'], 25).clamp(1, 200);
@@ -9154,60 +9129,64 @@ class AiChatExecutor {
           .toList(growable: false)
         ..sort((a, b) => b.occurredAt.compareTo(a.occurredAt));
 
-      final filtered = entries.where((entry) {
-        if (onlyMine && entry.actorUid != currentUid) return false;
-        if (actionType.isNotEmpty && actionType != 'all') {
-          if (entry.actionType.toLowerCase() != actionType) return false;
-        }
-        if (entityType.isNotEmpty && entityType != 'all') {
-          if (entry.entityType.toLowerCase() != entityType) return false;
-        }
-        if (!_activityMatchesDate(
-          entry,
-          quickDate: quickDate,
-          fromDate: fromDate,
-          toDate: toDate,
-        )) {
-          return false;
-        }
-        if (actorQuery.isNotEmpty) {
-          final hay = <String>[
-            entry.actorUid,
-            entry.actorName,
-            entry.actorEmail,
-          ].join(' ').toLowerCase();
-          if (!hay.contains(actorQuery)) return false;
-        }
-        if (query.isEmpty) return true;
-        final hay = <String>[
-          entry.actorName,
-          entry.actorEmail,
-          _activityActionLabel(entry.actionType),
-          _activityEntityLabel(entry.entityType),
-          entry.entityName,
-          entry.entityId,
-          entry.description,
-        ].join(' ').toLowerCase();
-        return hay.contains(query);
-      }).take(limit).map((entry) {
-        return <String, dynamic>{
-          'id': entry.id,
-          'occurredAt': entry.occurredAt.toIso8601String(),
-          'actorUid': entry.actorUid,
-          'actorName': entry.actorName,
-          'actorEmail': entry.actorEmail,
-          'actorRole': entry.actorRole,
-          'actionType': entry.actionType,
-          'actionLabel': _activityActionLabel(entry.actionType),
-          'entityType': entry.entityType,
-          'entityLabel': _activityEntityLabel(entry.entityType),
-          'entityId': entry.entityId,
-          'entityName': entry.entityName,
-          'description': entry.description,
-          'changedFields': entry.changedFields,
-          'metadata': entry.metadata,
-        };
-      }).toList(growable: false);
+      final filtered = entries
+          .where((entry) {
+            if (onlyMine && entry.actorUid != currentUid) return false;
+            if (actionType.isNotEmpty && actionType != 'all') {
+              if (entry.actionType.toLowerCase() != actionType) return false;
+            }
+            if (entityType.isNotEmpty && entityType != 'all') {
+              if (entry.entityType.toLowerCase() != entityType) return false;
+            }
+            if (!_activityMatchesDate(
+              entry,
+              quickDate: quickDate,
+              fromDate: fromDate,
+              toDate: toDate,
+            )) {
+              return false;
+            }
+            if (actorQuery.isNotEmpty) {
+              final hay = <String>[
+                entry.actorUid,
+                entry.actorName,
+                entry.actorEmail,
+              ].join(' ').toLowerCase();
+              if (!hay.contains(actorQuery)) return false;
+            }
+            if (query.isEmpty) return true;
+            final hay = <String>[
+              entry.actorName,
+              entry.actorEmail,
+              _activityActionLabel(entry.actionType),
+              _activityEntityLabel(entry.entityType),
+              entry.entityName,
+              entry.entityId,
+              entry.description,
+            ].join(' ').toLowerCase();
+            return hay.contains(query);
+          })
+          .take(limit)
+          .map((entry) {
+            return <String, dynamic>{
+              'id': entry.id,
+              'occurredAt': entry.occurredAt.toIso8601String(),
+              'actorUid': entry.actorUid,
+              'actorName': entry.actorName,
+              'actorEmail': entry.actorEmail,
+              'actorRole': entry.actorRole,
+              'actionType': entry.actionType,
+              'actionLabel': _activityActionLabel(entry.actionType),
+              'entityType': entry.entityType,
+              'entityLabel': _activityEntityLabel(entry.entityType),
+              'entityId': entry.entityId,
+              'entityName': entry.entityName,
+              'description': entry.description,
+              'changedFields': entry.changedFields,
+              'metadata': entry.metadata,
+            };
+          })
+          .toList(growable: false);
 
       if (filtered.isEmpty) {
         return jsonEncode(<String, dynamic>{
@@ -9230,7 +9209,9 @@ class AiChatExecutor {
   }
 
   Future<String> _getOfficeUsersList() async {
-    if (_officeUsersRef() == null) return _err('لا يمكن الوصول لبيانات مستخدمي المكتب');
+    if (_officeUsersRef() == null) {
+      return _err('لا يمكن الوصول لبيانات مستخدمي المكتب');
+    }
 
     try {
       final users = await _loadOfficeUsers();
@@ -9256,7 +9237,9 @@ class AiChatExecutor {
   }
 
   Future<String> _getOfficeUserDetails(Map<String, dynamic> args) async {
-    if (_officeUsersRef() == null) return _err('لا يمكن الوصول لبيانات مستخدمي المكتب');
+    if (_officeUsersRef() == null) {
+      return _err('لا يمكن الوصول لبيانات مستخدمي المكتب');
+    }
 
     final query = (args['query'] ?? args['userName'] ?? '').toString().trim();
     if (query.isEmpty) return _err('يرجى تحديد مستخدم المكتب');
@@ -9279,8 +9262,10 @@ class AiChatExecutor {
         'blocked': match['blocked'] == true,
         'canManageAccess': uid.isNotEmpty,
         'canGenerateResetLink': uid.isNotEmpty && email.isNotEmpty,
-        'createdAt': _officeClientCreatedAt(match['createdAt'])?.toIso8601String(),
-        'updatedAt': _officeClientCreatedAt(match['updatedAt'])?.toIso8601String(),
+        'createdAt':
+            _officeClientCreatedAt(match['createdAt'])?.toIso8601String(),
+        'updatedAt':
+            _officeClientCreatedAt(match['updatedAt'])?.toIso8601String(),
       });
     } catch (e) {
       return _err('تعذر جلب تفاصيل مستخدم المكتب: $e');
@@ -9330,7 +9315,8 @@ class AiChatExecutor {
         );
       }
 
-      final duplicate = await ref.where('email', isEqualTo: email).limit(1).get();
+      final duplicate =
+          await ref.where('email', isEqualTo: email).limit(1).get();
       if (duplicate.docs.isNotEmpty) {
         return _err('يوجد مستخدم مسجل بنفس البريد الإلكتروني: $email');
       }
@@ -9340,7 +9326,8 @@ class AiChatExecutor {
         return _err('تعذر تحديد مساحة المكتب الحالية.');
       }
 
-      final result = await _officeFunctions().httpsCallable('officeCreateClient').call(
+      final result =
+          await _officeFunctions().httpsCallable('officeCreateClient').call(
         <String, dynamic>{
           'name': name,
           'email': email,
@@ -9406,7 +9393,9 @@ class AiChatExecutor {
   Future<String> _editOfficeUser(Map<String, dynamic> args) async {
     final g = _syncGuard();
     if (g.isNotEmpty) return g;
-    if (_officeUsersRef() == null) return _err('لا يمكن الوصول لبيانات مستخدمي المكتب');
+    if (_officeUsersRef() == null) {
+      return _err('لا يمكن الوصول لبيانات مستخدمي المكتب');
+    }
 
     final query = (args['query'] ?? args['userName'] ?? '').toString().trim();
     if (query.isEmpty) return _err('يرجى تحديد مستخدم المكتب المراد تعديله');
@@ -9469,7 +9458,9 @@ class AiChatExecutor {
       }
 
       if (nextPermission != currentPermission) {
-        await _officeFunctions().httpsCallable('officeUpdateUserPermission').call(
+        await _officeFunctions()
+            .httpsCallable('officeUpdateUserPermission')
+            .call(
           <String, dynamic>{
             'uid': uid,
             'permission': nextPermission,
@@ -9510,11 +9501,14 @@ class AiChatExecutor {
   }
 
   Future<String> _setOfficeUserPermission(Map<String, dynamic> args) async {
-    if (_officeUsersRef() == null) return _err('لا يمكن الوصول لبيانات مستخدمي المكتب');
+    if (_officeUsersRef() == null) {
+      return _err('لا يمكن الوصول لبيانات مستخدمي المكتب');
+    }
 
     final query = (args['query'] ?? args['userName'] ?? '').toString().trim();
     if (query.isEmpty) return _err('يرجى تحديد مستخدم المكتب');
-    final permission = _normalizeOfficeUserPermission(args['permission'], fallback: '');
+    final permission =
+        _normalizeOfficeUserPermission(args['permission'], fallback: '');
     if (permission.isEmpty) {
       return _officeUserValidationError(
         'يجب تحديد الصلاحية بالقيمة full أو view.',
@@ -9582,7 +9576,9 @@ class AiChatExecutor {
   }
 
   Future<String> _setOfficeUserAccess(Map<String, dynamic> args) async {
-    if (_officeUsersRef() == null) return _err('لا يمكن الوصول لبيانات مستخدمي المكتب');
+    if (_officeUsersRef() == null) {
+      return _err('لا يمكن الوصول لبيانات مستخدمي المكتب');
+    }
 
     final query = (args['query'] ?? args['userName'] ?? '').toString().trim();
     if (query.isEmpty) return _err('يرجى تحديد مستخدم المكتب');
@@ -9658,7 +9654,9 @@ class AiChatExecutor {
   Future<String> _deleteOfficeUser(Map<String, dynamic> args) async {
     final g = _syncGuard();
     if (g.isNotEmpty) return g;
-    if (_officeUsersRef() == null) return _err('لا يمكن الوصول لبيانات مستخدمي المكتب');
+    if (_officeUsersRef() == null) {
+      return _err('لا يمكن الوصول لبيانات مستخدمي المكتب');
+    }
 
     final query = (args['query'] ?? args['userName'] ?? '').toString().trim();
     if (query.isEmpty) return _err('يرجى تحديد مستخدم المكتب المراد حذفه');
@@ -9706,7 +9704,9 @@ class AiChatExecutor {
   }
 
   Future<String> _generateOfficeUserResetLink(Map<String, dynamic> args) async {
-    if (_officeUsersRef() == null) return _err('لا يمكن الوصول لبيانات مستخدمي المكتب');
+    if (_officeUsersRef() == null) {
+      return _err('لا يمكن الوصول لبيانات مستخدمي المكتب');
+    }
 
     final query = (args['query'] ?? args['userName'] ?? '').toString().trim();
     if (query.isEmpty) return _err('يرجى تحديد مستخدم المكتب');
@@ -9732,8 +9732,10 @@ class AiChatExecutor {
       final res = await _officeFunctions()
           .httpsCallable('generatePasswordResetLink')
           .call(<String, dynamic>{'email': email});
-      final link =
-          (res.data is Map ? (res.data as Map)['resetLink'] : null)?.toString().trim() ?? '';
+      final link = (res.data is Map ? (res.data as Map)['resetLink'] : null)
+              ?.toString()
+              .trim() ??
+          '';
       if (link.isEmpty) {
         return _err('تعذر توليد رابط إعادة تعيين كلمة المرور.');
       }
@@ -9762,7 +9764,9 @@ class AiChatExecutor {
   }
 
   Future<String> _getOfficeClientsList() async {
-    if (_officeClientsRef() == null) return _err('لا يمكن الوصول لبيانات المكتب');
+    if (_officeClientsRef() == null) {
+      return _err('لا يمكن الوصول لبيانات المكتب');
+    }
 
     try {
       final clients = await _loadMergedOfficeClients();
@@ -9787,7 +9791,9 @@ class AiChatExecutor {
   }
 
   Future<String> _getOfficeClientDetails(String clientName) async {
-    if (_officeClientsRef() == null) return _err('لا يمكن الوصول لبيانات المكتب');
+    if (_officeClientsRef() == null) {
+      return _err('لا يمكن الوصول لبيانات المكتب');
+    }
 
     final query = clientName.trim().toLowerCase();
     if (query.isEmpty) return _err('يرجى تحديد اسم العميل');
@@ -9795,13 +9801,16 @@ class AiChatExecutor {
     try {
       final clients = await _loadMergedOfficeClients();
       final found = _findOfficeClientRecordInList(clients, clientName);
-      if (found == null) return _err('لم يتم العثور على عميل باسم "$clientName"');
+      if (found == null) {
+        return _err('لم يتم العثور على عميل باسم "$clientName"');
+      }
 
       final createdAt =
           _officeClientCreatedAt(found['createdAtIso'] ?? found['createdAt']);
       final clientUid = (found['clientUid'] ?? '').toString().trim();
-      final workspaceSummary =
-          clientUid.isEmpty ? null : await _loadOfficeClientWorkspaceSummary(clientUid);
+      final workspaceSummary = clientUid.isEmpty
+          ? null
+          : await _loadOfficeClientWorkspaceSummary(clientUid);
 
       return jsonEncode({
         'name': found['name'] ?? '',
@@ -9831,7 +9840,9 @@ class AiChatExecutor {
   }
 
   Future<String> _getOfficeClientAccess(Map<String, dynamic> args) async {
-    if (_officeClientsRef() == null) return _err('لا يمكن الوصول لبيانات المكتب');
+    if (_officeClientsRef() == null) {
+      return _err('لا يمكن الوصول لبيانات المكتب');
+    }
 
     final query = (args['query'] ?? args['clientName'] ?? '').toString().trim();
     if (query.isEmpty) return _err('يرجى تحديد العميل');
@@ -9869,8 +9880,8 @@ class AiChatExecutor {
         'hasLoginAccount': hasLoginAccount,
         'officeRecordFound': access['officeRecordFound'] == true,
         'canManageAccess': hasLoginAccount,
-        'canGenerateResetLink':
-            hasLoginAccount && (match['email'] ?? '').toString().trim().isNotEmpty,
+        'canGenerateResetLink': hasLoginAccount &&
+            (match['email'] ?? '').toString().trim().isNotEmpty,
         'pendingSync': false,
         'isLocal': false,
       });
@@ -9880,7 +9891,9 @@ class AiChatExecutor {
   }
 
   Future<String> _getOfficeClientSubscription(Map<String, dynamic> args) async {
-    if (_officeClientsRef() == null) return _err('لا يمكن الوصول لبيانات المكتب');
+    if (_officeClientsRef() == null) {
+      return _err('لا يمكن الوصول لبيانات المكتب');
+    }
 
     final query = (args['query'] ?? args['clientName'] ?? '').toString().trim();
     if (query.isEmpty) return _err('يرجى تحديد العميل');
@@ -9935,7 +9948,7 @@ class AiChatExecutor {
         'canManageSubscription': true,
         'pendingSync': false,
         'isLocal': false,
-        'updatedAt': updatedAt == null ? null : updatedAt.toIso8601String(),
+        'updatedAt': updatedAt?.toIso8601String(),
         if (renewMode)
           'message':
               'يوجد اشتراك سابق لهذا العميل، لذلك يتم تحديد بداية التجديد تلقائيًا حسب منطق شاشة المكتب.',
@@ -9946,7 +9959,9 @@ class AiChatExecutor {
   }
 
   Future<String> _getOfficeSummary() async {
-    if (_officeClientsRef() == null) return _err('لا يمكن الوصول لبيانات المكتب');
+    if (_officeClientsRef() == null) {
+      return _err('لا يمكن الوصول لبيانات المكتب');
+    }
 
     try {
       int totalClients = 0;
@@ -10013,7 +10028,8 @@ class AiChatExecutor {
         );
       }
 
-      final pendingCreates = OfflineSyncService.instance.listPendingOfficeCreates();
+      final pendingCreates =
+          OfflineSyncService.instance.listPendingOfficeCreates();
       final duplicatePending = pendingCreates.any(
         (item) => _normalizeOfficeClientSearch(item['email']) == draft.email,
       );
@@ -10021,10 +10037,8 @@ class AiChatExecutor {
         return _err('يوجد عميل معلّق بنفس البريد الإلكتروني: ${draft.email}');
       }
 
-      final existing = await ref
-          .where('email', isEqualTo: draft.email)
-          .limit(1)
-          .get();
+      final existing =
+          await ref.where('email', isEqualTo: draft.email).limit(1).get();
       if (existing.docs.isNotEmpty) {
         return _err(
           'يوجد عميل مسجل بنفس البريد الإلكتروني: ${draft.email}',
@@ -10048,7 +10062,9 @@ class AiChatExecutor {
     final g = _syncGuard();
     if (g.isNotEmpty) return g;
 
-    if (_officeClientsRef() == null) return _err('لا يمكن الوصول لبيانات المكتب');
+    if (_officeClientsRef() == null) {
+      return _err('لا يمكن الوصول لبيانات المكتب');
+    }
 
     final query = (args['query'] ?? args['clientName'] ?? '').toString().trim();
     if (query.isEmpty) return _err('يرجى تحديد العميل المراد تعديله');
@@ -10060,8 +10076,10 @@ class AiChatExecutor {
         return _err('لم يتم العثور على عميل باسم "$query"');
       }
 
-      final currentEmail = (match['email'] ?? '').toString().trim().toLowerCase();
-      final requestedEmail = (args['email'] ?? '').toString().trim().toLowerCase();
+      final currentEmail =
+          (match['email'] ?? '').toString().trim().toLowerCase();
+      final requestedEmail =
+          (args['email'] ?? '').toString().trim().toLowerCase();
       if (requestedEmail.isNotEmpty && requestedEmail != currentEmail) {
         return _err(
           'تعديل البريد الإلكتروني لعميل المكتب غير مدعوم من الدردشة حالياً. غيّر الاسم أو الجوال أو الملاحظات فقط.',
@@ -10117,7 +10135,9 @@ class AiChatExecutor {
     final g = _syncGuard();
     if (g.isNotEmpty) return g;
 
-    if (_officeClientsRef() == null) return _err('لا يمكن الوصول لبيانات المكتب');
+    if (_officeClientsRef() == null) {
+      return _err('لا يمكن الوصول لبيانات المكتب');
+    }
 
     final query = (args['query'] ?? args['clientName'] ?? '').toString().trim();
     if (query.isEmpty) return _err('يرجى تحديد العميل المراد حذفه');
@@ -10150,7 +10170,9 @@ class AiChatExecutor {
   }
 
   Future<String> _setOfficeClientAccess(Map<String, dynamic> args) async {
-    if (_officeClientsRef() == null) return _err('لا يمكن الوصول لبيانات المكتب');
+    if (_officeClientsRef() == null) {
+      return _err('لا يمكن الوصول لبيانات المكتب');
+    }
 
     final query = (args['query'] ?? args['clientName'] ?? '').toString().trim();
     if (query.isEmpty) return _err('يرجى تحديد العميل');
@@ -10162,7 +10184,8 @@ class AiChatExecutor {
     if (!validation.isValid) {
       return _domainValidationError(
         validation,
-        requiredFields: AiChatDomainRulesService.officeClientAccessRequiredFields(),
+        requiredFields:
+            AiChatDomainRulesService.officeClientAccessRequiredFields(),
         nextStep: 'specify_office_client_access_state_then_retry',
         extra: const <String, dynamic>{
           'code': 'office_client_access_validation_failed',
@@ -10230,12 +10253,15 @@ class AiChatExecutor {
   }
 
   Future<String> _setOfficeClientSubscription(Map<String, dynamic> args) async {
-    if (_officeClientsRef() == null) return _err('لا يمكن الوصول لبيانات المكتب');
+    if (_officeClientsRef() == null) {
+      return _err('لا يمكن الوصول لبيانات المكتب');
+    }
 
     final query = (args['query'] ?? args['clientName'] ?? '').toString().trim();
     if (query.isEmpty) return _err('يرجى تحديد العميل');
 
-    final validation = AiChatDomainRulesService.validateOfficeClientSubscription(
+    final validation =
+        AiChatDomainRulesService.validateOfficeClientSubscription(
       price: args['price'],
       reminderDays: args['reminderDays'],
       startDate: args['startDate'],
@@ -10303,7 +10329,8 @@ class AiChatExecutor {
         nowKsa.millisecond,
         nowKsa.microsecond,
       );
-      final effectiveEndDate = _officeSubscriptionEndFromStart(effectiveStartDate);
+      final effectiveEndDate =
+          _officeSubscriptionEndFromStart(effectiveStartDate);
       final effectiveStartUtc = KsaTime.fromKsaToUtc(effectiveStartDate);
       final effectiveEndUtc = KsaTime.fromKsaToUtc(effectiveEndDate);
 
@@ -10324,7 +10351,8 @@ class AiChatExecutor {
         'subscriptionType': 'monthly',
         'subscriptionReminderDays': effectiveReminderDays,
         'subscriptionPrice': draft.price,
-        'subscriptionStartDate': _fmtDate(_officeKsaDateOnly(effectiveStartDate)),
+        'subscriptionStartDate':
+            _fmtDate(_officeKsaDateOnly(effectiveStartDate)),
         'subscriptionEndDate': _fmtDate(_officeKsaDateOnly(effectiveEndDate)),
         'subscriptionStartAt': Timestamp.fromDate(effectiveStartUtc),
         'subscriptionEndAt': Timestamp.fromDate(effectiveEndUtc),
@@ -10362,8 +10390,11 @@ class AiChatExecutor {
     }
   }
 
-  Future<String> _generateOfficeClientResetLink(Map<String, dynamic> args) async {
-    if (_officeClientsRef() == null) return _err('لا يمكن الوصول لبيانات المكتب');
+  Future<String> _generateOfficeClientResetLink(
+      Map<String, dynamic> args) async {
+    if (_officeClientsRef() == null) {
+      return _err('لا يمكن الوصول لبيانات المكتب');
+    }
 
     final query = (args['query'] ?? args['clientName'] ?? '').toString().trim();
     if (query.isEmpty) return _err('يرجى تحديد العميل');
@@ -10401,15 +10432,18 @@ class AiChatExecutor {
       final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
       final callable = functions.httpsCallable('generatePasswordResetLink');
       final res = await callable.call(<String, dynamic>{'email': email});
-      final link =
-          (res.data is Map ? (res.data as Map)['resetLink'] : null)?.toString().trim() ?? '';
+      final link = (res.data is Map ? (res.data as Map)['resetLink'] : null)
+              ?.toString()
+              .trim() ??
+          '';
       if (link.isEmpty) {
         return _err('تعذر توليد رابط إعادة التعيين.');
       }
 
       return jsonEncode(<String, dynamic>{
         'success': true,
-        'message': 'تم توليد رابط إعادة تعيين كلمة المرور للعميل "${match['name'] ?? ''}".',
+        'message':
+            'تم توليد رابط إعادة تعيين كلمة المرور للعميل "${match['name'] ?? ''}".',
         'clientName': match['name'] ?? '',
         'clientUid': match['clientUid'] ?? '',
         'email': email,

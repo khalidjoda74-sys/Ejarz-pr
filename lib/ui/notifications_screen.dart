@@ -6,7 +6,7 @@
 //   ??? ??,?^?: "?,???? ??"?? ??"????????" (endDate ??"??" 7 ??S??.)?O "?.??????" (endDate < ??"?S?^?.)
 //   ??? ?????,??,?? ??"??,?: "?.????, ??"?S?^?." ?^"?.????" ???? ???^?? ?^??^? ??^???S?
 //   ??? ??S????: "?.?^?? ????S? ??"?S?^?." (scheduledDate == ??"?S?^?. ?^?"?. ???f?.?'?Z?")
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,7 +15,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'package:darvoo/data/services/user_scope.dart' as scope;
+import 'package:ejarz_pro/data/services/user_scope.dart' as scope;
 
 import '../data/services/user_scope.dart' show boxName;
 import '../data/services/office_client_guard.dart'; // ?o. ???S?
@@ -42,7 +42,7 @@ import 'tenants_screen.dart' as tenants_ui show TenantsScreen;
 
 import 'widgets/app_bottom_nav.dart';
 import 'widgets/app_side_drawer.dart';
-import '../widgets/darvoo_app_bar.dart';
+import '../widgets/ejarz_pro_app_bar.dart';
 
 // ==============================
 // ??"?.?????
@@ -148,18 +148,17 @@ DateTime? _serviceStartDateGlobal(Map<String, dynamic> cfg) {
 
 String _internetBillingModeGlobal(Map<String, dynamic> cfg) {
   final payer = (cfg['payer'] ?? '').toString().trim().toLowerCase();
-  final raw = (cfg['internetBillingMode'] ??
-          (payer == 'tenant' ? 'separate' : 'owner'))
-      .toString()
-      .trim()
-      .toLowerCase();
+  final raw =
+      (cfg['internetBillingMode'] ?? (payer == 'tenant' ? 'separate' : 'owner'))
+          .toString()
+          .trim()
+          .toLowerCase();
   return raw == 'separate' ? 'separate' : 'owner';
 }
 
 DateTime? _serviceCurrentCycleDateGlobal(Map<String, dynamic> cfg) {
   final type = (cfg['serviceType'] ?? '').toString();
-  final isPeriodicMaintenanceService =
-      type == 'cleaning' ||
+  final isPeriodicMaintenanceService = type == 'cleaning' ||
       type == 'elevator' ||
       (type == 'internet' && _internetBillingModeGlobal(cfg) == 'owner');
   final lastGenerated = _serviceLastGeneratedDateGlobal(cfg);
@@ -208,7 +207,9 @@ DateTime _maintenanceAnchorGlobal(MaintenanceRequest request) =>
 String? _normalizePeriodicServiceTypeTokenGlobal(dynamic raw) {
   final value = (raw ?? '').toString().trim().toLowerCase();
   if (value.isEmpty) return null;
-  if (value == 'cleaning' || value.contains('clean') || value.contains('نظاف')) {
+  if (value == 'cleaning' ||
+      value.contains('clean') ||
+      value.contains('نظاف')) {
     return 'cleaning';
   }
   if (value == 'elevator' ||
@@ -553,6 +554,7 @@ String _sharedUtilityOverdueTitleGlobal(String type) {
   return '\u0645\u0636\u0649 \u0645\u0648\u0639\u062f \u0641\u0627\u062a\u0648\u0631\u0629 \u0627\u0644\u0643\u0647\u0631\u0628\u0627\u0621 \u0627\u0644\u0645\u0634\u062a\u0631\u0643\u0629';
 }
 
+// ignore: unused_element
 String? _serviceNotificationAlertTypeGlobal(int delta, int remind) {
   if (delta == 0) return 'today';
   if (delta < 0) return 'overdue';
@@ -574,9 +576,8 @@ String _serviceNotificationTitleGlobal(
           ? 'اليوم سداد مياه (بنسبة $pctTxt%)'
           : 'اليوم سداد كهرباء (بنسبة $pctTxt%)';
     }
-    final after = delta == 1
-        ? 'بعد يوم'
-        : (delta == 2 ? 'بعد يومين' : 'بعد $delta أيام');
+    final after =
+        delta == 1 ? 'بعد يوم' : (delta == 2 ? 'بعد يومين' : 'بعد $delta أيام');
     return type == 'water'
         ? 'سداد مياه $after ($pctTxt%)'
         : 'سداد كهرباء $after ($pctTxt%)';
@@ -660,7 +661,7 @@ String? _serviceNotificationTargetIdGlobal(
   MaintenanceRequest? activePeriodicRequest,
 }) {
   if (_isSharedUtilityServiceGlobal(type, cfg)) return null;
-  final activeId = activePeriodicRequest?.id?.toString().trim() ?? '';
+  final activeId = activePeriodicRequest?.id.toString().trim() ?? '';
   if (activeId.isNotEmpty) return activeId;
   final trackedId = (cfg['targetId'] ?? '').toString().trim();
   if (trackedId.isEmpty) return null;
@@ -680,6 +681,7 @@ String _periodicMaintenanceTodayTitleByTypeGlobal(String type) {
   return 'لديك طلب خدمات اليوم';
 }
 
+// ignore: unused_element
 String _periodicMaintenanceOpenTitleByTypeGlobal(String type) {
   if (type == 'internet') {
     return 'لديك طلب تجديد خدمة إنترنت مفتوح';
@@ -781,6 +783,7 @@ String _maintenanceTodaySubtitleGlobal(
       '\u0645\u0648\u0639\u062f \u0627\u0644\u062a\u0646\u0641\u064a\u0630: $dateText';
 }
 
+// ignore: unused_element
 String _periodicMaintenanceCreatedTodayTitleGlobal(String maintenanceTitle) {
   final normalized = maintenanceTitle.trim().toLowerCase();
   if (normalized.contains('\u0645\u0635\u0639\u062f') ||
@@ -793,8 +796,8 @@ String _periodicMaintenanceCreatedTodayTitleGlobal(String maintenanceTitle) {
     return 'تم إنشاء طلب نظافة لليوم';
   }
   if (normalized.contains('internet') ||
-      normalized.contains('Ø§Ù†ØªØ±Ù†Øª') ||
-      normalized.contains('Ø¥Ù†ØªØ±Ù†Øª')) {
+      normalized.contains('انترنت') ||
+      normalized.contains('إنترنت')) {
     return 'تم إنشاء طلب تجديد خدمة إنترنت لليوم';
   }
   return 'تم إنشاء طلب خدمات لليوم';
@@ -1000,6 +1003,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   List<AppNotification> _items = const [];
   bool _openingNotificationTarget = false;
 
+  // ignore: unused_field
   Future<void>? _ready;
 
   @override
@@ -1210,6 +1214,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return out;
   }
 
+  // ignore: unused_element
   bool _isContractDueToday(Contract c) {
     if (c.term == ContractTerm.daily) return false;
     final first = _firstDueAfterAdvance(c);
@@ -1217,6 +1222,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return _dateOnly(first) == _todayDateOnly();
   }
 
+  // ignore: unused_element
   bool _isContractOverdue(Contract c) {
     final today = _todayDateOnly();
     if (c.term == ContractTerm.daily) {
@@ -1377,10 +1383,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         sortKey: sortKey,
         anchor: notificationAnchor,
         appearOrder: baseOrder + 1,
-        maintenanceId: request.id?.toString(),
+        maintenanceId: request.id.toString(),
       ));
-      final requestId = request.id?.toString();
-      if (requestId != null && requestId.isNotEmpty) {
+      final requestId = request.id.toString();
+      if (requestId.isNotEmpty) {
         handledPeriodicMaintenanceIds.add(requestId);
       }
     }
@@ -1389,8 +1395,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       required MaintenanceRequest request,
       required DateTime dueAnchor,
     }) {
-      final requestId = request.id?.toString();
-      if (requestId == null || requestId.isEmpty) return;
+      final requestId = request.id.toString();
+      if (requestId.isEmpty) return;
       if (handledPeriodicMaintenanceIds.contains(requestId)) return;
       final todayAnchor = _dateOnlyGlobal(today);
       final skey = _stableKey(
@@ -1459,6 +1465,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
       // ???"? ??,?. ??"??,? ?"?"??? (???^?? ??"??,?^? ??"?? id)
       final label = _contractLabel(c);
+      // ignore: unused_local_variable
       final contractText = label.isNotEmpty ? label : 'عقد';
 
       DateTime? end;
@@ -1573,6 +1580,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         final order = _ensureAppearOrder(skey);
 
         // ????? ??"????^??? ??"????S ???^?? ?????" ??"???" ?"??????? ????? ??"???.?S?
+        // ignore: unused_element
         String buildInvoiceSubtitle(String statusText) {
           final cText = contractTextById(cid);
           String s = 'فاتورة ${_ltr(iid)}';
@@ -1634,8 +1642,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             (cfg['electricitySharedMethod'] ?? '').toString() == 'percent';
         final isPercentBased =
             isWaterSharedPercent || isElectricitySharedPercent;
-        final isPeriodicMaintenanceService =
-            type == 'cleaning' ||
+        final isPeriodicMaintenanceService = type == 'cleaning' ||
             type == 'elevator' ||
             (type == 'internet' && _internetBillingModeGlobal(cfg) == 'owner');
         final pid = key.split('::').first;
@@ -1687,9 +1694,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           final trackedDelta = _daysBetween(today, trackedDue);
           final remind = _serviceRemindDaysGlobal(cfg);
           if (trackedDelta == 0 ||
-              (trackedDelta > 0 &&
-                  remind > 0 &&
-                  trackedDelta == remind)) {
+              (trackedDelta > 0 && remind > 0 && trackedDelta == remind)) {
             addPeriodicTodayPair(
               request: trackedPeriodicRequest,
               anchor: trackedDue,
@@ -1712,7 +1717,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           continue;
         }
         final generatedToday = _serviceLastGeneratedDateGlobal(cfg);
-        if (generatedToday != null && _daysBetween(today, generatedToday) == 0) {
+        if (generatedToday != null &&
+            _daysBetween(today, generatedToday) == 0) {
           final activePeriodicRequest = isPeriodicMaintenanceService
               ? _activePeriodicMaintenanceRequestGlobal(
                   maintenance: _maintenance,
@@ -1736,7 +1742,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           }
           if (isPeriodicMaintenanceService &&
               suppressedDate != null &&
-              _dateOnlyGlobal(suppressedDate) == _dateOnlyGlobal(generatedToday) &&
+              _dateOnlyGlobal(suppressedDate) ==
+                  _dateOnlyGlobal(generatedToday) &&
               !hasActiveRequest) {
             continue;
           }
@@ -1771,7 +1778,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         if (isPeriodicMaintenanceService &&
             lastGenerated != null &&
             _daysBetween(today, lastGenerated) < 0) {
-          final activeGeneratedRequest = _activePeriodicMaintenanceRequestGlobal(
+          final activeGeneratedRequest =
+              _activePeriodicMaintenanceRequestGlobal(
             maintenance: _maintenance,
             invoices: _invoices,
             propertyId: pid,
@@ -1927,8 +1935,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           out.add(AppNotification(
             kind: NotificationKind.maintenanceToday,
             title: _maintenanceTodayTitleGlobal(maintenanceTitle),
-            subtitle:
-                _maintenanceTodaySubtitleGlobal(maintenanceTitle, anchor),
+            subtitle: _maintenanceTodaySubtitleGlobal(maintenanceTitle, anchor),
             sortKey: anchor,
             anchor: anchor,
             appearOrder: order,
@@ -1981,6 +1988,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       mid: n.maintenanceId,
       anchor: n.anchor);
 
+  // ignore: unused_element
   String _baseDismissKey(AppNotification n) => anyStableKey(
       cid: n.contractId,
       iid: n.invoiceId,
@@ -2078,10 +2086,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           {
             final cfg = _serviceConfigForNotification(n);
             final serviceType = (n.serviceType ?? '').trim();
-            final opensSharedUtilityDirectly = cfg != null &&
-                _isSharedUtilityServiceGlobal(serviceType, cfg);
-            final targetId =
-                opensSharedUtilityDirectly ? '' : (n.serviceTargetId ?? '').trim();
+            final opensSharedUtilityDirectly =
+                cfg != null && _isSharedUtilityServiceGlobal(serviceType, cfg);
+            final targetId = opensSharedUtilityDirectly
+                ? ''
+                : (n.serviceTargetId ?? '').trim();
             if (!opensSharedUtilityDirectly &&
                 targetId.isNotEmpty &&
                 _maintenance != null) {
@@ -2151,7 +2160,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   elevation: 0,
                   centerTitle: true,
                   automaticallyImplyLeading: false,
-                  leading: darvooLeading(context, iconColor: Colors.white),
+                  leading: ejarzProLeading(context, iconColor: Colors.white),
 
                   title: Text(
                     'التنبيهات',
@@ -2211,7 +2220,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               elevation: 0,
               centerTitle: true,
               automaticallyImplyLeading: false,
-              leading: darvooLeading(context, iconColor: Colors.white),
+              leading: ejarzProLeading(context, iconColor: Colors.white),
 
               title: Text(
                 'التنبيهات',
@@ -2380,7 +2389,7 @@ class _NotifCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(18.r),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 14,
               offset: const Offset(0, 6),
             ),
@@ -2393,7 +2402,7 @@ class _NotifCard extends StatelessWidget {
               width: 44.w,
               height: 44.w,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.12),
+                color: color.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12.r),
               ),
               child: Icon(icon, color: color, size: 26.w),
@@ -2450,7 +2459,7 @@ class _EmptyState extends StatelessWidget {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
+                  color: Colors.black.withValues(alpha: 0.06),
                   blurRadius: 14,
                   offset: const Offset(0, 6),
                 ),
@@ -2531,6 +2540,7 @@ class _NotificationsCounterState extends State<NotificationsCounter> {
     }
   }
 
+  // ignore: unused_field
   Future<void>? _ready;
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -2706,6 +2716,7 @@ class _NotificationsCounterState extends State<NotificationsCounter> {
     return out;
   }
 
+  // ignore: unused_element
   bool _isDueToday(Contract c) {
     if (c.term == ContractTerm.daily) return false;
     final first = _firstDueAfterAdvance(c);
@@ -2713,6 +2724,7 @@ class _NotificationsCounterState extends State<NotificationsCounter> {
     return _dateOnly(first) == _today();
   }
 
+  // ignore: unused_element
   bool _isOverdue(Contract c) {
     if (c.term == ContractTerm.daily) {
       return c.isExpiredByTime;
@@ -2771,8 +2783,8 @@ class _NotificationsCounterState extends State<NotificationsCounter> {
       required MaintenanceRequest request,
       required DateTime dueAnchor,
     }) {
-      final requestId = request.id?.toString();
-      if (requestId == null || requestId.isEmpty) return;
+      final requestId = request.id.toString();
+      if (requestId.isEmpty) return;
       if (handledPeriodicMaintenanceIds.contains(requestId)) return;
       final notificationAnchor = _dateOnly(today);
       final skey = _stableKey(
@@ -2799,8 +2811,8 @@ class _NotificationsCounterState extends State<NotificationsCounter> {
       required MaintenanceRequest request,
       required DateTime dueAnchor,
     }) {
-      final requestId = request.id?.toString();
-      if (requestId == null || requestId.isEmpty) return;
+      final requestId = request.id.toString();
+      if (requestId.isEmpty) return;
       if (handledPeriodicMaintenanceIds.contains(requestId)) return;
       final todayAnchor = _dateOnly(today);
       final skey = _stableKey(
@@ -3030,8 +3042,7 @@ class _NotificationsCounterState extends State<NotificationsCounter> {
             (cfg['electricitySharedMethod'] ?? '').toString() == 'percent';
         final isPercentBased =
             isWaterSharedPercent || isElectricitySharedPercent;
-        final isPeriodicMaintenanceService =
-            type == 'cleaning' ||
+        final isPeriodicMaintenanceService = type == 'cleaning' ||
             type == 'elevator' ||
             (type == 'internet' && _internetBillingModeGlobal(cfg) == 'owner');
         final pid = key.split('::').first;
@@ -3080,9 +3091,7 @@ class _NotificationsCounterState extends State<NotificationsCounter> {
           final trackedDelta = _daysBetween(today, trackedDue);
           final remind = _serviceRemindDaysGlobal(cfg);
           if (trackedDelta == 0 ||
-              (trackedDelta > 0 &&
-                  remind > 0 &&
-                  trackedDelta == remind)) {
+              (trackedDelta > 0 && remind > 0 && trackedDelta == remind)) {
             addPeriodicTrackedNotification(
               request: trackedPeriodicRequest,
               dueAnchor: trackedDue,
@@ -3105,7 +3114,8 @@ class _NotificationsCounterState extends State<NotificationsCounter> {
           continue;
         }
         final generatedToday = _serviceLastGeneratedDateGlobal(cfg);
-        if (generatedToday != null && _daysBetween(today, generatedToday) == 0) {
+        if (generatedToday != null &&
+            _daysBetween(today, generatedToday) == 0) {
           final hasCompletedRequest = isPeriodicMaintenanceService &&
               _hasCompletedPeriodicMaintenanceRequestGlobal(
                 maintenance: _maintenance,
@@ -3129,7 +3139,8 @@ class _NotificationsCounterState extends State<NotificationsCounter> {
           }
           if (isPeriodicMaintenanceService &&
               suppressedDate != null &&
-              _dateOnlyGlobal(suppressedDate) == _dateOnlyGlobal(generatedToday) &&
+              _dateOnlyGlobal(suppressedDate) ==
+                  _dateOnlyGlobal(generatedToday) &&
               !hasActiveRequest) {
             continue;
           }
@@ -3155,7 +3166,8 @@ class _NotificationsCounterState extends State<NotificationsCounter> {
         if (isPeriodicMaintenanceService &&
             lastGenerated != null &&
             _daysBetween(today, lastGenerated) < 0) {
-          final activeGeneratedRequest = _activePeriodicMaintenanceRequestGlobal(
+          final activeGeneratedRequest =
+              _activePeriodicMaintenanceRequestGlobal(
             maintenance: _maintenance,
             invoices: _invoices,
             propertyId: pid,
@@ -3264,6 +3276,3 @@ class _NotificationsCounterState extends State<NotificationsCounter> {
     );
   }
 }
-
-
-

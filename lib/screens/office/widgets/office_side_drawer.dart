@@ -1,5 +1,5 @@
 // lib/screens/office/widgets/office_side_drawer.dart
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
@@ -17,7 +17,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:darvoo/widgets/custom_confirm_dialog.dart';
+import 'package:ejarz_pro/widgets/custom_confirm_dialog.dart';
 
 import '../../../data/services/user_scope.dart' as scope;
 import '../../../data/services/office_client_guard.dart';
@@ -43,10 +43,8 @@ class OfficeSideDrawer extends StatelessWidget {
   static const Color _drawerBg = Color(0xFFFFFBEB);
   static const Color _primary = Color(0xFF0F766E);
 
-  static final Uri _privacyUri = Uri.parse(
-      'https://www.notion.so/darvoo-2c2c4186d1998080a134eeba1cc8e0b6?source=copy_link');
-  static final Uri _termsUri = Uri.parse(
-      'https://www.notion.so/darvoo-2-2c2c4186d199809995f2e4168dd95d75?source=copy_link');
+  static final Uri _privacyUri = Uri.parse('https://www.ejarzpro.sa/privacy');
+  static final Uri _termsUri = Uri.parse('https://www.ejarzpro.sa/terms');
   static const String _officeProfilePrefsPrefix = 'office_profile_v1_';
 
   String _traceNowIso() => DateTime.now().toIso8601String();
@@ -135,6 +133,7 @@ class OfficeSideDrawer extends StatelessWidget {
   Future<void> _openExternal(BuildContext context, Uri uri) async {
     final ok = await canLaunchUrl(uri);
     if (!ok || !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تعذر فتح الرابط.')),
       );
@@ -394,6 +393,8 @@ class OfficeSideDrawer extends StatelessWidget {
       'sheet-open start officeUid=${_officeWorkspaceUid() ?? ''}',
     );
 
+    if (!context.mounted) return;
+    if (!context.mounted) return;
     await showModalBottomSheet(
       context: context,
       useRootNavigator: true,
@@ -423,7 +424,7 @@ class OfficeSideDrawer extends StatelessWidget {
                     child: Text(
                       'تعذر تحميل تفاصيل الاشتراك.\n${snap.error}',
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.tajawal(
+                      style: GoogleFonts.cairo(
                           fontWeight: FontWeight.w900, color: Colors.red),
                     ),
                   ),
@@ -464,7 +465,7 @@ class OfficeSideDrawer extends StatelessWidget {
                         height: 5.h,
                         margin: EdgeInsets.only(bottom: 12.h),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.12),
+                          color: Colors.black.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8.r),
                         ),
                       ),
@@ -485,7 +486,7 @@ class OfficeSideDrawer extends StatelessWidget {
                           Expanded(
                             child: Text(
                               'اشتراكي',
-                              style: GoogleFonts.tajawal(
+                              style: GoogleFonts.cairo(
                                 fontSize: 18.sp,
                                 fontWeight: FontWeight.w900,
                                 color: const Color(0xFF0F172A),
@@ -507,7 +508,7 @@ class OfficeSideDrawer extends StatelessWidget {
                             ),
                             child: Text(
                               active ? 'فعال' : 'منتهي',
-                              style: GoogleFonts.tajawal(
+                              style: GoogleFonts.cairo(
                                 fontSize: 12.sp,
                                 fontWeight: FontWeight.w900,
                                 color: active
@@ -600,7 +601,7 @@ class OfficeSideDrawer extends StatelessWidget {
                                 padding: EdgeInsets.symmetric(vertical: 12.h),
                               ),
                               child: Text('إغلاق',
-                                  style: GoogleFonts.tajawal(
+                                  style: GoogleFonts.cairo(
                                       fontWeight: FontWeight.w900,
                                       color: primary)),
                             ),
@@ -629,13 +630,14 @@ class OfficeSideDrawer extends StatelessWidget {
     if (user == null || officeUid == null || officeUid.isEmpty) return;
 
     final initial = await _fetchOfficeProfile();
-    const allowedWorkTypes = {'مكتب', 'مؤسسة'};
+    const allowedWorkTypes = {'مؤسسة', 'شركة'};
     String workType =
         allowedWorkTypes.contains(initial.workType) ? initial.workType : '';
     final officeNameCtl = TextEditingController(text: initial.officeName);
     final addressCtl = TextEditingController(text: initial.address);
     final commercialCtl = TextEditingController(text: initial.commercialNo);
     final mobileCtl = TextEditingController(text: initial.mobile);
+    final mobileExtraCtl = TextEditingController(text: initial.mobileExtra);
     final phoneCtl = TextEditingController(text: initial.phone);
     String logoBase64 = initial.logoBase64;
     String? workTypeError;
@@ -652,7 +654,7 @@ class OfficeSideDrawer extends StatelessWidget {
             backgroundColor: const Color(0xFFB91C1C),
             behavior: SnackBarBehavior.floating,
             content: Text(msg,
-                style: GoogleFonts.tajawal(
+                style: GoogleFonts.cairo(
                     color: Colors.white, fontWeight: FontWeight.w700)),
           ),
         );
@@ -668,13 +670,14 @@ class OfficeSideDrawer extends StatelessWidget {
           SnackBar(
             behavior: SnackBarBehavior.floating,
             content: Text(msg,
-                style: GoogleFonts.tajawal(fontWeight: FontWeight.w700)),
+                style: GoogleFonts.cairo(fontWeight: FontWeight.w700)),
           ),
         );
     }
 
     Future<void> save(
         BuildContext dialogCtx, void Function(VoidCallback fn) setModal) async {
+      if (await OfficeClientGuard.blockIfOfficeStaff(dialogCtx)) return;
       if (isSaving) return;
       FocusScope.of(dialogCtx).unfocus();
       setModal(() => isSaving = true);
@@ -684,10 +687,50 @@ class OfficeSideDrawer extends StatelessWidget {
       final address = addressCtl.text.trim();
       final commercialNo = commercialCtl.text.trim();
       final mobile = mobileCtl.text.trim();
+      final mobileExtra = mobileExtraCtl.text.trim();
       final phone = phoneCtl.text.trim();
 
       if (selectedWorkType.isEmpty) {
-        setModal(() => workTypeError = 'يجب اختيار جهة العمل.');
+        setModal(() => workTypeError = 'يجب اختيار نوع المنشأة.');
+        setModal(() => isSaving = false);
+        return;
+      }
+      if (officeName.isEmpty) {
+        showError('الاسم التجاري مطلوب.', dialogCtx);
+        setModal(() => isSaving = false);
+        return;
+      }
+      if (commercialNo.isEmpty) {
+        showError('رقم السجل التجاري أو الرقم الموحد مطلوب.', dialogCtx);
+        setModal(() => isSaving = false);
+        return;
+      }
+      if (mobile.isEmpty) {
+        showError('رقم الجوال مطلوب.', dialogCtx);
+        setModal(() => isSaving = false);
+        return;
+      }
+      if (logoBase64.trim().isEmpty) {
+        showError(
+            'شعار المكتب مطلوب ويجب أن يكون مفرغًا من الخلفية.', dialogCtx);
+        setModal(() => isSaving = false);
+        return;
+      }
+      try {
+        final logoBytesForSave = base64Decode(logoBase64.trim());
+        final hasTransparentBackground =
+            await _hasTransparentLogoBackground(logoBytesForSave);
+        if (!hasTransparentBackground) {
+          showError(
+            'يجب أن يكون شعار المكتب مفرغًا من الخلفية.',
+            dialogCtx,
+          );
+          setModal(() => isSaving = false);
+          return;
+        }
+      } catch (_) {
+        showError(
+            'تعذر قراءة الشعار. اختر صورة شعار مفرغة من الخلفية.', dialogCtx);
         setModal(() => isSaving = false);
         return;
       }
@@ -704,6 +747,7 @@ class OfficeSideDrawer extends StatelessWidget {
           'address': address,
           'commercial_no': commercialNo,
           'mobile': mobile,
+          'mobile_extra': mobileExtra,
           'phone': phone,
           'logo_base64': logoBase64,
           'updated_at': KsaTime.nowUtc().toIso8601String(),
@@ -712,20 +756,15 @@ class OfficeSideDrawer extends StatelessWidget {
         // Save locally first so the UI always responds even if cloud fails.
         await _saveOfficeProfileLocal(officeUid, profilePayload);
 
-        // Cloud sync is best-effort and should not block the local save UX.
-        try {
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(officeUid)
-              .set({
-            'office_profile': {
-              ...profilePayload,
-              'updated_at': FieldValue.serverTimestamp(),
-            }
-          }, SetOptions(merge: true)).timeout(const Duration(seconds: 20));
-        } catch (e) {
-          debugPrint('office profile cloud sync failed: $e');
-        }
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(officeUid)
+            .set({
+          'office_profile': {
+            ...profilePayload,
+            'updated_at': FieldValue.serverTimestamp(),
+          }
+        }, SetOptions(merge: true)).timeout(const Duration(seconds: 20));
 
         if (!dialogCtx.mounted) return;
         Navigator.of(dialogCtx).pop();
@@ -740,6 +779,7 @@ class OfficeSideDrawer extends StatelessWidget {
       }
     }
 
+    if (!context.mounted) return;
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -765,8 +805,7 @@ class OfficeSideDrawer extends StatelessWidget {
               if (isSaving) return;
               final picked = await FilePicker.platform.pickFiles(
                 withData: true,
-                type: FileType.custom,
-                allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp'],
+                type: FileType.image,
               );
               if (picked == null || picked.files.isEmpty) return;
 
@@ -778,6 +817,13 @@ class OfficeSideDrawer extends StatelessWidget {
                 } catch (_) {}
               }
               if (bytes == null || bytes.isEmpty) return;
+
+              final hasTransparentBackground =
+                  await _hasTransparentLogoBackground(bytes);
+              if (!hasTransparentBackground) {
+                showError('يجب اختيار شعار مفرغ من الخلفية.');
+                return;
+              }
 
               final optimized = await _optimizeLogoBase64(bytes);
               if (optimized == null) {
@@ -805,15 +851,112 @@ class OfficeSideDrawer extends StatelessWidget {
                             height: 5.h,
                             margin: EdgeInsets.only(bottom: 12.h),
                             decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.12),
+                                color: Colors.black.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(8.r))),
                         Center(
                             child: Text('بياناتي',
-                                style: GoogleFonts.tajawal(
+                                style: GoogleFonts.cairo(
                                     fontSize: 18.sp,
                                     fontWeight: FontWeight.w900,
                                     color: const Color(0xFF0F172A)))),
                         SizedBox(height: 12.h),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            'بيانات المكتب',
+                            style: GoogleFonts.cairo(
+                              fontSize: 15.sp,
+                              fontWeight: FontWeight.w900,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 8.h),
+                        DropdownButtonFormField<String>(
+                          initialValue: workType.isEmpty ? null : workType,
+                          decoration: InputDecoration(
+                            labelText: 'نوع المنشأة',
+                            errorText: workTypeError,
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                                value: 'مؤسسة', child: Text('مؤسسة')),
+                            DropdownMenuItem(
+                                value: 'شركة', child: Text('شركة')),
+                          ],
+                          onChanged: isSaving
+                              ? null
+                              : (v) {
+                                  workType = (v ?? '').trim();
+                                  workTypeError = null;
+                                  setM(() {});
+                                },
+                        ),
+                        SizedBox(height: 8.h),
+                        TextField(
+                            controller: officeNameCtl,
+                            maxLength: 40,
+                            maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                            decoration: const InputDecoration(
+                                labelText: 'الاسم التجاري', counterText: ''),
+                            onChanged: (_) => setM(() {})),
+                        SizedBox(height: 8.h),
+                        TextField(
+                            controller: commercialCtl,
+                            maxLength: 15,
+                            maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly
+                            ],
+                            decoration: const InputDecoration(
+                                labelText: 'رقم السجل التجاري أو الرقم الموحد',
+                                counterText: '')),
+                        SizedBox(height: 8.h),
+                        TextField(
+                            controller: mobileCtl,
+                            maxLength: 10,
+                            maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly
+                            ],
+                            decoration: const InputDecoration(
+                                labelText: 'رقم الجوال', counterText: '')),
+                        SizedBox(height: 8.h),
+                        TextField(
+                            controller: mobileExtraCtl,
+                            maxLength: 10,
+                            maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly
+                            ],
+                            decoration: const InputDecoration(
+                                labelText: 'رقم جوال إضافي (اختياري)',
+                                counterText: '')),
+                        SizedBox(height: 8.h),
+                        TextField(
+                            controller: phoneCtl,
+                            maxLength: 10,
+                            maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly
+                            ],
+                            decoration: const InputDecoration(
+                                labelText: 'رقم الهاتف (اختياري)',
+                                counterText: '')),
+                        SizedBox(height: 8.h),
+                        Align(
+                            alignment: Alignment.centerRight,
+                            child: OutlinedButton.icon(
+                                onPressed: isSaving ? null : pickLogo,
+                                icon: const Icon(Icons.image_rounded),
+                                label: Text('اختيار الشعار من معرض الصور',
+                                    style: GoogleFonts.cairo(
+                                        fontWeight: FontWeight.w800)))),
+                        SizedBox(height: 10.h),
                         Container(
                           width: double.infinity,
                           padding: EdgeInsets.all(12.w),
@@ -830,29 +973,35 @@ class OfficeSideDrawer extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(valueOrDash(officeNameCtl.text),
-                                        style: GoogleFonts.tajawal(
+                                        style: GoogleFonts.cairo(
                                             fontSize: 17.sp,
                                             fontWeight: FontWeight.w900,
                                             color: const Color(0xFF0F172A))),
                                     SizedBox(height: 3.h),
                                     Text(
-                                        'العنوان: ${valueOrDash(addressCtl.text)}',
-                                        style: GoogleFonts.tajawal(
+                                        'نوع المنشأة: ${valueOrDash(workType)}',
+                                        style: GoogleFonts.cairo(
                                             color: const Color(0xFF334155),
                                             fontWeight: FontWeight.w700)),
                                     Text(
-                                        'رقم السجل: ${valueOrDash(commercialCtl.text)}',
-                                        style: GoogleFonts.tajawal(
+                                        'رقم السجل التجاري أو الرقم الموحد: ${valueOrDash(commercialCtl.text)}',
+                                        style: GoogleFonts.cairo(
                                             color: const Color(0xFF334155),
                                             fontWeight: FontWeight.w700)),
                                     Text(
                                         'الجوال: ${valueOrDash(mobileCtl.text)}',
-                                        style: GoogleFonts.tajawal(
+                                        style: GoogleFonts.cairo(
                                             color: const Color(0xFF334155),
                                             fontWeight: FontWeight.w700)),
+                                    if (mobileExtraCtl.text.trim().isNotEmpty)
+                                      Text(
+                                          'الجوال الإضافي: ${valueOrDash(mobileExtraCtl.text)}',
+                                          style: GoogleFonts.cairo(
+                                              color: const Color(0xFF334155),
+                                              fontWeight: FontWeight.w700)),
                                     Text(
                                         'الهاتف: ${valueOrDash(phoneCtl.text)}',
-                                        style: GoogleFonts.tajawal(
+                                        style: GoogleFonts.cairo(
                                             color: const Color(0xFF334155),
                                             fontWeight: FontWeight.w700)),
                                   ],
@@ -874,7 +1023,7 @@ class OfficeSideDrawer extends StatelessWidget {
                                         size: 22.sp)
                                     : Image.memory(
                                         logoBytes()!,
-                                        fit: BoxFit.cover,
+                                        fit: BoxFit.contain,
                                         errorBuilder: (_, __, ___) => Icon(
                                           Icons.business_rounded,
                                           color: const Color(0xFF94A3B8),
@@ -885,85 +1034,6 @@ class OfficeSideDrawer extends StatelessWidget {
                             ],
                           ),
                         ),
-                        SizedBox(height: 12.h),
-                        TextField(
-                            controller: officeNameCtl,
-                            maxLength: 40,
-                            maxLengthEnforcement: MaxLengthEnforcement.enforced,
-                            decoration: const InputDecoration(
-                                labelText: 'اسم المكتب', counterText: ''),
-                            onChanged: (_) => setM(() {})),
-                        SizedBox(height: 8.h),
-                        DropdownButtonFormField<String>(
-                          initialValue: workType.isEmpty ? null : workType,
-                          decoration: InputDecoration(
-                            labelText: 'جهة العمل',
-                            errorText: workTypeError,
-                          ),
-                          items: const [
-                            DropdownMenuItem(
-                                value: 'مكتب', child: Text('مكتب')),
-                            DropdownMenuItem(
-                                value: 'مؤسسة', child: Text('مؤسسة')),
-                          ],
-                          onChanged: isSaving
-                              ? null
-                              : (v) {
-                                  workType = (v ?? '').trim();
-                                  workTypeError = null;
-                                  setM(() {});
-                                },
-                        ),
-                        SizedBox(height: 8.h),
-                        TextField(
-                            controller: addressCtl,
-                            maxLength: 40,
-                            maxLengthEnforcement: MaxLengthEnforcement.enforced,
-                            decoration: const InputDecoration(
-                                labelText: 'العنوان', counterText: ''),
-                            onChanged: (_) => setM(() {})),
-                        SizedBox(height: 8.h),
-                        TextField(
-                            controller: commercialCtl,
-                            maxLength: 15,
-                            maxLengthEnforcement: MaxLengthEnforcement.enforced,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly
-                            ],
-                            decoration: const InputDecoration(
-                                labelText: 'رقم السجل', counterText: '')),
-                        SizedBox(height: 8.h),
-                        TextField(
-                            controller: mobileCtl,
-                            maxLength: 10,
-                            maxLengthEnforcement: MaxLengthEnforcement.enforced,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly
-                            ],
-                            decoration: const InputDecoration(
-                                labelText: 'رقم الجوال', counterText: '')),
-                        SizedBox(height: 8.h),
-                        TextField(
-                            controller: phoneCtl,
-                            maxLength: 10,
-                            maxLengthEnforcement: MaxLengthEnforcement.enforced,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly
-                            ],
-                            decoration: const InputDecoration(
-                                labelText: 'رقم الهاتف', counterText: '')),
-                        SizedBox(height: 8.h),
-                        Align(
-                            alignment: Alignment.centerRight,
-                            child: OutlinedButton.icon(
-                                onPressed: isSaving ? null : pickLogo,
-                                icon: const Icon(Icons.image_rounded),
-                                label: Text('إرفاق شعار المكتب',
-                                    style: GoogleFonts.tajawal(
-                                        fontWeight: FontWeight.w800)))),
                         SizedBox(height: 10.h),
                         Row(
                           children: [
@@ -985,7 +1055,7 @@ class OfficeSideDrawer extends StatelessWidget {
                                         ),
                                       )
                                     : Text('حفظ',
-                                        style: GoogleFonts.tajawal(
+                                        style: GoogleFonts.cairo(
                                             color: Colors.white,
                                             fontWeight: FontWeight.w900)),
                               ),
@@ -997,7 +1067,7 @@ class OfficeSideDrawer extends StatelessWidget {
                                         ? null
                                         : () => Navigator.of(ctx).pop(),
                                     child: Text('إلغاء',
-                                        style: GoogleFonts.tajawal(
+                                        style: GoogleFonts.cairo(
                                             fontWeight: FontWeight.w900)))),
                           ],
                         ),
@@ -1009,13 +1079,13 @@ class OfficeSideDrawer extends StatelessWidget {
                   Positioned.fill(
                     child: IgnorePointer(
                       child: Container(
-                        color: Colors.black.withOpacity(0.08),
+                        color: Colors.black.withValues(alpha: 0.08),
                         alignment: Alignment.center,
                         child: Container(
                           padding: EdgeInsets.symmetric(
                               horizontal: 16.w, vertical: 12.h),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.92),
+                            color: Colors.white.withValues(alpha: 0.92),
                             borderRadius: BorderRadius.circular(12.r),
                             border: Border.all(color: const Color(0xFFE2E8F0)),
                           ),
@@ -1031,7 +1101,7 @@ class OfficeSideDrawer extends StatelessWidget {
                               SizedBox(width: 10.w),
                               Text(
                                 'جاري الحفظ',
-                                style: GoogleFonts.tajawal(
+                                style: GoogleFonts.cairo(
                                   fontWeight: FontWeight.w800,
                                   color: const Color(0xFF0F172A),
                                 ),
@@ -1078,7 +1148,7 @@ class OfficeSideDrawer extends StatelessWidget {
                   child: Text(
                     '\u0645\u0646 \u0646\u062d\u0646',
                     textAlign: TextAlign.right,
-                    style: GoogleFonts.tajawal(
+                    style: GoogleFonts.cairo(
                       fontWeight: FontWeight.w900,
                       fontSize: 16.sp,
                       color: const Color(0xFF7C3AED),
@@ -1103,7 +1173,7 @@ class OfficeSideDrawer extends StatelessWidget {
             padding: EdgeInsets.all(12.w),
             child: Text(
               '\u062f\u0627\u0631\u0641\u0648 \u062a\u0637\u0628\u064a\u0642 \u0644\u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u0639\u0642\u0627\u0631\u0627\u062a \u0648\u0627\u0644\u0639\u0642\u0648\u062f \u0628\u0633\u0647\u0648\u0644\u0629 \u0648\u0643\u0641\u0627\u0621\u0629\u060c \u0645\u062e\u0635\u0635 \u0644\u0644\u0645\u0627\u0644\u0643\u064a\u0646 \u0648\u0627\u0644\u0645\u0643\u0627\u062a\u0628 \u0627\u0644\u0639\u0642\u0627\u0631\u064a\u0629 \u0644\u0645\u062a\u0627\u0628\u0639\u0629 \u0627\u0644\u0623\u0645\u0644\u0627\u0643 \u0648\u0627\u0644\u0645\u0633\u062a\u0623\u062c\u0631\u064a\u0646 \u0648\u0627\u0644\u062f\u0641\u0639\u0627\u062a \u0648\u0627\u0644\u062a\u0642\u0627\u0631\u064a\u0631 \u0641\u064a \u0645\u0643\u0627\u0646 \u0648\u0627\u062d\u062f.',
-              style: GoogleFonts.tajawal(
+              style: GoogleFonts.cairo(
                   fontSize: 14.sp,
                   height: 1.6,
                   fontWeight: FontWeight.w700,
@@ -1127,7 +1197,7 @@ class OfficeSideDrawer extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12.r)),
                 ),
                 child: Text('\u0625\u063a\u0644\u0627\u0642',
-                    style: GoogleFonts.tajawal(fontWeight: FontWeight.w900)),
+                    style: GoogleFonts.cairo(fontWeight: FontWeight.w900)),
               ),
             ),
           ],
@@ -1165,7 +1235,7 @@ class OfficeSideDrawer extends StatelessWidget {
                   child: Text(
                     '\u0627\u062a\u0635\u0644 \u0628\u0646\u0627',
                     textAlign: TextAlign.right,
-                    style: GoogleFonts.tajawal(
+                    style: GoogleFonts.cairo(
                       fontWeight: FontWeight.w900,
                       fontSize: 16.sp,
                       color: const Color(0xFF0D9488),
@@ -1194,7 +1264,7 @@ class OfficeSideDrawer extends StatelessWidget {
               children: [
                 Text(
                   '\u0625\u0630\u0627 \u0648\u0627\u062c\u0647\u062a \u0645\u0634\u0643\u0644\u0629 \u0623\u0648 \u0644\u062f\u064a\u0643 \u0627\u0633\u062a\u0641\u0633\u0627\u0631\u060c \u064a\u0633\u0639\u062f \u0641\u0631\u064a\u0642 \u0627\u0644\u062f\u0639\u0645 \u0628\u0645\u0633\u0627\u0639\u062f\u062a\u0643. \u0631\u0627\u0633\u0644\u0646\u0627 \u0639\u0628\u0631 \u0627\u0644\u0628\u0631\u064a\u062f \u0627\u0644\u062a\u0627\u0644\u064a:',
-                  style: GoogleFonts.tajawal(
+                  style: GoogleFonts.cairo(
                       fontSize: 14.sp,
                       height: 1.5,
                       fontWeight: FontWeight.w700,
@@ -1202,8 +1272,8 @@ class OfficeSideDrawer extends StatelessWidget {
                 ),
                 SizedBox(height: 8.h),
                 SelectableText(
-                  'support@darvoo.com',
-                  style: GoogleFonts.tajawal(
+                  'Info@ejarzpro.sa',
+                  style: GoogleFonts.cairo(
                       fontSize: 15.sp,
                       fontWeight: FontWeight.w900,
                       color: primary),
@@ -1227,7 +1297,7 @@ class OfficeSideDrawer extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12.r)),
                 ),
                 child: Text('\u0625\u063a\u0644\u0627\u0642',
-                    style: GoogleFonts.tajawal(fontWeight: FontWeight.w900)),
+                    style: GoogleFonts.cairo(fontWeight: FontWeight.w900)),
               ),
             ),
           ],
@@ -1368,12 +1438,12 @@ class OfficeSideDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleStyle = GoogleFonts.tajawal(
+    final titleStyle = GoogleFonts.cairo(
       fontSize: 16.sp,
       fontWeight: FontWeight.w900,
       color: const Color(0xFF0F172A),
     );
-    final itemStyle = GoogleFonts.tajawal(
+    final itemStyle = GoogleFonts.cairo(
       fontSize: 14.sp,
       fontWeight: FontWeight.w900,
       color: const Color(0xFF0F172A),
@@ -1407,7 +1477,7 @@ class OfficeSideDrawer extends StatelessWidget {
                             fit: BoxFit.contain),
                       ),
                       SizedBox(width: 10.w),
-                      Text('Darvoo', style: titleStyle),
+                      Text('Ejarz Pro', style: titleStyle),
                     ],
                   ),
                 ),
@@ -1420,7 +1490,12 @@ class OfficeSideDrawer extends StatelessWidget {
                     fg: const Color(0xFF0D9488),
                   ),
                   title: Text('بياناتي', style: itemStyle),
-                  onTap: () => _openMyProfile(context),
+                  onTap: () async {
+                    if (await OfficeClientGuard.blockIfOfficeStaff(context)) {
+                      return;
+                    }
+                    await _openMyProfile(context);
+                  },
                 ),
 
                 //
@@ -1457,7 +1532,9 @@ class OfficeSideDrawer extends StatelessWidget {
                     ),
                   ),
 
+                // ignore: dead_code
                 if (false)
+                  // ignore: dead_code
                   ListTile(
                     leading: _coloredIcon(
                       icon: Icons.history_rounded,
@@ -1539,7 +1616,7 @@ class OfficeSideDrawer extends StatelessWidget {
                     ),
                     title: Text(
                       'تسجيل الخروج',
-                      style: GoogleFonts.tajawal(
+                      style: GoogleFonts.cairo(
                         fontSize: 14.sp,
                         fontWeight: FontWeight.w900,
                         color: const Color(0xFFEF4444),
@@ -1553,9 +1630,9 @@ class OfficeSideDrawer extends StatelessWidget {
                   padding: EdgeInsets.only(bottom: 12.h),
                   child: Text(
                     'الإصدار 1.0.3',
-                    style: GoogleFonts.tajawal(
+                    style: GoogleFonts.cairo(
                       fontSize: 12.sp,
-                      color: Colors.black.withOpacity(0.45),
+                      color: Colors.black.withValues(alpha: 0.45),
                     ),
                   ),
                 ),
@@ -1607,6 +1684,7 @@ class OfficeSideDrawer extends StatelessWidget {
         'address': pick('address'),
         'commercial_no': pick('commercial_no'),
         'mobile': pick('mobile'),
+        'mobile_extra': pick('mobile_extra'),
         'phone': pick('phone'),
         'logo_base64': pick('logo_base64'),
       };
@@ -1631,6 +1709,7 @@ class OfficeSideDrawer extends StatelessWidget {
       address: pick('address'),
       commercialNo: pick('commercial_no'),
       mobile: pick('mobile'),
+      mobileExtra: pick('mobile_extra'),
       phone: pick('phone'),
       logoBase64: pick('logo_base64'),
     );
@@ -1653,6 +1732,48 @@ class OfficeSideDrawer extends StatelessWidget {
       }
     } catch (_) {}
     return null;
+  }
+
+  Future<bool> _hasTransparentLogoBackground(Uint8List bytes) async {
+    try {
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+      final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (data == null) return false;
+
+      final width = image.width;
+      final height = image.height;
+      if (width <= 0 || height <= 0) return false;
+
+      final rgba = data.buffer.asUint8List();
+      int alphaAt(int x, int y) {
+        final index = ((y * width + x) * 4) + 3;
+        return index < rgba.length ? rgba[index] : 255;
+      }
+
+      final corners = <int>[
+        alphaAt(0, 0),
+        alphaAt(width - 1, 0),
+        alphaAt(0, height - 1),
+        alphaAt(width - 1, height - 1),
+      ];
+      if (corners.any((alpha) => alpha >= 250)) return false;
+
+      final totalPixels = width * height;
+      final step = ((totalPixels / 2500).ceil()).clamp(1, totalPixels).toInt();
+      for (int pixel = 0; pixel < totalPixels; pixel += step) {
+        final alphaIndex = (pixel * 4) + 3;
+        if (alphaIndex < rgba.length && rgba[alphaIndex] < 250) {
+          return true;
+        }
+      }
+
+      final lastAlphaIndex = ((totalPixels - 1) * 4) + 3;
+      return lastAlphaIndex < rgba.length && rgba[lastAlphaIndex] < 250;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<String?> _optimizeLogoBase64(Uint8List bytes) async {
@@ -1743,6 +1864,7 @@ class _OfficeProfileData {
   final String address;
   final String commercialNo;
   final String mobile;
+  final String mobileExtra;
   final String phone;
   final String logoBase64;
 
@@ -1752,6 +1874,7 @@ class _OfficeProfileData {
     required this.address,
     required this.commercialNo,
     required this.mobile,
+    required this.mobileExtra,
     required this.phone,
     required this.logoBase64,
   });
@@ -1762,6 +1885,7 @@ class _OfficeProfileData {
         address: '',
         commercialNo: '',
         mobile: '',
+        mobileExtra: '',
         phone: '',
         logoBase64: '',
       );
@@ -1790,7 +1914,7 @@ class _RowItem extends StatelessWidget {
       softWrap: wrap,
       overflow: wrap ? TextOverflow.visible : TextOverflow.ellipsis,
       maxLines: wrap ? null : 1,
-      style: GoogleFonts.tajawal(
+      style: GoogleFonts.cairo(
         fontSize: 14.sp,
         fontWeight: FontWeight.w900,
         color: const Color(0xFF0F172A),
@@ -1806,10 +1930,10 @@ class _RowItem extends StatelessWidget {
           child: Text(
             label,
             textAlign: TextAlign.right,
-            style: GoogleFonts.tajawal(
+            style: GoogleFonts.cairo(
               fontSize: 14.sp,
               fontWeight: FontWeight.w800,
-              color: Colors.black.withOpacity(0.70),
+              color: Colors.black.withValues(alpha: 0.70),
             ),
           ),
         ),

@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -169,8 +169,8 @@ class OfficePackageSnapshot {
     final entityType = _string(data['entityType']).toLowerCase();
     final accountType = _string(data['accountType']).toLowerCase();
     final targetRole = _string(data['targetRole']).toLowerCase();
-    final hasOwnerMarker =
-        _string(data['ownerUid']).isNotEmpty || _string(data['ownerId']).isNotEmpty;
+    final hasOwnerMarker = _string(data['ownerUid']).isNotEmpty ||
+        _string(data['ownerId']).isNotEmpty;
     final looksLikeOffice = role == 'office' ||
         entityType == 'office' ||
         accountType == 'office_owner' ||
@@ -279,7 +279,7 @@ class PackageLimitService {
       return PackageLimitDecision(
         allowed: allowed,
         message:
-            allowed ? null : _limitReachedMessage('Ù…Ø³ØªØ®Ø¯Ù… Ù…ÙƒØªØ¨', snapshot.name),
+            allowed ? null : _limitReachedMessage('مستخدم مكتب', snapshot.name),
         used: used,
         limit: limit,
         packageSnapshot: snapshot,
@@ -318,7 +318,7 @@ class PackageLimitService {
         allowed: allowed,
         message: allowed
             ? null
-            : _limitReachedMessage('Ø¹Ù…ÙŠÙ„ Ù„ÙˆØ­Ø© Ø§Ù„Ù…ÙƒØªØ¨', snapshot.name),
+            : _limitReachedMessage('عميل لوحة المكتب', snapshot.name),
         used: used,
         limit: limit,
         packageSnapshot: snapshot,
@@ -355,7 +355,7 @@ class PackageLimitService {
       final allowed = used < limit;
       return PackageLimitDecision(
         allowed: allowed,
-        message: allowed ? null : _limitReachedMessage('Ø¹Ù‚Ø§Ø±', snapshot.name),
+        message: allowed ? null : _limitReachedMessage('عقار', snapshot.name),
         used: used,
         limit: limit,
         packageSnapshot: snapshot,
@@ -383,8 +383,8 @@ class PackageLimitService {
 
   static String _limitReachedMessage(String entityLabel, String packageName) {
     final planPart =
-        packageName.trim().isEmpty ? '' : ' ÙÙŠ Ø§Ù„Ø¨Ø§Ù‚Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ© ($packageName)';
-    return 'Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø¥Ø¶Ø§ÙØ© $entityLabel Ø¬Ø¯ÙŠØ¯ØŒ Ù„Ù‚Ø¯ ÙˆØµÙ„Øª Ø¥Ù„Ù‰ Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ù‚ØµÙ‰ Ø§Ù„Ù…Ø³Ù…ÙˆØ­$planPart.';
+        packageName.trim().isEmpty ? '' : ' في الباقة الحالية ($packageName)';
+    return 'لا يمكن إضافة $entityLabel جديد، لقد وصلت إلى الحد الأقصى المسموح$planPart.';
   }
 
   static Future<_ResolvedPackageContext?> _loadPackageContext() async {
@@ -429,9 +429,9 @@ class PackageLimitService {
     if (ownerOfficeUid == null || ownerOfficeUid.isEmpty) {
       return cachedContext ??
           _ResolvedPackageContext(
-        officeUid: workspaceUid,
-        snapshot: null,
-      );
+            officeUid: workspaceUid,
+            snapshot: null,
+          );
     }
 
     final ownerUserData = await _readDocData(users.doc(ownerOfficeUid));

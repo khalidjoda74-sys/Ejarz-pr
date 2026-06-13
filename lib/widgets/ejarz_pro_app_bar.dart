@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 // ✅ عدّل مسار الاستيراد حسب مكان AppMenuButton عندك
 import '../ui/widgets/app_menu_button.dart';
 
-Widget darvooLeading(BuildContext context, {Color iconColor = Colors.white}) {
+Widget ejarzProLeading(BuildContext context, {Color iconColor = Colors.white}) {
   final nav = Navigator.of(context);
 
   // لو فيه صفحة قبلها => رجوع

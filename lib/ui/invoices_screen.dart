@@ -3,7 +3,7 @@
 // ملاحظة: أضِف مسارات هذا الملف إلى MaterialApp.routes عبر InvoicesRoutes.routes()
 // وسجّل الـAdapter: Hive.registerAdapter(InvoiceAdapter());
 // ignore_for_file: unused_import,unused_element,unused_local_variable,unnecessary_null_comparison,unnecessary_non_null_assertion,unnecessary_import,prefer_const_declarations,deprecated_member_use,use_build_context_synchronously,no_leading_underscores_for_local_identifiers,prefer_const_constructors,curly_braces_in_flow_control_structures
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -56,7 +56,7 @@ import 'widgets/entity_audit_info_button.dart';
 
 import '../models/tenant.dart';
 import '../models/property.dart';
-import '../widgets/darvoo_app_bar.dart';
+import '../widgets/ejarz_pro_app_bar.dart';
 import '../widgets/custom_confirm_dialog.dart';
 
 // ✅ أسماء الصناديق per-uid عبر user_scope بنفس نمط الشاشات الأخرى
@@ -124,8 +124,7 @@ DateTime? _invoiceSnapshotDateValue(
   return null;
 }
 
-String? _invoiceSnapshotNumberText(
-    Map<String, dynamic>? snapshot, String key) {
+String? _invoiceSnapshotNumberText(Map<String, dynamic>? snapshot, String key) {
   final value = snapshot?[key];
   if (value == null) return null;
   if (value is num) return _fmtMoneyTrunc(value);
@@ -164,7 +163,8 @@ Map<String, String> _invoiceSnapshotPropertySpecMap(String? desc) {
   return map;
 }
 
-String? _invoiceSnapshotPropertyFreeDescription(Map<String, dynamic>? snapshot) {
+String? _invoiceSnapshotPropertyFreeDescription(
+    Map<String, dynamic>? snapshot) {
   final text = _invoiceSnapshotString(snapshot, 'description');
   if (text == null) return null;
   final start = text.indexOf('[[SPEC]]');
@@ -176,8 +176,7 @@ String? _invoiceSnapshotPropertyFreeDescription(Map<String, dynamic>? snapshot) 
   return text.trim().isEmpty ? null : text.trim();
 }
 
-String? _invoiceSnapshotPropertyFurnishingText(
-    Map<String, dynamic>? snapshot) {
+String? _invoiceSnapshotPropertyFurnishingText(Map<String, dynamic>? snapshot) {
   final raw = _invoiceSnapshotPropertySpecMap(
       _invoiceSnapshotString(snapshot, 'description'))['المفروشات'];
   if (raw == null) return null;
@@ -255,7 +254,9 @@ String _invoicePropertyReference({
           building != null ||
           (buildingSnapshot != null && buildingSnapshot.isNotEmpty);
   final buildingName = hasBuilding
-      ? (building?.name ?? _invoiceSnapshotString(buildingSnapshot, 'name') ?? '')
+      ? (building?.name ??
+              _invoiceSnapshotString(buildingSnapshot, 'name') ??
+              '')
           .trim()
       : '';
   return _composeInvoicePropertyReference(
@@ -317,11 +318,8 @@ void _invoicePutSnapshotDate(
 void _invoicePutSnapshotList(
     Map<String, dynamic> target, String key, List<String>? values) {
   if (values == null) return;
-  final cleaned = values
-      .map((e) => e.trim())
-      .where((e) => e.isNotEmpty)
-      .toSet()
-      .toList();
+  final cleaned =
+      values.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
   if (cleaned.isEmpty) return;
   target[key] = cleaned;
 }
@@ -396,7 +394,8 @@ Map<String, dynamic> _buildInvoiceTenantSnapshot(Tenant tenant) {
   _invoicePutSnapshotValue(map, 'isArchived', tenant.isArchived);
   _invoicePutSnapshotValue(map, 'isBlacklisted', tenant.isBlacklisted);
   _invoicePutSnapshotValue(map, 'blacklistReason', tenant.blacklistReason);
-  _invoicePutSnapshotValue(map, 'activeContractsCount', tenant.activeContractsCount);
+  _invoicePutSnapshotValue(
+      map, 'activeContractsCount', tenant.activeContractsCount);
   _invoicePutSnapshotDate(map, 'createdAt', tenant.createdAt);
   _invoicePutSnapshotDate(map, 'updatedAt', tenant.updatedAt);
   return map;
@@ -428,7 +427,8 @@ Map<String, dynamic> _buildInvoicePropertySnapshot(Property property) {
   _invoicePutSnapshotValue(map, 'documentType', property.documentType);
   _invoicePutSnapshotValue(map, 'documentNumber', property.documentNumber);
   _invoicePutSnapshotDate(map, 'documentDate', property.documentDate);
-  _invoicePutSnapshotValue(map, 'electricityNumber', property.electricityNumber);
+  _invoicePutSnapshotValue(
+      map, 'electricityNumber', property.electricityNumber);
   _invoicePutSnapshotValue(map, 'electricityMode', property.electricityMode);
   _invoicePutSnapshotValue(map, 'electricityShare', property.electricityShare);
   _invoicePutSnapshotValue(map, 'waterNumber', property.waterNumber);
@@ -452,7 +452,9 @@ bool _isInvoiceSnapshotImageAttachment(String path) {
 
 bool _isInvoiceSnapshotRemoteAttachment(String path) {
   final p = path.trim().toLowerCase();
-  return p.startsWith('http://') || p.startsWith('https://') || p.startsWith('gs://');
+  return p.startsWith('http://') ||
+      p.startsWith('https://') ||
+      p.startsWith('gs://');
 }
 
 Future<String> _resolveInvoiceSnapshotRemoteUrl(String path) async {
@@ -517,7 +519,8 @@ Future<void> _openInvoiceSnapshotAttachment(
     final raw = path.trim();
     String launchable = raw;
     if (raw.startsWith('gs://')) {
-      launchable = await FirebaseStorage.instance.refFromURL(raw).getDownloadURL();
+      launchable =
+          await FirebaseStorage.instance.refFromURL(raw).getDownloadURL();
     }
     Uri? uri;
     if (_isInvoiceSnapshotRemoteAttachment(launchable)) {
@@ -848,9 +851,8 @@ String _fmtDateDynamic(DateTime d) {
 
 String _formatInvoiceHourAmPm(int hour24) {
   final normalized = hour24.clamp(0, 23);
-  final hour12 = normalized == 0
-      ? 12
-      : (normalized > 12 ? normalized - 12 : normalized);
+  final hour12 =
+      normalized == 0 ? 12 : (normalized > 12 ? normalized - 12 : normalized);
   final suffix = normalized >= 12 ? 'PM' : 'AM';
   return '$hour12:00 $suffix';
 }
@@ -1176,7 +1178,7 @@ class _InvoiceSnapshotScaffold extends StatelessWidget {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text(
             title,
             style: GoogleFonts.cairo(
@@ -1243,34 +1245,39 @@ class _InvoiceTenantSnapshotScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasAddress = _invoiceSnapshotString(snapshot, 'addressLine') != null ||
-        _invoiceSnapshotString(snapshot, 'city') != null ||
-        _invoiceSnapshotString(snapshot, 'region') != null ||
-        _invoiceSnapshotString(snapshot, 'postalCode') != null;
-    final hasCompany = _invoiceSnapshotString(snapshot, 'companyName') != null ||
-        _invoiceSnapshotString(snapshot, 'companyCommercialRegister') != null ||
-        _invoiceSnapshotString(snapshot, 'companyRepresentativeName') != null ||
-        _invoiceSnapshotString(snapshot, 'companyRepresentativePhone') != null ||
-        _invoiceSnapshotString(snapshot, 'companyBankName') != null ||
-        _invoiceSnapshotString(snapshot, 'companyBankAccountNumber') != null ||
-        _invoiceSnapshotString(snapshot, 'companyTaxNumber') != null;
+    final hasAddress =
+        _invoiceSnapshotString(snapshot, 'addressLine') != null ||
+            _invoiceSnapshotString(snapshot, 'city') != null ||
+            _invoiceSnapshotString(snapshot, 'region') != null ||
+            _invoiceSnapshotString(snapshot, 'postalCode') != null;
+    final hasCompany =
+        _invoiceSnapshotString(snapshot, 'companyName') != null ||
+            _invoiceSnapshotString(snapshot, 'companyCommercialRegister') !=
+                null ||
+            _invoiceSnapshotString(snapshot, 'companyRepresentativeName') !=
+                null ||
+            _invoiceSnapshotString(snapshot, 'companyRepresentativePhone') !=
+                null ||
+            _invoiceSnapshotString(snapshot, 'companyBankName') != null ||
+            _invoiceSnapshotString(snapshot, 'companyBankAccountNumber') !=
+                null ||
+            _invoiceSnapshotString(snapshot, 'companyTaxNumber') != null;
     final hasService =
         _invoiceSnapshotString(snapshot, 'serviceSpecialization') != null;
     final tags = _invoiceSnapshotStringList(snapshot, 'tags');
     final attachments = _invoiceSnapshotStringList(snapshot, 'attachmentPaths');
     final isBlacklisted =
         _invoiceSnapshotBoolValue(snapshot, 'isBlacklisted') == true;
-    final hasAdditional =
-        _invoiceSnapshotString(snapshot, 'emergencyName') != null ||
-            _invoiceSnapshotString(snapshot, 'emergencyPhone') != null ||
-            _invoiceSnapshotString(snapshot, 'tenantBankName') != null ||
-            _invoiceSnapshotString(snapshot, 'tenantBankAccountNumber') !=
-                null ||
-            _invoiceSnapshotString(snapshot, 'tenantTaxNumber') != null ||
-            tags.isNotEmpty ||
-            isBlacklisted ||
-            _invoiceSnapshotString(snapshot, 'blacklistReason') != null ||
-            _invoiceSnapshotString(snapshot, 'notes') != null;
+    final hasAdditional = _invoiceSnapshotString(snapshot, 'emergencyName') !=
+            null ||
+        _invoiceSnapshotString(snapshot, 'emergencyPhone') != null ||
+        _invoiceSnapshotString(snapshot, 'tenantBankName') != null ||
+        _invoiceSnapshotString(snapshot, 'tenantBankAccountNumber') != null ||
+        _invoiceSnapshotString(snapshot, 'tenantTaxNumber') != null ||
+        tags.isNotEmpty ||
+        isBlacklisted ||
+        _invoiceSnapshotString(snapshot, 'blacklistReason') != null ||
+        _invoiceSnapshotString(snapshot, 'notes') != null;
 
     return _InvoiceSnapshotScaffold(
       title: 'نسخة المستأجر',
@@ -1283,21 +1290,21 @@ class _InvoiceTenantSnapshotScreen extends StatelessWidget {
           padding: EdgeInsets.all(14.w),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _invoiceSnapshotSectionTitle('بيانات المستأجر وقت العقد'),
-                _invoiceSnapshotRowInfo(
-                  'الاسم',
-                  _invoiceSnapshotString(snapshot, 'fullName'),
-                  onTap: onOpenOriginal == null ? null : () => onOpenOriginal!(),
-                ),
-                _invoiceSnapshotRowInfo(
-                    'نوع العميل', _invoiceSnapshotString(snapshot, 'clientTypeLabel')),
+            children: [
+              _invoiceSnapshotSectionTitle('بيانات المستأجر وقت العقد'),
+              _invoiceSnapshotRowInfo(
+                'الاسم',
+                _invoiceSnapshotString(snapshot, 'fullName'),
+                onTap: onOpenOriginal == null ? null : () => onOpenOriginal!(),
+              ),
+              _invoiceSnapshotRowInfo('نوع العميل',
+                  _invoiceSnapshotString(snapshot, 'clientTypeLabel')),
               _invoiceSnapshotRowInfo(
                   'رقم الهوية', _invoiceSnapshotString(snapshot, 'nationalId')),
               _invoiceSnapshotRowInfo(
                   'رقم الجوال', _invoiceSnapshotString(snapshot, 'phone')),
-              _invoiceSnapshotRowInfo(
-                  'البريد الإلكتروني', _invoiceSnapshotString(snapshot, 'email')),
+              _invoiceSnapshotRowInfo('البريد الإلكتروني',
+                  _invoiceSnapshotString(snapshot, 'email')),
               _dateRow('تاريخ الميلاد', 'dateOfBirth'),
               _invoiceSnapshotRowInfo(
                   'الجنسية', _invoiceSnapshotString(snapshot, 'nationality')),
@@ -1333,14 +1340,16 @@ class _InvoiceTenantSnapshotScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _invoiceSnapshotSectionTitle('بيانات إضافية'),
-                _invoiceSnapshotRowInfo(
-                    'اسم الطوارئ', _invoiceSnapshotString(snapshot, 'emergencyName')),
+                _invoiceSnapshotRowInfo('اسم الطوارئ',
+                    _invoiceSnapshotString(snapshot, 'emergencyName')),
                 _invoiceSnapshotRowInfo('جوال الطوارئ',
                     _invoiceSnapshotString(snapshot, 'emergencyPhone')),
+                _invoiceSnapshotRowInfo('اسم البنك',
+                    _invoiceSnapshotString(snapshot, 'tenantBankName')),
                 _invoiceSnapshotRowInfo(
-                    'اسم البنك', _invoiceSnapshotString(snapshot, 'tenantBankName')),
-                _invoiceSnapshotRowInfo('رقم الحساب',
-                    _invoiceSnapshotString(snapshot, 'tenantBankAccountNumber')),
+                    'رقم الحساب',
+                    _invoiceSnapshotString(
+                        snapshot, 'tenantBankAccountNumber')),
                 _invoiceSnapshotRowInfo('الرقم الضريبي',
                     _invoiceSnapshotString(snapshot, 'tenantTaxNumber')),
                 _invoiceSnapshotRowInfo(
@@ -1363,20 +1372,28 @@ class _InvoiceTenantSnapshotScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _invoiceSnapshotSectionTitle('بيانات الشركة وقت العقد'),
+                _invoiceSnapshotRowInfo('اسم الشركة',
+                    _invoiceSnapshotString(snapshot, 'companyName')),
                 _invoiceSnapshotRowInfo(
-                    'اسم الشركة', _invoiceSnapshotString(snapshot, 'companyName')),
-                _invoiceSnapshotRowInfo('السجل التجاري',
-                    _invoiceSnapshotString(snapshot, 'companyCommercialRegister')),
+                    'السجل التجاري',
+                    _invoiceSnapshotString(
+                        snapshot, 'companyCommercialRegister')),
                 _invoiceSnapshotRowInfo('الرقم الضريبي',
                     _invoiceSnapshotString(snapshot, 'companyTaxNumber')),
-                _invoiceSnapshotRowInfo('اسم الممثل',
-                    _invoiceSnapshotString(snapshot, 'companyRepresentativeName')),
-                _invoiceSnapshotRowInfo('جوال الممثل',
-                    _invoiceSnapshotString(snapshot, 'companyRepresentativePhone')),
+                _invoiceSnapshotRowInfo(
+                    'اسم الممثل',
+                    _invoiceSnapshotString(
+                        snapshot, 'companyRepresentativeName')),
+                _invoiceSnapshotRowInfo(
+                    'جوال الممثل',
+                    _invoiceSnapshotString(
+                        snapshot, 'companyRepresentativePhone')),
                 _invoiceSnapshotRowInfo('بنك الشركة',
                     _invoiceSnapshotString(snapshot, 'companyBankName')),
-                _invoiceSnapshotRowInfo('حساب الشركة',
-                    _invoiceSnapshotString(snapshot, 'companyBankAccountNumber')),
+                _invoiceSnapshotRowInfo(
+                    'حساب الشركة',
+                    _invoiceSnapshotString(
+                        snapshot, 'companyBankAccountNumber')),
               ],
             ),
           ),
@@ -1471,11 +1488,13 @@ class _InvoicePropertySnapshotScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasBuilding = buildingSnapshot != null && buildingSnapshot!.isNotEmpty;
+    final hasBuilding =
+        buildingSnapshot != null && buildingSnapshot!.isNotEmpty;
     final propertyAttachments =
         _invoiceSnapshotStringList(propertySnapshot, 'documentAttachmentPaths');
     final buildingAttachments = hasBuilding
-        ? _invoiceSnapshotStringList(buildingSnapshot, 'documentAttachmentPaths')
+        ? _invoiceSnapshotStringList(
+            buildingSnapshot, 'documentAttachmentPaths')
         : const <String>[];
     final propertyDescription =
         _invoiceSnapshotPropertyFreeDescription(propertySnapshot);
@@ -1508,29 +1527,33 @@ class _InvoicePropertySnapshotScreen extends StatelessWidget {
         effectivePropertyTotalUnits == null || propertyOccupiedDisplay == null
             ? null
             : (effectivePropertyTotalUnits - propertyOccupiedDisplay);
-    final buildingTotalUnits =
-        hasBuilding ? _invoiceSnapshotIntValue(buildingSnapshot, 'totalUnits') : null;
+    final buildingTotalUnits = hasBuilding
+        ? _invoiceSnapshotIntValue(buildingSnapshot, 'totalUnits')
+        : null;
     final effectiveBuildingTotalUnits =
         buildingTotalUnits != null && buildingTotalUnits > 0
             ? buildingTotalUnits
             : null;
-    final rawBuildingOccupiedUnits =
-        hasBuilding ? _invoiceSnapshotIntValue(buildingSnapshot, 'occupiedUnits') : null;
-    final buildingOccupiedDisplay = !hasBuilding || effectiveBuildingTotalUnits == null
-        ? null
-        : (() {
-            var occupied = rawBuildingOccupiedUnits ?? 0;
-            if (occupied <= 0) {
-              occupied = (propertyOccupiedUnits != null && propertyOccupiedUnits! > 0)
-                  ? propertyOccupiedUnits!
-                  : 1;
-            }
-            if (occupied < 0) return 0;
-            if (occupied > effectiveBuildingTotalUnits) {
-              return effectiveBuildingTotalUnits;
-            }
-            return occupied;
-          })();
+    final rawBuildingOccupiedUnits = hasBuilding
+        ? _invoiceSnapshotIntValue(buildingSnapshot, 'occupiedUnits')
+        : null;
+    final buildingOccupiedDisplay =
+        !hasBuilding || effectiveBuildingTotalUnits == null
+            ? null
+            : (() {
+                var occupied = rawBuildingOccupiedUnits ?? 0;
+                if (occupied <= 0) {
+                  occupied = (propertyOccupiedUnits != null &&
+                          propertyOccupiedUnits! > 0)
+                      ? propertyOccupiedUnits!
+                      : 1;
+                }
+                if (occupied < 0) return 0;
+                if (occupied > effectiveBuildingTotalUnits) {
+                  return effectiveBuildingTotalUnits;
+                }
+                return occupied;
+              })();
     final buildingVacantDisplay =
         effectiveBuildingTotalUnits == null || buildingOccupiedDisplay == null
             ? null
@@ -1567,13 +1590,13 @@ class _InvoicePropertySnapshotScreen extends StatelessWidget {
               ),
               _invoiceSnapshotRowInfo('نوع العقار', propertyTypeLabel),
               _invoiceSnapshotRowInfo('المفروشات', furnishingText),
-              _invoiceSnapshotRowInfo(
-                  'العنوان', _invoiceSnapshotString(propertySnapshot, 'address')),
+              _invoiceSnapshotRowInfo('العنوان',
+                  _invoiceSnapshotString(propertySnapshot, 'address')),
               _invoiceSnapshotRowInfo(
                   'القيمة الإيجارية', _moneyText(propertySnapshot, 'price')),
               _invoiceSnapshotRowInfo('المساحة', _areaText(propertySnapshot)),
-              _invoiceSnapshotRowInfo(
-                  'عدد الغرف', _invoiceSnapshotNumberText(propertySnapshot, 'rooms')),
+              _invoiceSnapshotRowInfo('عدد الغرف',
+                  _invoiceSnapshotNumberText(propertySnapshot, 'rooms')),
               _invoiceSnapshotRowInfo('عدد الطوابق',
                   _invoiceSnapshotNumberText(propertySnapshot, 'floors')),
               if (!hasBuilding)
@@ -1591,7 +1614,9 @@ class _InvoicePropertySnapshotScreen extends StatelessWidget {
               if (!hasBuilding)
                 _invoiceSnapshotRowInfo(
                     'عدد الوحدات الخالية',
-                    propertyVacantDisplay == null ? null : '$propertyVacantDisplay'),
+                    propertyVacantDisplay == null
+                        ? null
+                        : '$propertyVacantDisplay'),
               _invoiceSnapshotRowInfo('وضع التأجير',
                   _invoiceSnapshotString(propertySnapshot, 'rentalModeLabel')),
               _invoiceSnapshotRowInfo('نوع الوثيقة',
@@ -1599,8 +1624,10 @@ class _InvoicePropertySnapshotScreen extends StatelessWidget {
               _invoiceSnapshotRowInfo('رقم الوثيقة',
                   _invoiceSnapshotString(propertySnapshot, 'documentNumber')),
               _dateRow(propertySnapshot, 'تاريخ الوثيقة', 'documentDate'),
-              _invoiceSnapshotRowInfo('رقم الكهرباء',
-                  _invoiceSnapshotString(propertySnapshot, 'electricityNumber')),
+              _invoiceSnapshotRowInfo(
+                  'رقم الكهرباء',
+                  _invoiceSnapshotString(
+                      propertySnapshot, 'electricityNumber')),
               _invoiceSnapshotRowInfo('وضع الكهرباء',
                   _invoiceSnapshotString(propertySnapshot, 'electricityMode')),
               _invoiceSnapshotRowInfo('حصة الكهرباء',
@@ -1623,10 +1650,9 @@ class _InvoicePropertySnapshotScreen extends StatelessWidget {
                       ? null
                       : () => onOpenOriginalBuilding!(),
                 ),
-                _invoiceSnapshotRowInfo(
-                    'نوع العقار', buildingTypeLabel),
-                _invoiceSnapshotRowInfo(
-                    'عنوان العمارة', _invoiceSnapshotString(buildingSnapshot, 'address')),
+                _invoiceSnapshotRowInfo('نوع العقار', buildingTypeLabel),
+                _invoiceSnapshotRowInfo('عنوان العمارة',
+                    _invoiceSnapshotString(buildingSnapshot, 'address')),
                 _invoiceSnapshotRowInfo('عدد طوابق العمارة',
                     _invoiceSnapshotNumberText(buildingSnapshot, 'floors')),
                 _invoiceSnapshotRowInfo(
@@ -1641,18 +1667,22 @@ class _InvoicePropertySnapshotScreen extends StatelessWidget {
                         : '$buildingOccupiedDisplay'),
                 _invoiceSnapshotRowInfo(
                     'عدد الوحدات الخالية',
-                    buildingVacantDisplay == null ? null : '$buildingVacantDisplay'),
+                    buildingVacantDisplay == null
+                        ? null
+                        : '$buildingVacantDisplay'),
                 _invoiceSnapshotRowInfo('نوع وثيقة\nالعمارة',
                     _invoiceSnapshotString(buildingSnapshot, 'documentType')),
                 _invoiceSnapshotRowInfo('رقم وثيقة العمارة',
                     _invoiceSnapshotString(buildingSnapshot, 'documentNumber')),
-                _dateRow(buildingSnapshot!, 'تاريخ وثيقة العمارة', 'documentDate'),
-                _invoiceSnapshotRowInfo('رقم كهرباء العمارة',
-                    _invoiceSnapshotString(buildingSnapshot, 'electricityNumber')),
+                _dateRow(
+                    buildingSnapshot!, 'تاريخ وثيقة العمارة', 'documentDate'),
+                _invoiceSnapshotRowInfo(
+                    'رقم كهرباء العمارة',
+                    _invoiceSnapshotString(
+                        buildingSnapshot, 'electricityNumber')),
                 _invoiceSnapshotRowInfo('رقم مياه العمارة',
                     _invoiceSnapshotString(buildingSnapshot, 'waterNumber')),
-                _invoiceSnapshotRowInfo(
-                    'وصف العمارة', buildingDescription),
+                _invoiceSnapshotRowInfo('وصف العمارة', buildingDescription),
               ],
             ],
           ),
@@ -1831,11 +1861,14 @@ String? _sharedServiceVoucherLabelFromText(
 }) {
   final lower = text.trim().toLowerCase();
   if (lower.isEmpty) return null;
-  final hasSharedService =
-      lower.contains('مشترك') || lower.contains('مشتركة') || lower.contains('shared');
+  final hasSharedService = lower.contains('مشترك') ||
+      lower.contains('مشتركة') ||
+      lower.contains('shared');
   if (!hasSharedService) return null;
   final prefix = isExpense ? 'سداد' : 'تحصيل';
-  if (lower.contains('water') || lower.contains('مياه') || lower.contains('ماء')) {
+  if (lower.contains('water') ||
+      lower.contains('مياه') ||
+      lower.contains('ماء')) {
     return '$prefix خدمة مياه مشتركة';
   }
   if (lower.contains('electric') || lower.contains('كهرب')) {
@@ -1858,10 +1891,13 @@ String? _maintenanceServiceTypeLabelFromText(String raw) {
   final lower = text.toLowerCase();
   if (lower.isEmpty) return null;
 
-  final hasSharedService =
-      lower.contains('مشترك') || lower.contains('مشتركة') || lower.contains('shared');
+  final hasSharedService = lower.contains('مشترك') ||
+      lower.contains('مشتركة') ||
+      lower.contains('shared');
   if (hasSharedService &&
-      (lower.contains('water') || lower.contains('مياه') || lower.contains('ماء'))) {
+      (lower.contains('water') ||
+          lower.contains('مياه') ||
+          lower.contains('ماء'))) {
     return 'خدمة مياه مشتركة';
   }
   if (hasSharedService &&
@@ -1881,7 +1917,9 @@ String? _maintenanceServiceTypeLabelFromText(String raw) {
       lower.contains('إنترنت')) {
     return 'خدمة إنترنت';
   }
-  if (lower.contains('water') || lower.contains('مياه') || lower.contains('ماء')) {
+  if (lower.contains('water') ||
+      lower.contains('مياه') ||
+      lower.contains('ماء')) {
     return 'خدمة مياه';
   }
   if (lower.contains('electric') || lower.contains('كهرب')) {
@@ -1903,20 +1941,23 @@ String? _invoiceSharedServiceVoucherDisplayTypeAny(dynamic inv) {
   final rawNote = _invoiceRawNoteAny(inv).trim();
   if (rawNote.isNotEmpty) {
     final markerType = _sharedServiceOfficeTypeTokenFromNote(rawNote);
-    if (markerType == 'water') return _sharedServiceVoucherLabelFromText(
-      'shared water',
-      isExpense: isExpense,
-    );
-    if (markerType == 'electricity') return _sharedServiceVoucherLabelFromText(
-      'shared electricity',
-      isExpense: isExpense,
-    );
+    if (markerType == 'water')
+      return _sharedServiceVoucherLabelFromText(
+        'shared water',
+        isExpense: isExpense,
+      );
+    if (markerType == 'electricity')
+      return _sharedServiceVoucherLabelFromText(
+        'shared electricity',
+        isExpense: isExpense,
+      );
     segments.add(rawNote);
   }
   try {
     final snapshot = inv is Map
         ? (inv['maintenanceSnapshot'] as Map?)?.cast<String, dynamic>()
-        : ((inv as dynamic).maintenanceSnapshot as Map?)?.cast<String, dynamic>();
+        : ((inv as dynamic).maintenanceSnapshot as Map?)
+            ?.cast<String, dynamic>();
     if (snapshot != null && snapshot.isNotEmpty) {
       for (final key in const ['requestType', 'title', 'description']) {
         final value = (snapshot[key] ?? '').toString().trim();
@@ -1960,7 +2001,8 @@ String? _maintenanceVoucherDisplayTypeFromAny(dynamic inv) {
   try {
     final snapshot = inv is Map
         ? (inv['maintenanceSnapshot'] as Map?)?.cast<String, dynamic>()
-        : ((inv as dynamic).maintenanceSnapshot as Map?)?.cast<String, dynamic>();
+        : ((inv as dynamic).maintenanceSnapshot as Map?)
+            ?.cast<String, dynamic>();
     if (snapshot != null && snapshot.isNotEmpty) {
       for (final key in const ['requestType', 'title', 'description']) {
         final value = (snapshot[key] ?? '').toString().trim();
@@ -2006,8 +2048,9 @@ MaintenanceReceiptDetails _maintenanceDetailsFromInvoiceFallback(
       _maintenanceVoucherDisplayTypeFromAny(invoice) ?? 'خدمات';
   final linkedRequestId = (invoice.maintenanceRequestId ?? '').trim();
   final baseId = linkedRequestId.isNotEmpty ? linkedRequestId : invoice.id;
-  final invoiceRef =
-      (invoice.serialNo ?? '').trim().isNotEmpty ? invoice.serialNo! : invoice.id;
+  final invoiceRef = (invoice.serialNo ?? '').trim().isNotEmpty
+      ? invoice.serialNo!
+      : invoice.id;
   final firstDescLine = cleanDesc
       .split('\n')
       .map((line) => line.trim())
@@ -2017,10 +2060,8 @@ MaintenanceReceiptDetails _maintenanceDetailsFromInvoiceFallback(
       : (firstDescLine.isNotEmpty
           ? firstDescLine
           : (inferredType == 'خدمات' ? 'طلب خدمات' : inferredType));
-  final resolvedDescription =
-      cleanDesc.isNotEmpty ? cleanDesc : rawNote;
-  final isWaterCompanyOfficeExpense =
-      manualTitle == 'فاتورة شركة المياه' &&
+  final resolvedDescription = cleanDesc.isNotEmpty ? cleanDesc : rawNote;
+  final isWaterCompanyOfficeExpense = manualTitle == 'فاتورة شركة المياه' &&
       (_manualInvoicePartyName(rawNote) ?? '').trim() == 'المكتب' &&
       rawNote.toLowerCase().contains('type=water');
   return MaintenanceReceiptDetails(
@@ -2038,8 +2079,7 @@ MaintenanceReceiptDetails _maintenanceDetailsFromInvoiceFallback(
         : null,
     createdAt: created,
     scheduledDate: isWaterCompanyOfficeExpense ? invoice.dueDate : created,
-    executionDeadline:
-        isWaterCompanyOfficeExpense ? null : invoice.dueDate,
+    executionDeadline: isWaterCompanyOfficeExpense ? null : invoice.dueDate,
     cost: invoice.amount.abs(),
     tenantId: invoice.tenantId.isEmpty ? null : invoice.tenantId,
     propertyId: invoice.propertyId.isEmpty ? null : invoice.propertyId,
@@ -2058,7 +2098,8 @@ String _invoiceMaintenanceRequestIdAny(dynamic inv) {
 }
 
 String _officeCommissionLinkedContractVoucherIdAny(dynamic inv) {
-  return (_manualInvoiceMarkerValue(_invoiceRawNoteAny(inv), 'CONTRACT_VOUCHER_ID') ??
+  return (_manualInvoiceMarkerValue(
+              _invoiceRawNoteAny(inv), 'CONTRACT_VOUCHER_ID') ??
           '')
       .trim();
 }
@@ -2162,38 +2203,35 @@ String? _normalizeManualInvoicePropertyName(String? value) {
 String _cleanInvoiceDisplayNote(String? note) {
   final raw = (note ?? '').trim();
   if (raw.isEmpty) return '';
-  final lines = raw
-      .split('\n')
-      .map((line) => line.trim())
-      .where((line) {
-        if (line.isEmpty) return false;
-        final lower = line.toLowerCase();
-        return lower != _manualInvoiceMarker.toLowerCase() &&
-            !lower.startsWith('[service]') &&
-            !lower.startsWith('[shared_service_office:') &&
-            !lower.startsWith('[party:') &&
-            !lower.startsWith('[party_id:') &&
-            !lower.startsWith('[property:') &&
-            !lower.startsWith('[property_id:') &&
-            !lower.startsWith('[title:') &&
-            !lower.startsWith('[owner_payout]') &&
-            !lower.startsWith('[owner_adjustment]') &&
-            !lower.startsWith('[office_commission]') &&
-            !lower.startsWith('[office_withdrawal]') &&
-            !lower.startsWith('[owner_payout_id:') &&
-            !lower.startsWith('[owner_adjustment_id:') &&
-            !lower.startsWith('[owner_adjustment_category:') &&
-            !lower.startsWith('[contract_voucher_id:') &&
-            !lower.startsWith('[posted]') &&
-            !lower.startsWith('[cancelled]') &&
-            !lower.startsWith('[reversal]') &&
-            !lower.startsWith('[reversed]');
-      })
-      .toList();
+  final lines = raw.split('\n').map((line) => line.trim()).where((line) {
+    if (line.isEmpty) return false;
+    final lower = line.toLowerCase();
+    return lower != _manualInvoiceMarker.toLowerCase() &&
+        !lower.startsWith('[service]') &&
+        !lower.startsWith('[shared_service_office:') &&
+        !lower.startsWith('[party:') &&
+        !lower.startsWith('[party_id:') &&
+        !lower.startsWith('[property:') &&
+        !lower.startsWith('[property_id:') &&
+        !lower.startsWith('[title:') &&
+        !lower.startsWith('[owner_payout]') &&
+        !lower.startsWith('[owner_adjustment]') &&
+        !lower.startsWith('[office_commission]') &&
+        !lower.startsWith('[office_withdrawal]') &&
+        !lower.startsWith('[owner_payout_id:') &&
+        !lower.startsWith('[owner_adjustment_id:') &&
+        !lower.startsWith('[owner_adjustment_category:') &&
+        !lower.startsWith('[contract_voucher_id:') &&
+        !lower.startsWith('[posted]') &&
+        !lower.startsWith('[cancelled]') &&
+        !lower.startsWith('[reversal]') &&
+        !lower.startsWith('[reversed]');
+  }).toList();
   return lines.join('\n').trim();
 }
 
-bool _shouldUseGeneratedContractRentStatement(Invoice invoice, String cleanNote) {
+bool _shouldUseGeneratedContractRentStatement(
+    Invoice invoice, String cleanNote) {
   if (_isManualInvoiceAny(invoice)) return false;
   if (_isOfficeCommissionInvoiceAny(invoice)) return false;
   if (invoice.contractId.trim().isEmpty) return false;
@@ -2309,9 +2347,8 @@ Widget _invoiceTypeLabel(dynamic inv) {
                   : (isManual
                       ? _manualInvoiceDisplayType(inv, amount: amount)
                       : 'عقد إيجار'))));
-  final accentColor = isExpense
-      ? const Color(0xFFE11D48)
-      : const Color(0xFF22C55E);
+  final accentColor =
+      isExpense ? const Color(0xFFE11D48) : const Color(0xFF22C55E);
   return Row(
     children: [
       Container(
@@ -2371,7 +2408,8 @@ bool _isMaintenanceAny(dynamic inv) {
     if (_invoiceNoteHasServiceOrigin(lowerNote)) return true;
 
     if (inv is Map) {
-      final notes = ((inv['note'] ?? inv['notes'])?.toString().toLowerCase() ?? '');
+      final notes =
+          ((inv['note'] ?? inv['notes'])?.toString().toLowerCase() ?? '');
       if (notes.contains(_manualInvoiceMarker.toLowerCase())) return false;
       final kind =
           (inv['type'] ?? inv['requestType'])?.toString().toLowerCase() ?? '';
@@ -2684,11 +2722,19 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         isManual ? _manualInvoicePropertyId(invoice.note) : null;
     final tenant = firstWhereOrNull(
       _tenants.values,
-      (x) => x.id == (invoice.tenantId.trim().isNotEmpty ? invoice.tenantId : manualPartyId),
+      (x) =>
+          x.id ==
+          (invoice.tenantId.trim().isNotEmpty
+              ? invoice.tenantId
+              : manualPartyId),
     );
     final property = firstWhereOrNull(
       _properties.values,
-      (x) => x.id == (invoice.propertyId.trim().isNotEmpty ? invoice.propertyId : manualPropertyId),
+      (x) =>
+          x.id ==
+          (invoice.propertyId.trim().isNotEmpty
+              ? invoice.propertyId
+              : manualPropertyId),
     );
     final contract =
         firstWhereOrNull(_contracts.values, (x) => x.id == invoice.contractId);
@@ -2699,10 +2745,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         ? null
         : firstWhereOrNull(
             _properties.values, (x) => x.id == property!.parentBuildingId);
-    final propertySnapshot = _invoiceSnapshotMapOrNull(contract?.propertySnapshot) ??
-        (property == null ? null : _buildInvoicePropertySnapshot(property));
-    final buildingSnapshot = _invoiceSnapshotMapOrNull(contract?.buildingSnapshot) ??
-        (building == null ? null : _buildInvoicePropertySnapshot(building));
+    final propertySnapshot =
+        _invoiceSnapshotMapOrNull(contract?.propertySnapshot) ??
+            (property == null ? null : _buildInvoicePropertySnapshot(property));
+    final buildingSnapshot =
+        _invoiceSnapshotMapOrNull(contract?.buildingSnapshot) ??
+            (building == null ? null : _buildInvoicePropertySnapshot(building));
     final propertyRef = _invoicePropertyReference(
       property: property,
       building: building,
@@ -2993,8 +3041,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     style: GoogleFonts.cairo(color: Colors.white),
                     items: const [
                       DropdownMenuItem(
-                          value: _InvoiceStatusFilter.all,
-                          child: Text('الكل')),
+                          value: _InvoiceStatusFilter.all, child: Text('الكل')),
                       DropdownMenuItem(
                           value: _InvoiceStatusFilter.canceled,
                           child: Text('ملغية')),
@@ -3049,10 +3096,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                               _fOrigin = tOrigin;
                               _fContractScope = tScope;
                               _fInvoiceStatus = tInvoiceStatus;
-                              _fArch =
-                                  tInvoiceStatus == _InvoiceStatusFilter.canceled
-                                      ? _ArchFilter.archived
-                                      : tArch;
+                              _fArch = tInvoiceStatus ==
+                                      _InvoiceStatusFilter.canceled
+                                  ? _ArchFilter.archived
+                                  : tArch;
                             });
                             Navigator.pop(context);
                           },
@@ -3106,7 +3153,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             elevation: 0,
             centerTitle: true,
             automaticallyImplyLeading: false,
-            leading: darvooLeading(context, iconColor: Colors.white),
+            leading: ejarzProLeading(context, iconColor: Colors.white),
             title: Text('السندات',
                 style: GoogleFonts.cairo(
                     color: Colors.white,
@@ -3146,7 +3193,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text('السندات',
               style: GoogleFonts.cairo(
                   color: Colors.white,
@@ -3286,7 +3333,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       }
 
                       if (_fOrigin == _OriginFilter.contracts) {
-                        items = items.where((i) => isContractOrigin(i)).toList();
+                        items =
+                            items.where((i) => isContractOrigin(i)).toList();
 
                         // نطاق العقود محسّن بدون firstWhereOrNull
                         if (_fContractScope == _ContractScope.active) {
@@ -3488,7 +3536,7 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
   String _ejarNoFromLocal = '';
   final Map<String, Future<String>> _remoteThumbUrls = {};
   static const MethodChannel _downloadsChannel =
-      MethodChannel('darvoo/downloads');
+      MethodChannel('ejarzpro/downloads');
 
   Future<MaintenanceRequest?> _loadMaintenanceRequestForInvoice(
       Invoice invoice) async {
@@ -3593,8 +3641,8 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
 
     final tenant =
         firstWhereOrNull(_tenants.values, (x) => x.id == contract.tenantId);
-    final property =
-        firstWhereOrNull(_properties.values, (x) => x.id == contract.propertyId);
+    final property = firstWhereOrNull(
+        _properties.values, (x) => x.id == contract.propertyId);
     final building = property?.parentBuildingId == null
         ? null
         : firstWhereOrNull(
@@ -3682,12 +3730,14 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
     Map<String, dynamic>? snapshot,
   ) async {
     if (contract != null && _invoiceContractIsInactive(contract)) {
-      final resolved = snapshot ?? _resolvedContractTenantSnapshot(contract, tenant);
+      final resolved =
+          snapshot ?? _resolvedContractTenantSnapshot(contract, tenant);
       if (resolved == null || resolved.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text('لا تتوفر نسخة محفوظة من بيانات المستأجر لهذا السند.',
+                content: Text(
+                    'لا تتوفر نسخة محفوظة من بيانات المستأجر لهذا السند.',
                     style: GoogleFonts.cairo())),
           );
         }
@@ -3698,7 +3748,8 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
           builder: (_) => _InvoiceTenantSnapshotScreen(
             snapshot: resolved,
             onAttachmentTap: _showAttachmentActions,
-            onOpenOriginal: () => _openOriginalTenantFromSnapshot(context, resolved),
+            onOpenOriginal: () =>
+                _openOriginalTenantFromSnapshot(context, resolved),
           ),
         ),
       );
@@ -3797,13 +3848,14 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
     String? tenantName,
   ) async {
     if (contract != null && _invoiceContractIsInactive(contract)) {
-      final resolvedProperty =
-          propertySnapshot ?? _resolvedContractPropertySnapshot(contract, property);
+      final resolvedProperty = propertySnapshot ??
+          _resolvedContractPropertySnapshot(contract, property);
       if (resolvedProperty == null || resolvedProperty.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text('لا تتوفر نسخة محفوظة من بيانات العقار لهذا السند.',
+                content: Text(
+                    'لا تتوفر نسخة محفوظة من بيانات العقار لهذا السند.',
                     style: GoogleFonts.cairo())),
           );
         }
@@ -3843,14 +3895,14 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
               resolvedProperty,
               isBuilding: false,
             ),
-            onOpenOriginalBuilding: buildingSnapshot == null ||
-                    buildingSnapshot.isEmpty
-                ? null
-                : () => _openOriginalPropertyFromSnapshot(
-                      context,
-                      buildingSnapshot,
-                      isBuilding: true,
-                    ),
+            onOpenOriginalBuilding:
+                buildingSnapshot == null || buildingSnapshot.isEmpty
+                    ? null
+                    : () => _openOriginalPropertyFromSnapshot(
+                          context,
+                          buildingSnapshot,
+                          isBuilding: true,
+                        ),
           ),
         ),
       );
@@ -3894,7 +3946,8 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
         ? null
         : firstWhereOrNull(
             _properties.values, (x) => x.id == property!.parentBuildingId);
-    final propertySnapshot = _resolvedContractPropertySnapshot(contract, property);
+    final propertySnapshot =
+        _resolvedContractPropertySnapshot(contract, property);
     final buildingSnapshot =
         _resolvedContractBuildingSnapshot(contract, property, building);
     final propertyRef = _invoicePropertyReference(
@@ -4156,11 +4209,19 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
 
     final t = firstWhereOrNull(
       _tenants.values,
-      (x) => x.id == (invoice.tenantId.trim().isNotEmpty ? invoice.tenantId : manualPartyId),
+      (x) =>
+          x.id ==
+          (invoice.tenantId.trim().isNotEmpty
+              ? invoice.tenantId
+              : manualPartyId),
     );
     final p = firstWhereOrNull(
       _properties.values,
-      (x) => x.id == (invoice.propertyId.trim().isNotEmpty ? invoice.propertyId : manualPropertyId),
+      (x) =>
+          x.id ==
+          (invoice.propertyId.trim().isNotEmpty
+              ? invoice.propertyId
+              : manualPropertyId),
     );
     final linkedContract =
         firstWhereOrNull(_contracts.values, (x) => x.id == invoice.contractId);
@@ -4195,11 +4256,11 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
         ? (isSharedServiceOfficeVoucher ? 'المكتب' : 'بدون مستأجر')
         : (isManual
             ? ((t?.fullName ??
-                        manualPartyName ??
-                        _invoiceSnapshotString(tenantSnapshot, 'fullName'))
-                    ?.trim()
-                    .isNotEmpty ==
-                true
+                            manualPartyName ??
+                            _invoiceSnapshotString(tenantSnapshot, 'fullName'))
+                        ?.trim()
+                        .isNotEmpty ==
+                    true
                 ? (t?.fullName ??
                     manualPartyName ??
                     _invoiceSnapshotString(tenantSnapshot, 'fullName'))!
@@ -4247,7 +4308,8 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
     final dailyRate = _dailyInvoiceRate(linkedContract);
     final manualPaidDisplay =
         invoice.paidAmount > 0 ? invoice.paidAmount : invoice.amount.abs();
-    final manualAmountLabel = invoice.amount < 0 ? 'المبلغ المدفوع' : 'المبلغ المستلم';
+    final manualAmountLabel =
+        invoice.amount < 0 ? 'المبلغ المدفوع' : 'المبلغ المستلم';
     final paidAmountLabel = isManual
         ? manualAmountLabel
         : (isDailyContractReceipt ? 'إجمالي المدفوع' : 'المبلغ المدفوع');
@@ -4263,7 +4325,7 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
               elevation: 0,
               centerTitle: true,
               automaticallyImplyLeading: false,
-              leading: darvooLeading(context, iconColor: Colors.white),
+              leading: ejarzProLeading(context, iconColor: Colors.white),
               title: Text('تفاصيل السند',
                   style: GoogleFonts.cairo(
                       color: Colors.white, fontWeight: FontWeight.w800)),
@@ -4412,7 +4474,8 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                                                     fontWeight: FontWeight.w700,
                                                     fontSize: 13.5.sp,
                                                     decoration: canOpenProperty
-                                                        ? TextDecoration.underline
+                                                        ? TextDecoration
+                                                            .underline
                                                         : null),
                                               ),
                                             ),
@@ -4453,7 +4516,8 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                             if (ejarNoForView.isNotEmpty)
                               _rowInfo('رقم عقد الإيجار', ejarNoForView),
                             if (!_isMaintenanceAny(invoice))
-                              if (isDailyContractReceipt && linkedContract != null)
+                              if (isDailyContractReceipt &&
+                                  linkedContract != null)
                                 _rowInfoWidget(
                                   'تاريخ الاستحقاق',
                                   Padding(
@@ -4480,7 +4544,9 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                             ),
                             if (_shouldShowInvoicePaymentMethod(invoice))
                               _rowInfo('طريقة الدفع', invoice.paymentMethod),
-                            if (!isManual && !invoice.isPaid && !invoice.isCanceled)
+                            if (!isManual &&
+                                !invoice.isPaid &&
+                                !invoice.isCanceled)
                               _rowInfo('المبلغ المتبقي',
                                   '${_fmtMoneyTrunc(invoice.remaining)} ريال'),
                             if (waterAmount > 0)
@@ -4767,7 +4833,8 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
     final lower = note.toLowerCase();
     if (_invoiceNoteHasServiceOrigin(note)) return false;
     if (_invoiceMaintenanceRequestIdAny(invoice).isNotEmpty) return false;
-    return !lower.contains('[manual]') && !lower.contains('[office_withdrawal]');
+    return !lower.contains('[manual]') &&
+        !lower.contains('[office_withdrawal]');
   }
 
   Future<void> _syncOfficeCommissionForInvoice(Invoice invoice) async {
@@ -4777,12 +4844,14 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
         contractVoucherId: invoice.id,
       );
     } catch (e, st) {
-      debugPrint('Failed to sync office commission voucher for ${invoice.id}: $e');
+      debugPrint(
+          'Failed to sync office commission voucher for ${invoice.id}: $e');
       debugPrintStack(stackTrace: st);
     }
   }
 
   Future<void> _postDraftVoucher(Invoice invoice) async {
+    if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
     if (!_isDraftVoucher(invoice)) {
       _showTopNotice('لا يمكن اعتماد هذا السند', isError: true);
       return;
@@ -4806,6 +4875,7 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
   }
 
   Future<void> _cancelPostedVoucher(Invoice invoice) async {
+    if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
     if (!_isPostedVoucher(invoice)) {
       _showTopNotice('الإلغاء متاح فقط للسند المعتمد', isError: true);
       return;
@@ -4833,6 +4903,7 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
   }
 
   Future<void> _reversePostedVoucher(Invoice invoice) async {
+    if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
     if (!_isPostedVoucher(invoice)) {
       _showTopNotice('العكس متاح فقط للسند المعتمد', isError: true);
       return;
@@ -4883,6 +4954,7 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
   }
 
   Future<void> _deleteDraftVoucher(Invoice invoice) async {
+    if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
     if (!_isDraftVoucher(invoice)) {
       _showTopNotice('الحذف مسموح فقط للمسودة', isError: true);
       return;
@@ -5107,6 +5179,16 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ListTile(
+                leading:
+                    const Icon(Icons.open_in_new_rounded, color: Colors.white),
+                title: Text('فتح مباشرة',
+                    style: GoogleFonts.cairo(color: Colors.white)),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  await _openAttachment(path);
+                },
+              ),
               ListTile(
                 leading:
                     const Icon(Icons.download_rounded, color: Colors.white),
@@ -5611,7 +5693,7 @@ class _InvoicesHistoryScreenState extends State<InvoicesHistoryScreen> {
             elevation: 0,
             centerTitle: true,
             automaticallyImplyLeading: false,
-            leading: darvooLeading(context, iconColor: Colors.white),
+            leading: ejarzProLeading(context, iconColor: Colors.white),
             title: Text('سجل سندات العقد',
                 style: GoogleFonts.cairo(
                     color: Colors.white, fontWeight: FontWeight.w800)),
@@ -5665,7 +5747,7 @@ class _InvoicesHistoryScreenState extends State<InvoicesHistoryScreen> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text('سجل سندات العقد',
               style: GoogleFonts.cairo(
                   color: Colors.white, fontWeight: FontWeight.w800)),
@@ -5756,7 +5838,8 @@ class _InvoicesHistoryScreenState extends State<InvoicesHistoryScreen> {
                       if (contracts_ui.isWaterSharedFixedConfig(cfg) &&
                           (cfg['waterLinkedContractId'] ?? '').toString() ==
                               c.id) {
-                        final rows = contracts_ui.waterInstallmentsFromConfig(cfg);
+                        final rows =
+                            contracts_ui.waterInstallmentsFromConfig(cfg);
                         for (final row in rows) {
                           contractWaterTotal +=
                               ((row['amount'] as num?)?.toDouble() ?? 0.0);
@@ -6208,8 +6291,7 @@ class _AddManualInvoiceScreenState extends State<AddManualInvoiceScreen> {
                 fillColor: Colors.white.withOpacity(0.06),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12.r),
-                  borderSide:
-                      BorderSide(color: Colors.white.withOpacity(0.15)),
+                  borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
                 ),
                 focusedBorder: const OutlineInputBorder(
                   borderSide: BorderSide(color: Colors.white),
@@ -6293,7 +6375,8 @@ class _AddManualInvoiceScreenState extends State<AddManualInvoiceScreen> {
                 onPressed: onClear,
                 icon: const Icon(Icons.close_rounded, color: Colors.white70),
               ),
-            const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70),
+            const Icon(Icons.keyboard_arrow_down_rounded,
+                color: Colors.white70),
           ],
         ),
       ),
@@ -6338,7 +6421,7 @@ class _AddManualInvoiceScreenState extends State<AddManualInvoiceScreen> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text(
             'إضافة سند',
             style: GoogleFonts.cairo(
@@ -6442,8 +6525,8 @@ class _AddManualInvoiceScreenState extends State<AddManualInvoiceScreen> {
                       _field(
                         controller: _amount,
                         label: 'المبلغ',
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
                         inputFormatters: [
                           FilteringTextInputFormatter.allow(
                               RegExp(r'^\d*\.?\d{0,2}$')),
@@ -6467,8 +6550,7 @@ class _AddManualInvoiceScreenState extends State<AddManualInvoiceScreen> {
                             return newValue;
                           }),
                         ],
-                        warningMessage:
-                            'لا يمكن أن يزيد المبلغ على 500 مليون.',
+                        warningMessage: 'لا يمكن أن يزيد المبلغ على 500 مليون.',
                         forceShowWarning: _showAmountLimitWarning,
                         shouldShowWarning: (text) {
                           final amount = double.tryParse(text.trim());
@@ -6476,7 +6558,8 @@ class _AddManualInvoiceScreenState extends State<AddManualInvoiceScreen> {
                               amount >= _manualInvoiceMaxAmount;
                         },
                         validator: (value) {
-                          final amount = double.tryParse((value ?? '').trim()) ?? 0;
+                          final amount =
+                              double.tryParse((value ?? '').trim()) ?? 0;
                           if (amount <= 0) return 'أدخل مبلغًا صحيحًا';
                           if (amount > 500000000) {
                             return 'لا يمكن أن يزيد المبلغ على 500 مليون.';
@@ -6506,7 +6589,8 @@ class _AddManualInvoiceScreenState extends State<AddManualInvoiceScreen> {
                         iconEnabledColor: Colors.white70,
                         style: GoogleFonts.cairo(color: Colors.white),
                         items: const [
-                          DropdownMenuItem(value: 'نقدًا', child: Text('نقدًا')),
+                          DropdownMenuItem(
+                              value: 'نقدًا', child: Text('نقدًا')),
                           DropdownMenuItem(
                               value: 'تحويل بنكي', child: Text('تحويل بنكي')),
                           DropdownMenuItem(value: 'شيك', child: Text('شيك')),
@@ -6545,8 +6629,7 @@ class _AddManualInvoiceScreenState extends State<AddManualInvoiceScreen> {
                           LengthLimitingTextInputFormatter(300),
                         ],
                         maxLength: 300,
-                        warningMessage:
-                            'لا يمكن أن يزيد البيان على 300 حرف.',
+                        warningMessage: 'لا يمكن أن يزيد البيان على 300 حرف.',
                         shouldShowWarning: (text) => text.length >= 300,
                         validator: (value) {
                           final text = (value ?? '').trim();
@@ -6574,8 +6657,9 @@ class _AddManualInvoiceScreenState extends State<AddManualInvoiceScreen> {
                               backgroundColor: const Color(0xFF0EA5E9),
                               foregroundColor: Colors.white,
                             ),
-                            onPressed:
-                                _processingAttachments ? null : _pickAttachments,
+                            onPressed: _processingAttachments
+                                ? null
+                                : _pickAttachments,
                             icon: const Icon(Icons.attach_file_rounded),
                             label: Text('إرفاق',
                                 style: GoogleFonts.cairo(
@@ -6614,9 +6698,12 @@ class _AddManualInvoiceScreenState extends State<AddManualInvoiceScreen> {
                                       ),
                                       SizedBox(height: 6.h),
                                       Padding(
-                                        padding: EdgeInsets.symmetric(horizontal: 6.w),
+                                        padding: EdgeInsets.symmetric(
+                                            horizontal: 6.w),
                                         child: Text(
-                                          path.split(Platform.pathSeparator).last,
+                                          path
+                                              .split(Platform.pathSeparator)
+                                              .last,
                                           textAlign: TextAlign.center,
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
@@ -6668,8 +6755,8 @@ class _AddManualInvoiceScreenState extends State<AddManualInvoiceScreen> {
                           icon: const Icon(Icons.save_rounded),
                           label: Text(
                             'حفظ السند',
-                            style: GoogleFonts.cairo(
-                                fontWeight: FontWeight.w800),
+                            style:
+                                GoogleFonts.cairo(fontWeight: FontWeight.w800),
                           ),
                         ),
                       ),
@@ -7001,8 +7088,9 @@ class _ManualInvoicePropertyPickerSheetState
                             ? units
                             : units.where(_matches).toList(growable: false);
                         if (!showBuilding && visibleUnits.isEmpty) continue;
-                        final expanded = _expandedBuildingIds.contains(property.id) ||
-                            _q.trim().isNotEmpty;
+                        final expanded =
+                            _expandedBuildingIds.contains(property.id) ||
+                                _q.trim().isNotEmpty;
                         widgets.add(
                           Container(
                             margin: EdgeInsets.only(bottom: 6.h),
@@ -7013,7 +7101,8 @@ class _ManualInvoicePropertyPickerSheetState
                                   color: Colors.white.withOpacity(0.10)),
                             ),
                             child: ExpansionTile(
-                              key: ValueKey('manual_invoice_building_${property.id}'),
+                              key: ValueKey(
+                                  'manual_invoice_building_${property.id}'),
                               initiallyExpanded: expanded,
                               onExpansionChanged: (isOpen) {
                                 setState(() {

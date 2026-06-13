@@ -1,6 +1,6 @@
 # Product Overview
 
-Darfo is a Flutter/Dart property-management application with:
+Ejarz Pro is a Flutter/Dart property-management application with:
 
 - Flutter UI screens for owner mode and office mode
 - Hive local storage for operational entities

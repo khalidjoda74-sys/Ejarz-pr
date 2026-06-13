@@ -6,7 +6,9 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ai_chat_tools.dart';
 import 'ai_chat_permissions.dart';
+import 'core/ai_context_provider.dart';
 import 'core/ai_openai_config.dart';
+import 'core/ai_tool_registry.dart';
 
 class ChatMessage {
   final String role; // 'user', 'assistant', 'system', 'tool'
@@ -327,9 +329,9 @@ class AiChatService {
       case AiChatApiKeyStatus.unknown:
         return 'جاري تهيئة الشات الآن. انتظر قليلًا ثم أعد المحاولة.';
       case AiChatApiKeyStatus.missing:
-        return 'لم يتم ضبط اتصال الذكاء الاصطناعي. اضبط DARFO_AI_PROXY_URL للإنتاج أو OPENAI_API_KEY للتجربة.';
+        return 'لم يتم ضبط اتصال الذكاء الاصطناعي. اضبط EJARZ_PRO_AI_PROXY_URL للإنتاج أو OPENAI_API_KEY للتجربة.';
       case AiChatApiKeyStatus.error:
-        return 'تعذر قراءة إعدادات الشات. تحقق من اتصال الإنترنت أو من إعدادات DARFO_AI_PROXY_URL / OPENAI_API_KEY.';
+        return 'تعذر قراءة إعدادات الشات. تحقق من اتصال الإنترنت أو من إعدادات EJARZ_PRO_AI_PROXY_URL / OPENAI_API_KEY.';
       case AiChatApiKeyStatus.ready:
         if (hasApiKey) return '';
         return 'تهيئة الشات غير مكتملة حاليًا.';
@@ -393,6 +395,8 @@ class AiChatService {
     return '$_storagePrefix:$mode:$normalizedUserId:${chatScope.storageTypeKey}:${chatScope.normalizedScopeId}';
   }
 
+  String get conversationId => _storageKey;
+
   bool _isVisibleMessage(ChatMessage message) {
     return message.role == 'user' ||
         (message.role == 'assistant' &&
@@ -434,9 +438,7 @@ class AiChatService {
       ..._history.sublist(recentStartIndex),
     ];
     return _withPendingRequestContext(
-      requestMessages
-          .map((message) => message.toJson())
-          .toList(growable: true),
+      requestMessages.map((message) => message.toJson()).toList(growable: true),
     );
   }
 
@@ -477,7 +479,8 @@ class AiChatService {
     return 1;
   }
 
-  String _buildOlderConversationSummary(List<ChatMessage> olderVisibleMessages) {
+  String _buildOlderConversationSummary(
+      List<ChatMessage> olderVisibleMessages) {
     if (olderVisibleMessages.isEmpty) return '';
 
     final startIndex =
@@ -519,10 +522,59 @@ class AiChatService {
     return '${value.substring(0, _summaryLineCharLimit)}...';
   }
 
+  List<Map<String, dynamic>> _buildOpenAiTools({
+    required bool canWrite,
+    required bool canReadAll,
+  }) {
+    final registryTools = AiToolRegistry.buildOpenAiTools(
+      isOfficeMode: chatScope.usesOfficeModeForArchitecture,
+      canWrite: canWrite,
+      canReadAll: canReadAll,
+      userMessage: _latestUserMessage(),
+    );
+    final legacyTools = AiChatTools.getTools(
+      isOfficeMode: chatScope.usesOfficeModeForArchitecture,
+      canWrite: canWrite,
+      canReadAll: canReadAll,
+      userMessage: _latestUserMessage(),
+    );
+    return _dedupeOpenAiTools(<Map<String, dynamic>>[
+      ...registryTools,
+      ...legacyTools,
+    ]);
+  }
+
+  List<Map<String, dynamic>> _dedupeOpenAiTools(
+    List<Map<String, dynamic>> tools,
+  ) {
+    final seen = <String>{};
+    final output = <Map<String, dynamic>>[];
+    for (final tool in tools) {
+      final name = _openAiToolName(tool);
+      if (name.isEmpty || !seen.add(name)) continue;
+      output.add(tool);
+    }
+    return output;
+  }
+
+  String _openAiToolName(Map<String, dynamic> tool) {
+    final function = tool['function'];
+    if (function is! Map) return '';
+    return (function['name'] ?? '').toString().trim();
+  }
+
   String _buildSystemPrompt() {
     final canWrite = AiChatPermissions.canExecuteWriteOperations(userRole);
     final canReadAll = AiChatPermissions.canReadAllClients(userRole) &&
         chatScope.allowsOfficeWideData;
+    final gatewayPrompt = AiContextProvider.systemPrompt(
+      chatScope: chatScope,
+      canWrite: canWrite,
+      allowedToolNames: AiToolRegistry.catalog
+          .where((definition) => definition.supported)
+          .map((definition) => definition.name)
+          .toList(growable: false),
+    );
     final modeLabel = chatScope.usesOfficeModeForArchitecture
         ? (canReadAll ? 'جلسة مكتب' : 'جلسة مكتب مقيدة')
         : 'جلسة حساب فردي';
@@ -548,7 +600,7 @@ class AiChatService {
       'إذا سأل المستخدم: كيف تكوّن هذا الرصيد؟ أو من أين جاءت هذه المصروفات/الإيرادات؟ فلا تكتفِ بالملخص. تتبّع الدفتر والسندات المرتبطة واذكر رقم السند ونوع الحركة ومصدرها والعقار والعقد والمستأجر متى كانت البيانات متاحة.',
       'عند سؤال المستخدم عن بند محدد داخل التقارير، اشرح سبب دخوله ضمن الإيرادات أو المصروفات أو التحويلات أو الخصومات اعتمادًا على السندات الفعلية لا على التخمين.',
       'إذا طلب المستخدم تنفيذ عملية من شاشة التقارير مثل خصم/تسوية مالك أو تحويل مالك أو مصروف/عمولة مكتب، اقرأ التقرير أو المعاينة المناسبة أولًا ثم استخدم أداة التنفيذ الصحيحة، ولا تدّعِ نجاح العملية قبل تنفيذها فعليًا.',
-      'أنت مساعد دارفو لإدارة العقارات.',
+      'أنت مساعد Ejarz Pro لإدارة العقارات.',
       'اسم المستخدم: $userName',
       'تتحدث بالعربية فقط. كن مختصرًا وواضحًا.',
       'هذه الدردشة تنفذ عمليات حقيقية داخل التطبيق.',
@@ -564,11 +616,12 @@ class AiChatService {
     ].join('\n');
     final scopeInstruction =
         chatScope.buildSystemScopeInstruction(canWrite: canWrite).trim();
-    if (scopeInstruction.isEmpty) return prompt;
-    return '$prompt\n\nنطاق المحادثة الحالي:\n$scopeInstruction';
+    final combinedPrompt = '$gatewayPrompt\n\n$prompt';
+    if (scopeInstruction.isEmpty) return combinedPrompt;
+    return '$combinedPrompt\n\nنطاق المحادثة الحالي:\n$scopeInstruction';
 
     /* final buf = StringBuffer();
-    buf.writeln('أنت مساعد دارفو الذكي، مساعد تطبيق دارفو لإدارة العقارات.');
+    buf.writeln('أنت مساعد Ejarz Pro الذكي، مساعد تطبيق Ejarz Pro لإدارة العقارات.');
     buf.writeln('اسم المستخدم: $userName');
     buf.writeln('تتحدث بالعربية فقط. كن مختصراً ومهنياً وودوداً.');
     buf.writeln('');
@@ -655,15 +708,16 @@ class AiChatService {
   }
 
   Future<String> _callApi({void Function(String text)? onPartialText}) async {
-    final tools = AiChatTools.getTools(
-      isOfficeMode: chatScope.usesOfficeModeForArchitecture,
-      canWrite: AiChatPermissions.canExecuteWriteOperations(userRole),
-      canReadAll: AiChatPermissions.canReadAllClients(userRole) &&
-          chatScope.allowsOfficeWideData,
-      userMessage: _latestUserMessage(),
+    final canWrite = AiChatPermissions.canExecuteWriteOperations(userRole);
+    final canReadAll = AiChatPermissions.canReadAllClients(userRole) &&
+        chatScope.allowsOfficeWideData;
+    final tools = _buildOpenAiTools(
+      canWrite: canWrite,
+      canReadAll: canReadAll,
     );
 
-    final selectedModel = AiOpenAiConfig.pickModelForMessage(_latestUserMessage());
+    final selectedModel =
+        AiOpenAiConfig.pickModelForMessage(_latestUserMessage());
     final body = <String, dynamic>{
       'model': selectedModel,
       'messages': _buildRequestMessages(),
@@ -756,7 +810,8 @@ class AiChatService {
       'stream': true,
     });
 
-    final response = await _httpClient.send(request).timeout(AiOpenAiConfig.timeout);
+    final response =
+        await _httpClient.send(request).timeout(AiOpenAiConfig.timeout);
     if (response.statusCode != 200) {
       final failedResponse = await http.Response.fromStream(response);
       return _AiChatStreamResponse(
@@ -1005,7 +1060,8 @@ class AiChatService {
       final restored = decoded
           .whereType<Map>()
           .map((item) => ChatMessage.fromJson(Map<String, dynamic>.from(item)))
-          .where((message) => message.role.isNotEmpty && message.role != 'system')
+          .where(
+              (message) => message.role.isNotEmpty && message.role != 'system')
           .toList(growable: false);
 
       clearHistory(persist: false);

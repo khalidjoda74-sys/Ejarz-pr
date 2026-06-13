@@ -15,7 +15,7 @@
 //
 // يكسر حلقة المزامنة عبر _muted. يعتمد عمليًا على آخر كتابة للـ serverTimestamp.
 // ملاحظة: الأفضل تخزين العناصر في Hive بمفتاح = id (put(id, value)).
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -42,11 +42,104 @@ import '../services/user_scope.dart' as scope;
 // لضمان فتح الصناديق قبل الاستماع
 import '../services/hive_service.dart';
 import '../services/entity_audit_service.dart';
+import '../services/office_client_guard.dart';
 
 typedef BoxGetter<T> = Box<T> Function();
 typedef FromMap<T> = T Function(String id, Map<String, dynamic> m);
 typedef ToMap<T> = Map<String, dynamic> Function(T value);
 typedef IdOf<T> = String Function(T value);
+
+Future<String> _syncSessionString(String key) async {
+  try {
+    final box = Hive.isBoxOpen('sessionBox')
+        ? Hive.box('sessionBox')
+        : await Hive.openBox('sessionBox');
+    return (box.get(key, defaultValue: '') ?? '').toString().trim();
+  } catch (_) {
+    return '';
+  }
+}
+
+Future<Set<String>> _syncAuthorizedOfficeIds(String authUid) async {
+  final ids = <String>{};
+  final normalizedAuthUid = authUid.trim();
+  if (normalizedAuthUid.isNotEmpty) {
+    ids.add(normalizedAuthUid);
+  }
+
+  try {
+    final token = await FirebaseAuth.instance.currentUser?.getIdTokenResult();
+    final claims = token?.claims ?? const <String, dynamic>{};
+    final claimOfficeId =
+        (claims['officeId'] ?? claims['office_id'] ?? '').toString().trim();
+    if (claimOfficeId.isNotEmpty) ids.add(claimOfficeId);
+  } catch (_) {}
+
+  try {
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(normalizedAuthUid)
+        .get();
+    final map = doc.data() ?? const <String, dynamic>{};
+    final docOfficeId =
+        (map['officeId'] ?? map['office_id'] ?? '').toString().trim();
+    if (docOfficeId.isNotEmpty) ids.add(docOfficeId);
+  } catch (_) {}
+
+  final sessionOfficeUid = await _syncSessionString('officeStaffOfficeUid');
+  if (sessionOfficeUid.isNotEmpty) ids.add(sessionOfficeUid);
+
+  ids.removeWhere((id) => id.trim().isEmpty);
+  return ids;
+}
+
+Future<bool> _syncOfficeHasClientWorkspace({
+  required String officeUid,
+  required String workspaceUid,
+}) async {
+  final office = officeUid.trim();
+  final workspace = workspaceUid.trim();
+  if (office.isEmpty || workspace.isEmpty) return false;
+  final ref = FirebaseFirestore.instance
+      .collection('offices')
+      .doc(office)
+      .collection('clients');
+
+  try {
+    final direct = await ref.doc(workspace).get();
+    if (direct.exists) return true;
+  } catch (_) {}
+
+  for (final field in const <String>['uid', 'clientUid']) {
+    try {
+      final q = await ref.where(field, isEqualTo: workspace).limit(1).get();
+      if (q.docs.isNotEmpty) return true;
+    } catch (_) {}
+  }
+
+  return false;
+}
+
+Future<bool> _syncIsAllowedScopedUid(String authUid, String scopedUid) async {
+  final auth = authUid.trim();
+  final scoped = scopedUid.trim();
+  if (auth.isEmpty || scoped.isEmpty) return false;
+  if (auth == scoped) return true;
+
+  final officeIds = await _syncAuthorizedOfficeIds(auth);
+  if (officeIds.contains(scoped)) return true;
+
+  for (final officeId in officeIds) {
+    if (await _syncOfficeHasClientWorkspace(
+      officeUid: officeId,
+      workspaceUid: scoped,
+    )) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 class _AttachmentSyncResult {
   _AttachmentSyncResult({required this.map});
@@ -183,7 +276,11 @@ class GenericSyncBridge<T> {
     for (final field in attachmentFields) {
       final raw = map[field];
       final list = (raw is List)
-          ? raw.whereType<String>().map((e) => e.trim()).where((e) => e.isNotEmpty).toList()
+          ? raw
+              .whereType<String>()
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList()
           : <String>[];
       if (list.isEmpty) {
         map[field] = <String>[];
@@ -200,7 +297,8 @@ class GenericSyncBridge<T> {
           continue;
         }
         try {
-          final uploaded = await _uploadLocalAttachment(docId: docId, localPath: entry);
+          final uploaded =
+              await _uploadLocalAttachment(docId: docId, localPath: entry);
           if (uploaded != null && uploaded.isNotEmpty) {
             next.add(uploaded);
             result.localFilesToDelete.add(entry);
@@ -208,7 +306,8 @@ class GenericSyncBridge<T> {
             next.add(entry);
           }
         } catch (e) {
-          _trace('attachment-upload-failed id=$docId field=$field path=$entry err=$e');
+          _trace(
+              'attachment-upload-failed id=$docId field=$field path=$entry err=$e');
           next.add(entry);
         }
       }
@@ -243,7 +342,8 @@ class GenericSyncBridge<T> {
           try {
             await FirebaseStorage.instance.refFromURL(url).delete();
           } catch (e) {
-            _trace('attachment-delete-remote-failed id=$docId field=$field url=$url err=$e');
+            _trace(
+                'attachment-delete-remote-failed id=$docId field=$field url=$url err=$e');
           }
         }
       }
@@ -252,7 +352,8 @@ class GenericSyncBridge<T> {
     }
   }
 
-  void _applyAttachmentListsToEntity(T entity, Map<String, List<String>> normalized) {
+  void _applyAttachmentListsToEntity(
+      T entity, Map<String, List<String>> normalized) {
     if (normalized.isEmpty) return;
     if (entity is Tenant) {
       final v = normalized['attachmentPaths'];
@@ -299,6 +400,14 @@ class GenericSyncBridge<T> {
     _scopeRecoveryAttempted = true;
     _scopeRecoveryInProgress = true;
     try {
+      final allowedOfficeScope =
+          await _syncIsAllowedScopedUid(authUid, _uidAtStart);
+      if (allowedOfficeScope) {
+        _trace(
+          'permission-denied: keeping authorized office scope=$_uidAtStart authUid=$authUid',
+        );
+        return;
+      }
       _trace(
         'permission-denied: attempting scope recovery oldScope=$_uidAtStart authUid=$authUid',
       );
@@ -311,6 +420,121 @@ class GenericSyncBridge<T> {
       debugPrintStack(stackTrace: st);
     } finally {
       _scopeRecoveryInProgress = false;
+    }
+  }
+
+  DateTime? _dateFromAny(dynamic value) {
+    if (value == null || value is FieldValue) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+    if (value is num) {
+      return DateTime.fromMillisecondsSinceEpoch(value.toInt());
+    }
+    if (value is String) {
+      final iso = DateTime.tryParse(value);
+      if (iso != null) return iso;
+      final ms = int.tryParse(value);
+      if (ms != null) return DateTime.fromMillisecondsSinceEpoch(ms);
+    }
+    return null;
+  }
+
+  bool _localMapShouldUpload(
+    Map<String, dynamic> local,
+    Map<String, dynamic>? remote,
+  ) {
+    if (remote == null) return true;
+    final localUpdated =
+        _dateFromAny(local['updatedAt']) ?? _dateFromAny(local['createdAt']);
+    final remoteUpdated =
+        _dateFromAny(remote['updatedAt']) ?? _dateFromAny(remote['createdAt']);
+    if (localUpdated == null) return false;
+    if (remoteUpdated == null) return true;
+    return localUpdated.isAfter(remoteUpdated);
+  }
+
+  Future<void> _flushExistingLocalToRemote({
+    required CollectionReference<Map<String, dynamic>> col,
+    required Box<T> bx,
+  }) async {
+    if (!await OfficeClientGuard.canWriteCurrentWorkspace()) {
+      _trace('initial local flush skipped: workspace is read-only');
+      return;
+    }
+
+    final keys = bx.keys.map((key) => key.toString()).toList(growable: false);
+    for (final key in keys) {
+      if (_permissionDenied) return;
+      final val = bx.get(key);
+      if (val == null) continue;
+
+      final docId = idOf(val).trim();
+      if (docId.isEmpty) continue;
+
+      try {
+        final remoteSnap = await col.doc(docId).get();
+        final remoteData = remoteSnap.data();
+        final localMap = toMap(val)
+          ..['id'] = docId
+          ..[softDeleteField] = false;
+
+        if (!_localMapShouldUpload(localMap, remoteData)) {
+          if (remoteSnap.exists && remoteData?[softDeleteField] != true) {
+            _knownIds.add(docId);
+          }
+          continue;
+        }
+
+        localMap['updatedAt'] = FieldValue.serverTimestamp();
+        final attachmentSync =
+            await _syncAttachmentFields(docId: docId, map: localMap);
+        await EntityAuditService.instance.recordLocalAudit(
+          workspaceUid: scope.effectiveUid(),
+          collectionName: collectionName,
+          entityId: docId,
+          isCreate: !remoteSnap.exists || remoteData?[softDeleteField] == true,
+        );
+        localMap.addAll(await EntityAuditService.instance.buildWriteAuditFields(
+          isCreate: !remoteSnap.exists || remoteData?[softDeleteField] == true,
+          workspaceUid: scope.effectiveUid(),
+        ));
+        if (remoteSnap.exists && remoteData?[softDeleteField] != true) {
+          await _deleteRemovedRemoteAttachments(
+            col: col,
+            docId: docId,
+            nextMap: localMap,
+          );
+        }
+        await col.doc(docId).set(localMap, SetOptions(merge: true));
+
+        if (attachmentSync.normalized.isNotEmpty) {
+          _applyAttachmentListsToEntity(val, attachmentSync.normalized);
+          if ((val as dynamic).key == null) {
+            await bx.put(docId, val);
+          } else {
+            await (val as dynamic).save();
+          }
+        }
+        for (final path in attachmentSync.localFilesToDelete) {
+          try {
+            final f = File(path);
+            if (f.existsSync()) f.deleteSync();
+          } catch (_) {}
+        }
+        _knownIds.add(docId);
+      } on FirebaseException catch (e, st) {
+        _trace('initial-local-flush-failed id=$docId code=${e.code}');
+        if (e.code == 'permission-denied') {
+          _permissionDenied = true;
+          unawaited(_tryRecoverScopeAfterPermissionDenied());
+          return;
+        }
+        debugPrintStack(stackTrace: st);
+      } catch (e, st) {
+        _trace('initial-local-flush-failed id=$docId err=$e');
+        debugPrintStack(stackTrace: st);
+      }
     }
   }
 
@@ -409,48 +633,7 @@ class GenericSyncBridge<T> {
   }
 
   Future<bool> _isAllowedScopedUid(String authUid, String scopedUid) async {
-    var claimOfficeId = '';
-    try {
-      final token = await FirebaseAuth.instance.currentUser?.getIdTokenResult();
-      final claims = token?.claims ?? const <String, dynamic>{};
-      claimOfficeId =
-          (claims['officeId'] ?? claims['office_id'] ?? '').toString().trim();
-    } catch (_) {}
-    if (claimOfficeId.isNotEmpty && claimOfficeId == scopedUid) return true;
-
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(authUid)
-          .get();
-      final map = doc.data() ?? const <String, dynamic>{};
-      final docOfficeId =
-          (map['officeId'] ?? map['office_id'] ?? '').toString().trim();
-      if (docOfficeId.isNotEmpty && docOfficeId == scopedUid) return true;
-    } catch (_) {}
-
-    try {
-      final directClientDoc = await FirebaseFirestore.instance
-          .collection('offices')
-          .doc(authUid)
-          .collection('clients')
-          .doc(scopedUid)
-          .get();
-      if (directClientDoc.exists) return true;
-    } catch (_) {}
-
-    try {
-      final q = await FirebaseFirestore.instance
-          .collection('offices')
-          .doc(authUid)
-          .collection('clients')
-          .where('clientUid', isEqualTo: scopedUid)
-          .limit(1)
-          .get();
-      if (q.docs.isNotEmpty) return true;
-    } catch (_) {}
-
-    return false;
+    return _syncIsAllowedScopedUid(authUid, scopedUid);
   }
 
   Future<void> start() async {
@@ -492,6 +675,9 @@ class GenericSyncBridge<T> {
     _knownIds
       ..clear()
       ..addAll(bx.keys.map((e) => e.toString()));
+
+    await _flushExistingLocalToRemote(col: col, bx: bx);
+    if (_permissionDenied) return;
 
     // Firestore -> Hive
     _fsSub = col.snapshots().listen(
@@ -561,6 +747,13 @@ class GenericSyncBridge<T> {
       (evt) async {
         if (_muted) return;
         try {
+          if (!await OfficeClientGuard.canWriteCurrentWorkspace()) {
+            _trace(
+              'workspace write blocked: local change ignored collection=$collectionName key=${evt.key}',
+            );
+            return;
+          }
+
           final keyStr = evt.key?.toString();
           final val = (keyStr != null) ? bx.get(keyStr) : null;
 
@@ -628,7 +821,6 @@ class GenericSyncBridge<T> {
             workspaceUid: scope.effectiveUid(),
           ));
 
-          map.removeWhere((k, v) => v == null);
           await _deleteRemovedRemoteAttachments(
             col: col,
             docId: docId,
@@ -708,6 +900,333 @@ class GenericSyncBridge<T> {
 // =================== جسور الكيانات ===================
 
 // 1) الفواتير
+class MapBoxSyncBridge {
+  MapBoxSyncBridge({
+    required this.collectionName,
+    required this.boxBaseName,
+    this.softDeleteField = 'isDeleted',
+  });
+
+  final String collectionName;
+  final String boxBaseName;
+  final String softDeleteField;
+
+  StreamSubscription? _fsSub;
+  StreamSubscription? _hiveSub;
+  bool _muted = false;
+  bool _started = false;
+  bool _permissionDenied = false;
+  String _uidAtStart = '';
+  final Set<String> _knownIds = <String>{};
+
+  CollectionReference<Map<String, dynamic>> _colFor(String uid) {
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection(collectionName)
+        .withConverter<Map<String, dynamic>>(
+          fromFirestore: (s, _) => s.data() ?? <String, dynamic>{},
+          toFirestore: (m, _) => m,
+        );
+  }
+
+  void _trace(String message) {
+    debugPrint('[SyncBridge:$collectionName] $message');
+  }
+
+  Future<Box<Map>> _openBox() async {
+    final name = scope.boxName(boxBaseName);
+    if (Hive.isBoxOpen(name)) {
+      try {
+        return Hive.box<Map>(name);
+      } catch (_) {
+        await Hive.box(name).close();
+      }
+    }
+    return Hive.openBox<Map>(name);
+  }
+
+  dynamic _toHiveSafe(dynamic value) {
+    if (value is Timestamp) {
+      return value.toDate().millisecondsSinceEpoch;
+    }
+    if (value is DateTime) {
+      return value.millisecondsSinceEpoch;
+    }
+    if (value is Map) {
+      return value.map<String, dynamic>(
+        (key, item) => MapEntry(key.toString(), _toHiveSafe(item)),
+      );
+    }
+    if (value is List) {
+      return value.map(_toHiveSafe).toList(growable: false);
+    }
+    return value;
+  }
+
+  Map<String, dynamic> _mapFrom(dynamic value) {
+    if (value is Map<String, dynamic>) return Map<String, dynamic>.from(value);
+    if (value is Map) {
+      return value.map<String, dynamic>(
+        (key, item) => MapEntry(key.toString(), item),
+      );
+    }
+    return <String, dynamic>{};
+  }
+
+  DateTime? _dateFromAny(dynamic value) {
+    if (value == null || value is FieldValue) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+    if (value is num) {
+      return DateTime.fromMillisecondsSinceEpoch(value.toInt());
+    }
+    if (value is String) {
+      final iso = DateTime.tryParse(value);
+      if (iso != null) return iso;
+      final ms = int.tryParse(value);
+      if (ms != null) return DateTime.fromMillisecondsSinceEpoch(ms);
+    }
+    return null;
+  }
+
+  bool _localMapShouldUpload(
+    Map<String, dynamic> local,
+    Map<String, dynamic>? remote,
+  ) {
+    if (remote == null) return true;
+    final localUpdated =
+        _dateFromAny(local['updatedAt']) ?? _dateFromAny(local['createdAt']);
+    final remoteUpdated =
+        _dateFromAny(remote['updatedAt']) ?? _dateFromAny(remote['createdAt']);
+    if (localUpdated == null) return false;
+    if (remoteUpdated == null) return true;
+    return localUpdated.isAfter(remoteUpdated);
+  }
+
+  Future<void> _flushExistingLocalToRemote({
+    required CollectionReference<Map<String, dynamic>> col,
+    required Box<Map> bx,
+  }) async {
+    if (!await OfficeClientGuard.canWriteCurrentWorkspace()) {
+      _trace('initial local flush skipped: workspace is read-only');
+      return;
+    }
+
+    final keys = bx.keys.map((key) => key.toString()).toList(growable: false);
+    for (final docId in keys) {
+      if (_permissionDenied) return;
+      final val = bx.get(docId);
+      if (val == null) continue;
+
+      try {
+        final remoteSnap = await col.doc(docId).get();
+        final remoteData = remoteSnap.data();
+        final map = _mapFrom(val)
+          ..['id'] = docId
+          ..[softDeleteField] = false;
+
+        if (!_localMapShouldUpload(map, remoteData)) {
+          if (remoteSnap.exists && remoteData?[softDeleteField] != true) {
+            _knownIds.add(docId);
+          }
+          continue;
+        }
+
+        map['updatedAt'] = FieldValue.serverTimestamp();
+        await EntityAuditService.instance.recordLocalAudit(
+          workspaceUid: scope.effectiveUid(),
+          collectionName: collectionName,
+          entityId: docId,
+          isCreate: !remoteSnap.exists || remoteData?[softDeleteField] == true,
+        );
+        map.addAll(await EntityAuditService.instance.buildWriteAuditFields(
+          isCreate: !remoteSnap.exists || remoteData?[softDeleteField] == true,
+          workspaceUid: scope.effectiveUid(),
+        ));
+        await col.doc(docId).set(map, SetOptions(merge: true));
+        _knownIds.add(docId);
+      } on FirebaseException catch (e, st) {
+        _trace('initial-local-flush-failed id=$docId code=${e.code}');
+        if (e.code == 'permission-denied') {
+          _permissionDenied = true;
+          return;
+        }
+        debugPrintStack(stackTrace: st);
+      } catch (e, st) {
+        _trace('initial-local-flush-failed id=$docId err=$e');
+        debugPrintStack(stackTrace: st);
+      }
+    }
+  }
+
+  Future<void> start() async {
+    if (_started) return;
+    _permissionDenied = false;
+
+    if (scope.isGuest()) return;
+    var uid = scope.uidOrThrow();
+    if (uid.isEmpty) return;
+    final authUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (authUid.isNotEmpty && authUid != uid) {
+      final allowed = await _syncIsAllowedScopedUid(authUid, uid);
+      _trace(
+          'uid-mismatch authUid=$authUid effectiveUid=$uid allowed=$allowed');
+      if (!allowed) {
+        scope.setFixedUid(authUid);
+        uid = authUid;
+      }
+    }
+
+    _uidAtStart = uid;
+    final bx = await _openBox();
+    final col = _colFor(_uidAtStart);
+    _knownIds
+      ..clear()
+      ..addAll(bx.keys.map((e) => e.toString()));
+
+    await _flushExistingLocalToRemote(col: col, bx: bx);
+    if (_permissionDenied) return;
+
+    _fsSub = col.snapshots().listen(
+      (snap) async {
+        if (_permissionDenied) return;
+        try {
+          for (final ch in snap.docChanges) {
+            final doc = ch.doc;
+            final data = doc.data();
+            final id = doc.id;
+            final deletedHard =
+                data == null || ch.type == DocumentChangeType.removed;
+            final deletedSoft = data != null && data[softDeleteField] == true;
+
+            _muted = true;
+            try {
+              if (deletedHard || deletedSoft) {
+                if (bx.containsKey(id)) await bx.delete(id);
+                _knownIds.remove(id);
+                continue;
+              }
+
+              final safe = _mapFrom(_toHiveSafe(data));
+              safe['id'] = (safe['id'] ?? id).toString();
+              await bx.put(id, safe);
+              _knownIds.add(id);
+            } finally {
+              _muted = false;
+            }
+          }
+        } on FirebaseException catch (e, st) {
+          _trace('remote-listen-callback-failed code=${e.code}');
+          if (e.code == 'permission-denied') _permissionDenied = true;
+          debugPrintStack(stackTrace: st);
+        } catch (e, st) {
+          _trace('remote-listen-callback-failed err=$e');
+          debugPrintStack(stackTrace: st);
+        }
+      },
+      onError: (Object error, StackTrace st) {
+        final code = error is FirebaseException ? error.code : '';
+        _trace('remote-listen-error code=$code err=$error');
+        if (code == 'permission-denied') _permissionDenied = true;
+        debugPrintStack(stackTrace: st);
+      },
+    );
+
+    _hiveSub = bx.watch().listen(
+      (evt) async {
+        if (_muted) return;
+        try {
+          if (!await OfficeClientGuard.canWriteCurrentWorkspace()) {
+            _trace('workspace write blocked key=${evt.key}');
+            return;
+          }
+
+          final docId = evt.key?.toString().trim() ?? '';
+          if (docId.isEmpty) return;
+          final existedBefore = _knownIds.contains(docId);
+
+          if (evt.deleted == true) {
+            await EntityAuditService.instance.recordLocalAudit(
+              workspaceUid: scope.effectiveUid(),
+              collectionName: collectionName,
+              entityId: docId,
+              isCreate: false,
+            );
+            if (_permissionDenied) {
+              _knownIds.remove(docId);
+              return;
+            }
+            final audit =
+                await EntityAuditService.instance.buildWriteAuditFields(
+              isCreate: false,
+              workspaceUid: scope.effectiveUid(),
+            );
+            await col.doc(docId).set(<String, dynamic>{
+              'id': docId,
+              softDeleteField: true,
+              'updatedAt': FieldValue.serverTimestamp(),
+              ...audit,
+            }, SetOptions(merge: true));
+            _knownIds.remove(docId);
+            return;
+          }
+
+          final val = bx.get(docId);
+          if (val == null) return;
+          final map = _mapFrom(val)
+            ..['id'] = docId
+            ..['updatedAt'] = FieldValue.serverTimestamp()
+            ..[softDeleteField] = false;
+
+          await EntityAuditService.instance.recordLocalAudit(
+            workspaceUid: scope.effectiveUid(),
+            collectionName: collectionName,
+            entityId: docId,
+            isCreate: !existedBefore,
+          );
+          if (_permissionDenied) {
+            _knownIds.add(docId);
+            return;
+          }
+          map.addAll(await EntityAuditService.instance.buildWriteAuditFields(
+            isCreate: !existedBefore,
+            workspaceUid: scope.effectiveUid(),
+          ));
+          await col.doc(docId).set(map, SetOptions(merge: true));
+          _knownIds.add(docId);
+        } on FirebaseException catch (e, st) {
+          _trace('local-write-failed code=${e.code}');
+          if (e.code == 'permission-denied') _permissionDenied = true;
+          debugPrintStack(stackTrace: st);
+        } catch (e, st) {
+          _trace('local-write-failed err=$e');
+          debugPrintStack(stackTrace: st);
+        }
+      },
+      onError: (Object error, StackTrace st) {
+        final code = error is FirebaseException ? error.code : '';
+        _trace('local-watch-error code=$code err=$error');
+        if (code == 'permission-denied') _permissionDenied = true;
+        debugPrintStack(stackTrace: st);
+      },
+    );
+
+    _started = true;
+  }
+
+  Future<void> stop() async {
+    await _fsSub?.cancel();
+    await _hiveSub?.cancel();
+    _fsSub = null;
+    _hiveSub = null;
+    _permissionDenied = false;
+    _uidAtStart = '';
+    _started = false;
+  }
+}
+
 class SyncBridgeInvoices extends GenericSyncBridge<Invoice> {
   SyncBridgeInvoices()
       : super(
@@ -729,7 +1248,8 @@ class SyncBridgeInvoices extends GenericSyncBridge<Invoice> {
               'paidAmount': inv.paidAmount, // مهم
               'paidAt': paid ? inv.issueDate.millisecondsSinceEpoch : null,
               'paymentDate': paid ? inv.issueDate.millisecondsSinceEpoch : null,
-              'remainingAmount': (inv.amount.abs() - inv.paidAmount).clamp(0.0, double.infinity),
+              'remainingAmount': (inv.amount.abs() - inv.paidAmount)
+                  .clamp(0.0, double.infinity),
               'currency': inv.currency,
               'paymentMethod': inv.paymentMethod,
               'maintenanceRequestId': inv.maintenanceRequestId,
@@ -743,7 +1263,6 @@ class SyncBridgeInvoices extends GenericSyncBridge<Invoice> {
               'createdAt': inv.createdAt.millisecondsSinceEpoch,
               'updatedAt': inv.updatedAt.millisecondsSinceEpoch,
             };
-            m.removeWhere((k, v) => v == null);
             return m;
           },
           fromMap: (id, m) {
@@ -759,43 +1278,44 @@ class SyncBridgeInvoices extends GenericSyncBridge<Invoice> {
                     ? 0.0
                     : amount.abs());
             return Invoice(
-            id: id,
-            tenantId: (m['tenantId'] ?? '').toString(),
-            contractId: (m['contractId'] ?? '').toString(),
-            propertyId: (m['propertyId'] ?? '').toString(),
-            issueDate: _toDate(m['issueDate']) ?? KsaTime.now(),
-            dueDate: _toDate(m['dueDate']) ?? _todayEnd(),
-            amount: amount,
-            paidAmount: paidAmount,
-            currency: (m['currency'] ?? 'SAR').toString(),
-            paymentMethod: (m['paymentMethod'] as String?) ?? 'نقدًا',
-            maintenanceRequestId: (m['maintenanceRequestId'] == null)
-                ? null
-                : m['maintenanceRequestId'].toString(),
-            maintenanceSnapshot: (m['maintenanceSnapshot'] as Map?)
-                ?.cast<String, dynamic>(),
-            waterAmount: _toD(m['waterAmount']),
-            isArchived: (m['isArchived'] == true),
-            isCanceled: (m['isCanceled'] == true),
-            serialNo: (m['serialNo'] == null) ? null : m['serialNo'].toString(),
-            note: (m['note'] as String?),
-            attachmentPaths: (() {
-              final remote = (m['attachmentPaths'] as List?)
-                      ?.whereType<String>()
-                      .toList() ??
-                  <String>[];
-              if (remote.isNotEmpty) return remote;
-              try {
-                final b = Hive.box<Invoice>(scope.boxName(kInvoicesBox));
-                final local = b.get(id)?.attachmentPaths ?? const <String>[];
-                return local.where((e) => e.trim().isNotEmpty).toList();
-              } catch (_) {
-                return <String>[];
-              }
-            })(),
-            createdAt: _toDate(m['createdAt']) ?? KsaTime.now(),
-            updatedAt: _toDate(m['updatedAt']) ?? KsaTime.now(),
-          );
+              id: id,
+              tenantId: (m['tenantId'] ?? '').toString(),
+              contractId: (m['contractId'] ?? '').toString(),
+              propertyId: (m['propertyId'] ?? '').toString(),
+              issueDate: _toDate(m['issueDate']) ?? KsaTime.now(),
+              dueDate: _toDate(m['dueDate']) ?? _todayEnd(),
+              amount: amount,
+              paidAmount: paidAmount,
+              currency: (m['currency'] ?? 'SAR').toString(),
+              paymentMethod: (m['paymentMethod'] as String?) ?? 'نقدًا',
+              maintenanceRequestId: (m['maintenanceRequestId'] == null)
+                  ? null
+                  : m['maintenanceRequestId'].toString(),
+              maintenanceSnapshot:
+                  (m['maintenanceSnapshot'] as Map?)?.cast<String, dynamic>(),
+              waterAmount: _toD(m['waterAmount']),
+              isArchived: (m['isArchived'] == true),
+              isCanceled: (m['isCanceled'] == true),
+              serialNo:
+                  (m['serialNo'] == null) ? null : m['serialNo'].toString(),
+              note: (m['note'] as String?),
+              attachmentPaths: (() {
+                final remote = (m['attachmentPaths'] as List?)
+                        ?.whereType<String>()
+                        .toList() ??
+                    <String>[];
+                if (remote.isNotEmpty) return remote;
+                try {
+                  final b = Hive.box<Invoice>(scope.boxName(kInvoicesBox));
+                  final local = b.get(id)?.attachmentPaths ?? const <String>[];
+                  return local.where((e) => e.trim().isNotEmpty).toList();
+                } catch (_) {
+                  return <String>[];
+                }
+              })(),
+              createdAt: _toDate(m['createdAt']) ?? KsaTime.now(),
+              updatedAt: _toDate(m['updatedAt']) ?? KsaTime.now(),
+            );
           },
         );
 }
@@ -834,6 +1354,10 @@ class SyncBridgeTenants extends GenericSyncBridge<Tenant> {
             'companyTaxNumber': t.companyTaxNumber,
             'companyRepresentativeName': t.companyRepresentativeName,
             'companyRepresentativePhone': t.companyRepresentativePhone,
+            'companyRepresentativeNationalId':
+                t.companyRepresentativeNationalId,
+            'companyRepresentativeDateOfBirth':
+                t.companyRepresentativeDateOfBirth?.millisecondsSinceEpoch,
             'companyBankAccountNumber': t.companyBankAccountNumber,
             'companyBankName': t.companyBankName,
             'serviceSpecialization': t.serviceSpecialization,
@@ -876,6 +1400,10 @@ class SyncBridgeTenants extends GenericSyncBridge<Tenant> {
                 (m['companyRepresentativeName'] as String?),
             companyRepresentativePhone:
                 (m['companyRepresentativePhone'] as String?),
+            companyRepresentativeNationalId:
+                (m['companyRepresentativeNationalId'] as String?),
+            companyRepresentativeDateOfBirth:
+                _toDate(m['companyRepresentativeDateOfBirth']),
             companyBankAccountNumber:
                 (m['companyBankAccountNumber'] as String?),
             companyBankName: (m['companyBankName'] as String?),
@@ -933,12 +1461,12 @@ class SyncBridgeProperties extends GenericSyncBridge<Property> {
               'waterMode': p.waterMode,
               'waterShare': p.waterShare,
               'waterAmount': p.waterAmount,
+              'usageType': p.usageType,
 
               // 👇 الجديد:
               'createdAt': p.createdAt?.millisecondsSinceEpoch,
               'updatedAt': p.updatedAt?.millisecondsSinceEpoch,
             };
-            m.removeWhere((k, v) => v == null);
             return m;
           },
           fromMap: (id, m) {
@@ -978,6 +1506,7 @@ class SyncBridgeProperties extends GenericSyncBridge<Property> {
               waterMode: (m['waterMode'] as String?),
               waterShare: (m['waterShare'] as String?),
               waterAmount: (m['waterAmount'] as String?),
+              usageType: (m['usageType'] as String?),
 
               // 👇 الجديد:
               createdAt: _toDate(m['createdAt']),
@@ -1033,7 +1562,6 @@ class SyncBridgeContracts extends GenericSyncBridge<Contract> {
               'createdAt': c.createdAt.millisecondsSinceEpoch,
               'updatedAt': c.updatedAt.millisecondsSinceEpoch,
             };
-            m.removeWhere((k, v) => v == null);
             return m;
           },
           fromMap: (id, m) => Contract(
@@ -1066,17 +1594,17 @@ class SyncBridgeContracts extends GenericSyncBridge<Contract> {
               if (i != null) return AdvanceMode.values[i];
               return AdvanceMode.none;
             })(),
-            advancePaid: m['advancePaid'] == null ? null : _toD(m['advancePaid']),
+            advancePaid:
+                m['advancePaid'] == null ? null : _toD(m['advancePaid']),
             dailyCheckoutHour: _toInt(m['dailyCheckoutHour']),
 
             // ملاحظات/حالة
             isTerminated: (m['isTerminated'] == true),
             terminatedAt: _toDate(m['terminatedAt']),
             notes: (m['notes'] == null) ? null : m['notes'].toString(),
-            attachmentPaths: (m['attachmentPaths'] as List?)
-                    ?.whereType<String>()
-                    .toList() ??
-                const <String>[],
+            attachmentPaths:
+                (m['attachmentPaths'] as List?)?.whereType<String>().toList() ??
+                    const <String>[],
             serialNo: (m['serialNo'] == null) ? null : m['serialNo'].toString(),
             ejarContractNo: (m['ejarContractNo'] == null)
                 ? null
@@ -1131,15 +1659,14 @@ class SyncBridgeMaintenance extends GenericSyncBridge<MaintenanceRequest> {
               'isArchived': m.isArchived == true,
               'invoiceId': m.invoiceId,
               'periodicServiceType': m.periodicServiceType,
-              'periodicCycleDate':
-                  m.periodicCycleDate?.millisecondsSinceEpoch,
+              'periodicCycleDate': m.periodicCycleDate?.millisecondsSinceEpoch,
             };
-            map.removeWhere((k, v) => v == null);
             return map;
           },
           fromMap: (id, mp) => MaintenanceRequest(
             id: id,
-            serialNo: (mp['serialNo'] == null) ? null : mp['serialNo'].toString(),
+            serialNo:
+                (mp['serialNo'] == null) ? null : mp['serialNo'].toString(),
             propertyId: (mp['propertyId'] ?? '') as String,
             tenantId: (mp['tenantId'] as String?),
             title: (mp['title'] ?? '') as String,
@@ -1161,8 +1688,8 @@ class SyncBridgeMaintenance extends GenericSyncBridge<MaintenanceRequest> {
             completedDate: _toDate(mp['completedDate']),
             cost: _toD(mp['cost']),
             assignedTo: (mp['assignedTo'] as String?),
-            providerSnapshot: (mp['providerSnapshot'] as Map?)
-                ?.cast<String, dynamic>(),
+            providerSnapshot:
+                (mp['providerSnapshot'] as Map?)?.cast<String, dynamic>(),
             attachmentPaths: (mp['attachmentPaths'] as List?)
                     ?.whereType<String>()
                     .toList() ??
@@ -1185,6 +1712,12 @@ class SyncManager {
   SyncBridgeProperties? _properties;
   SyncBridgeContracts? _contracts;
   SyncBridgeMaintenance? _maintenance;
+  MapBoxSyncBridge? _servicesConfig;
+  MapBoxSyncBridge? _financeConfig;
+  MapBoxSyncBridge? _propertyOwners;
+  MapBoxSyncBridge? _ownerPayouts;
+  MapBoxSyncBridge? _ownerAdjustments;
+  MapBoxSyncBridge? _ownerBankAccounts;
 
   bool _started = false;
 
@@ -1195,51 +1728,8 @@ class SyncManager {
     if (authUid.isEmpty || effectiveUid.isEmpty || effectiveUid == authUid) {
       return;
     }
-    var allowOfficeWorkspace = false;
-    try {
-      final token = await FirebaseAuth.instance.currentUser?.getIdTokenResult();
-      final claims = token?.claims ?? const <String, dynamic>{};
-      final claimOfficeId =
-          (claims['officeId'] ?? claims['office_id'] ?? '').toString().trim();
-      allowOfficeWorkspace =
-          claimOfficeId.isNotEmpty && claimOfficeId == effectiveUid;
-    } catch (_) {}
-    if (!allowOfficeWorkspace) {
-      try {
-        final doc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(authUid)
-            .get();
-        final map = doc.data() ?? const <String, dynamic>{};
-        final docOfficeId =
-            (map['officeId'] ?? map['office_id'] ?? '').toString().trim();
-        allowOfficeWorkspace =
-            docOfficeId.isNotEmpty && docOfficeId == effectiveUid;
-      } catch (_) {}
-    }
-    if (!allowOfficeWorkspace) {
-      try {
-        final directClientDoc = await FirebaseFirestore.instance
-            .collection('offices')
-            .doc(authUid)
-            .collection('clients')
-            .doc(effectiveUid)
-            .get();
-        allowOfficeWorkspace = directClientDoc.exists;
-      } catch (_) {}
-    }
-    if (!allowOfficeWorkspace) {
-      try {
-        final q = await FirebaseFirestore.instance
-            .collection('offices')
-            .doc(authUid)
-            .collection('clients')
-            .where('clientUid', isEqualTo: effectiveUid)
-            .limit(1)
-            .get();
-        allowOfficeWorkspace = q.docs.isNotEmpty;
-      } catch (_) {}
-    }
+    final allowOfficeWorkspace =
+        await _syncIsAllowedScopedUid(authUid, effectiveUid);
     if (!allowOfficeWorkspace) {
       scope.setFixedUid(authUid);
       debugPrint(
@@ -1266,6 +1756,30 @@ class SyncManager {
     _properties ??= SyncBridgeProperties();
     _contracts ??= SyncBridgeContracts();
     _maintenance ??= SyncBridgeMaintenance();
+    _servicesConfig ??= MapBoxSyncBridge(
+      collectionName: 'servicesConfig',
+      boxBaseName: 'servicesConfig',
+    );
+    _financeConfig ??= MapBoxSyncBridge(
+      collectionName: 'financeConfigBox',
+      boxBaseName: 'financeConfigBox',
+    );
+    _propertyOwners ??= MapBoxSyncBridge(
+      collectionName: 'propertyOwnersBox',
+      boxBaseName: 'propertyOwnersBox',
+    );
+    _ownerPayouts ??= MapBoxSyncBridge(
+      collectionName: 'ownerPayoutsBox',
+      boxBaseName: 'ownerPayoutsBox',
+    );
+    _ownerAdjustments ??= MapBoxSyncBridge(
+      collectionName: 'ownerAdjustmentsBox',
+      boxBaseName: 'ownerAdjustmentsBox',
+    );
+    _ownerBankAccounts ??= MapBoxSyncBridge(
+      collectionName: 'ownerBankAccountsBox',
+      boxBaseName: 'ownerBankAccountsBox',
+    );
 
     await _invoices!.start();
     debugPrint('[SyncPerf] invoices-started +${sw.elapsedMilliseconds}ms');
@@ -1277,6 +1791,13 @@ class SyncManager {
     debugPrint('[SyncPerf] contracts-started +${sw.elapsedMilliseconds}ms');
     await _maintenance!.start();
     debugPrint('[SyncPerf] maintenance-started +${sw.elapsedMilliseconds}ms');
+    await _servicesConfig!.start();
+    await _financeConfig!.start();
+    await _propertyOwners!.start();
+    await _ownerPayouts!.start();
+    await _ownerAdjustments!.start();
+    await _ownerBankAccounts!.start();
+    debugPrint('[SyncPerf] map-boxes-started +${sw.elapsedMilliseconds}ms');
 
     _started = true;
     debugPrint('[SyncPerf] startAll done total=${sw.elapsedMilliseconds}ms');
@@ -1290,12 +1811,24 @@ class SyncManager {
     await _properties?.stop();
     await _contracts?.stop();
     await _maintenance?.stop();
+    await _servicesConfig?.stop();
+    await _financeConfig?.stop();
+    await _propertyOwners?.stop();
+    await _ownerPayouts?.stop();
+    await _ownerAdjustments?.stop();
+    await _ownerBankAccounts?.stop();
 
     _invoices = null;
     _tenants = null;
     _properties = null;
     _contracts = null;
     _maintenance = null;
+    _servicesConfig = null;
+    _financeConfig = null;
+    _propertyOwners = null;
+    _ownerPayouts = null;
+    _ownerAdjustments = null;
+    _ownerBankAccounts = null;
 
     _started = false;
     debugPrint('[SyncPerf] stopAll done total=${sw.elapsedMilliseconds}ms');

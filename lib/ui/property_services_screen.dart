@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -12,7 +12,7 @@ import '../data/services/user_scope.dart' show boxName;
 import '../models/property.dart';
 import '../models/tenant.dart';
 import '../widgets/custom_confirm_dialog.dart';
-import '../widgets/darvoo_app_bar.dart';
+import '../widgets/ejarz_pro_app_bar.dart';
 import 'contracts_screen.dart' as contracts_ui
     show
         ContractsScreen,
@@ -34,8 +34,7 @@ import 'maintenance_screen.dart'
         deleteMaintenanceRequestOnlyLocalAndSync,
         maintenanceLinkedPartyIdForProperty,
         nextMaintenanceRequestSerialForBox,
-        saveMaintenanceRequestLocalAndSync,
-        tenantIdForProperty;
+        saveMaintenanceRequestLocalAndSync;
 import 'properties_screen.dart';
 import 'tenants_screen.dart' as tenants_ui show TenantsScreen;
 import 'widgets/app_bottom_nav.dart';
@@ -918,7 +917,6 @@ Future<bool> ensurePeriodicServiceRequestsGenerated({
       continue;
     }
     final raw = entry.value;
-    if (raw is! Map) continue;
     final cfg = Map<String, dynamic>.from(raw);
     final type = (cfg['serviceType'] ?? '').toString().trim();
     if (!_isPeriodicMaintenanceServiceType(type, cfg)) continue;
@@ -1259,9 +1257,11 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
     return normalizedMode == 'units';
   }
 
+  // ignore: unused_element
   bool _isWaterUnitsFixedMode(String mode) =>
       _normalizedSharedUnitsModeValue('water', mode) == 'units_fixed';
 
+  // ignore: unused_element
   bool _isWaterUnitsSeparateMode(String mode) =>
       _normalizedSharedUnitsModeValue('water', mode) == 'units_separate';
 
@@ -1306,6 +1306,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
     return _cfgForProperty(building.id, type);
   }
 
+  // ignore: unused_element
   double _sharedPercentForUnit(Map<String, dynamic> cfg, String unitId) {
     final normalizedUnitId = unitId.trim();
     if (normalizedUnitId.isEmpty) return 0.0;
@@ -1577,7 +1578,8 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
   }) async {
     final normalizedPersisted =
         _normalizedSharedUnitsModeValue(type, persistedMode);
-    final normalizedDraft = _normalizedSharedUnitsModeValue(type, currentDraftMode);
+    final normalizedDraft =
+        _normalizedSharedUnitsModeValue(type, currentDraftMode);
     final normalizedAttempt =
         _normalizedSharedUnitsModeValue(type, attemptedMode ?? '');
     if (normalizedAttempt.isEmpty) return normalizedDraft;
@@ -2113,6 +2115,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
       builder: (sheetCtx) => StatefulBuilder(
         builder: (sheetCtx, setSheetState) {
           final snapshot = _sharedServiceCycleSnapshot(request);
+          // ignore: unused_local_variable
           final type = _normalizePeriodicServiceTypeToken(
                 snapshot?['serviceType'] ?? request.periodicServiceType,
               ) ??
@@ -2219,7 +2222,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                               color: const Color(0xFFF8FAFC),
                               borderRadius: BorderRadius.circular(14.r),
                               border: Border.all(
-                                color: Colors.black.withOpacity(0.08),
+                                color: Colors.black.withValues(alpha: 0.08),
                               ),
                             ),
                             child: Column(
@@ -2259,7 +2262,8 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                                         vertical: 6.h,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: statusColor.withOpacity(0.12),
+                                        color:
+                                            statusColor.withValues(alpha: 0.12),
                                         borderRadius:
                                             BorderRadius.circular(999),
                                       ),
@@ -2356,6 +2360,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                                           }
                                           setSheetState(() {});
                                           _showOk('تم إصدار سند القبض بنجاح.');
+                                          // ignore: use_build_context_synchronously
                                           await Navigator.of(sheetCtx).push(
                                             MaterialPageRoute(
                                               builder: (_) =>
@@ -2715,6 +2720,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
     return a == b;
   }
 
+  // ignore: unused_element
   Future<void> _showArchiveNoticeDialog(String message) async {
     await showDialog<void>(
       context: context,
@@ -2905,6 +2911,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
     return false;
   }
 
+  // ignore: unused_element
   Future<void> _exportServicePdf({
     required String serviceType,
     required String title,
@@ -2976,6 +2983,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
     return null;
   }
 
+  // ignore: unused_element
   List<Map<String, dynamic>> _serviceLogRows(String type) {
     List<Map<String, dynamic>> maintenanceRows(String serviceType) {
       return _serviceRequests(serviceType)
@@ -3075,7 +3083,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
           backgroundColor: Colors.white,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.black87),
+          leading: ejarzProLeading(context, iconColor: Colors.black87),
           title: Text(title,
               style: GoogleFonts.cairo(
                   color: Colors.black87, fontWeight: FontWeight.w800)),
@@ -3241,6 +3249,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
     return allowed.contains(months) ? months : 0;
   }
 
+  // ignore: unused_element
   DateTime _autoPeriodicNextDate(DateTime startDate, int months) {
     final safeMonths = _normalizePeriodicRecurrenceMonths(months);
     if (safeMonths == 0) return _periodicServiceDateOnly(startDate);
@@ -3266,6 +3275,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
     }
   }
 
+  // ignore: unused_element
   DateTime _pickerInitialDate(DateTime value, DateTime firstDate) =>
       value.isBefore(firstDate) ? firstDate : value;
 
@@ -3290,6 +3300,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
       cfg: cfg,
     ).storedDueDate;
     final originalStartDate = _periodicServiceStartDateFromConfig(cfg);
+    // ignore: unused_local_variable
     final hasConfiguredSchedule = _isConfigured(type, cfg);
     final initialHasNextDate =
         trackedDueDate != null || configuredDueDate != null;
@@ -3611,9 +3622,8 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
     if ((type == 'water' || type == 'electricity') &&
         _unitUnderPerUnitBuilding) {
       final mode = _effectiveSharedUnitsMode(type);
-      final allowsLocalManagement = type == 'water'
-          ? _isUnitsManagedMode(type, mode)
-          : mode == 'units';
+      final allowsLocalManagement =
+          type == 'water' ? _isUnitsManagedMode(type, mode) : mode == 'units';
       if (!allowsLocalManagement) {
         await _promptOpenBuildingSharedService(type);
         return;
@@ -3805,13 +3815,14 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
       }).toList();
     }
 
+    // ignore: unused_element
     String buildSharedRequestDescription(
       DateTime cycleDate,
       double totalAmount,
       List<Map<String, dynamic>> rows,
     ) {
       final buffer = StringBuffer()
-        ..writeln('${_periodicServiceRequestTitle(type)}')
+        ..writeln(_periodicServiceRequestTitle(type))
         ..writeln('تاريخ الدورة: ${_fmt(cycleDate)}')
         ..writeln('المبلغ الكلي: ${totalAmount.toStringAsFixed(2)} ريال')
         ..writeln('طريقة التوزيع: بالتساوي على الشقق المؤجرة فقط')
@@ -3946,6 +3957,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
         ..sort((a, b) => a.name.compareTo(b.name));
     }
 
+    // ignore: unused_element
     List<Map<String, dynamic>> equalShareRows() {
       final units = occupiedUnits();
       if (units.isEmpty) return <Map<String, dynamic>>[];
@@ -3967,6 +3979,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
       return rows;
     }
 
+    // ignore: unused_element
     List<Map<String, dynamic>> previewRows() {
       final totalAmount = _numParse(amountCtl.text.trim());
       final units = occupiedUnits();
@@ -4033,7 +4046,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                           color: const Color(0xFFF8FAFC),
                           borderRadius: BorderRadius.circular(12.r),
                           border: Border.all(
-                            color: Colors.black.withOpacity(0.08),
+                            color: Colors.black.withValues(alpha: 0.08),
                           ),
                         ),
                         child: Text(
@@ -4073,7 +4086,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                                   border: Border.all(
                                     color: selected
                                         ? const Color(0xFFBBF7D0)
-                                        : Colors.black.withOpacity(0.08),
+                                        : Colors.black.withValues(alpha: 0.08),
                                   ),
                                 ),
                                 child: CheckboxListTile(
@@ -4475,7 +4488,8 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                   decoration: BoxDecoration(
                     color: const Color(0xFFF8FAFC),
                     borderRadius: BorderRadius.circular(12.r),
-                    border: Border.all(color: Colors.black.withOpacity(0.08)),
+                    border:
+                        Border.all(color: Colors.black.withValues(alpha: 0.08)),
                   ),
                   child: Text(
                     managementMode == 'shared_percent'
@@ -4606,7 +4620,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                             color: const Color(0xFFF8FAFC),
                             borderRadius: BorderRadius.circular(12.r),
                             border: Border.all(
-                                color: Colors.black.withOpacity(0.08)),
+                                color: Colors.black.withValues(alpha: 0.08)),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -4671,6 +4685,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                           cycleDate: nowDue,
                         );
                         if (!canExecuteNow) return;
+                        // ignore: use_build_context_synchronously
                         final paidUnitIds = await pickPaidUnits(ctx);
                         if (paidUnitIds == null) return;
                         final allUnitIds = unitAmounts
@@ -4748,6 +4763,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
     );
   }
 
+  // ignore: unused_element
   Future<void> _openBuildingSharedUnitsServiceSettings(
     String type, {
     bool replaceCurrent = false,
@@ -5172,7 +5188,8 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(12.r),
-                  border: Border.all(color: Colors.black.withOpacity(0.08)),
+                  border:
+                      Border.all(color: Colors.black.withValues(alpha: 0.08)),
                 ),
                 child: Text(
                   managementMode == 'shared_percent'
@@ -6054,7 +6071,8 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                     decoration: BoxDecoration(
                       color: const Color(0xFFF8FAFC),
                       borderRadius: BorderRadius.circular(12.r),
-                      border: Border.all(color: Colors.black.withOpacity(0.08)),
+                      border: Border.all(
+                          color: Colors.black.withValues(alpha: 0.08)),
                     ),
                     child: Text(
                       'هذه الوحدة تتبع إعداد العمارة: الإدارة من الوحدات (منفصل). يمكنك هنا حفظ رقم عداد المياه فقط.',
@@ -6069,7 +6087,8 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                     decoration: BoxDecoration(
                       color: const Color(0xFFF8FAFC),
                       borderRadius: BorderRadius.circular(12.r),
-                      border: Border.all(color: Colors.black.withOpacity(0.08)),
+                      border: Border.all(
+                          color: Colors.black.withValues(alpha: 0.08)),
                     ),
                     child: Text(
                       'هذه الوحدة تتبع إعداد العمارة: الإدارة من الوحدات (مبلغ مقطوع). يجب حفظ مبلغ المياه المقطوع لهذه الوحدة قبل إنشاء العقد.',
@@ -6084,7 +6103,8 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                     decoration: BoxDecoration(
                       color: const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(12.r),
-                      border: Border.all(color: Colors.black.withOpacity(0.08)),
+                      border: Border.all(
+                          color: Colors.black.withValues(alpha: 0.08)),
                     ),
                     child: Text(
                       'هذا الخيار يعني أن سداد المياه على المستأجر بشكل كامل، ولا يتم إنشاء أقساط مياه ضمن العقد.',
@@ -6115,16 +6135,16 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                             ),
                           ]
                         : allowLocalPercent
-                        ? const [
-                            DropdownMenuItem(
-                                value: 'fixed', child: Text('مبلغ مقطوع')),
-                            DropdownMenuItem(
-                                value: 'percent', child: Text('بالنسبة')),
-                          ]
-                        : const [
-                            DropdownMenuItem(
-                                value: 'fixed', child: Text('مبلغ مقطوع')),
-                          ],
+                            ? const [
+                                DropdownMenuItem(
+                                    value: 'fixed', child: Text('مبلغ مقطوع')),
+                                DropdownMenuItem(
+                                    value: 'percent', child: Text('بالنسبة')),
+                              ]
+                            : const [
+                                DropdownMenuItem(
+                                    value: 'fixed', child: Text('مبلغ مقطوع')),
+                              ],
                     onTap: () {
                       if (waterLocked) {
                         _showErr(
@@ -6143,8 +6163,8 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                       decoration: BoxDecoration(
                         color: const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(12.r),
-                        border:
-                            Border.all(color: Colors.black.withOpacity(0.08)),
+                        border: Border.all(
+                            color: Colors.black.withValues(alpha: 0.08)),
                       ),
                       child: Text(
                         forceFixedFromBuilding
@@ -6379,7 +6399,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                                 border: Border.all(
                                   color: waterLogTab == 'current'
                                       ? const Color(0xFF0F766E)
-                                      : Colors.black.withOpacity(0.08),
+                                      : Colors.black.withValues(alpha: 0.08),
                                 ),
                               ),
                               child: Text(
@@ -6409,7 +6429,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                                 border: Border.all(
                                   color: waterLogTab == 'archive'
                                       ? const Color(0xFF0F766E)
-                                      : Colors.black.withOpacity(0.08),
+                                      : Colors.black.withValues(alpha: 0.08),
                                 ),
                               ),
                               child: Text(
@@ -6455,6 +6475,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
         .toList();
   }
 
+  // ignore: unused_element
   List<Map<String, dynamic>> _internetRequestsFromCfg(
       Map<String, dynamic> cfg) {
     final raw = cfg['internetRequests'];
@@ -6641,7 +6662,8 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                     decoration: BoxDecoration(
                       color: const Color(0xFFF8FAFC),
                       borderRadius: BorderRadius.circular(12.r),
-                      border: Border.all(color: Colors.black.withOpacity(0.08)),
+                      border: Border.all(
+                          color: Colors.black.withValues(alpha: 0.08)),
                     ),
                     child: Text(
                       'في وحدات العمارة تُدار الكهرباء محليًا كوضع منفصل فقط، أما التوزيع بالنسبة فيُضبط من شاشة الخدمات المشتركة في العمارة.',
@@ -6656,7 +6678,8 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                     decoration: BoxDecoration(
                       color: const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(12.r),
-                      border: Border.all(color: Colors.black.withOpacity(0.08)),
+                      border: Border.all(
+                          color: Colors.black.withValues(alpha: 0.08)),
                     ),
                     child: Text(
                       'هذا الخيار يعني أن سداد الكهرباء على المستأجر بالكامل، ولا يتم إنشاء توزيع مشترك.',
@@ -6828,6 +6851,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
     );
   }
 
+  // ignore: unused_element
   Future<void> _openUtilitySimple(String type) async {
     final cfg = _cfg(type);
     final amountCtl =
@@ -6965,6 +6989,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
       cfg: cfg,
     ).storedDueDate;
     final originalStartDate = _periodicServiceStartDateFromConfig(cfg);
+    // ignore: unused_local_variable
     final hasConfiguredOwnerSchedule =
         _internetBillingModeFromCfg(cfg) == 'owner' && _isConfigured(type, cfg);
     final initialHasNextDate =
@@ -7019,7 +7044,8 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                   decoration: BoxDecoration(
                     color: const Color(0xFFF1F5F9),
                     borderRadius: BorderRadius.circular(12.r),
-                    border: Border.all(color: Colors.black.withOpacity(0.08)),
+                    border:
+                        Border.all(color: Colors.black.withValues(alpha: 0.08)),
                   ),
                   child: Text(
                     'هذا الخيار يعني أن سداد الإنترنت على المستأجر بالكامل، ولا يتم إنشاء طلبات دورية للإنترنت على العقار.',
@@ -7362,6 +7388,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
       cfg: cfg,
     ).storedDueDate;
     final originalStartDate = _periodicServiceStartDateFromConfig(cfg);
+    // ignore: unused_local_variable
     final hasConfiguredSchedule = _isConfigured('elevator', cfg);
     final initialHasNextDate =
         trackedDueDate != null || configuredDueDate != null;
@@ -7833,7 +7860,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(12.r),
-        border: Border.all(color: Colors.black.withOpacity(0.08)),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -7908,6 +7935,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
     return false;
   }
 
+  // ignore: unused_element
   List<DateTime> _unpaidContractDues(Contract c) {
     if (c.term == ContractTerm.daily) return const [];
     final end = _d0(c.endDate);
@@ -7924,6 +7952,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
     return out;
   }
 
+  // ignore: unused_element
   List<DateTime> _allContractDues(Contract c) {
     if (c.term == ContractTerm.daily) return const [];
     final end = _d0(c.endDate);
@@ -8179,10 +8208,11 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
             .trim()
             .toLowerCase();
         if (localMode != 'shared') return false;
-        final localMethod = (cfg['waterSharedMethod'] ?? cfg['splitMethod'] ?? '')
-            .toString()
-            .trim()
-            .toLowerCase();
+        final localMethod =
+            (cfg['waterSharedMethod'] ?? cfg['splitMethod'] ?? '')
+                .toString()
+                .trim()
+                .toLowerCase();
         if (localMethod != 'fixed') return false;
         final rows = _waterInstallmentsFromCfg(cfg);
         if (rows.isNotEmpty) return true;
@@ -8353,7 +8383,8 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
         fillColor: const Color(0xFFF8FAFC),
         enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12.r),
-            borderSide: BorderSide(color: Colors.black.withOpacity(0.12))),
+            borderSide:
+                BorderSide(color: Colors.black.withValues(alpha: 0.12))),
         focusedBorder: const OutlineInputBorder(
             borderSide: BorderSide(color: Color(0xFF0F766E)),
             borderRadius: BorderRadius.all(Radius.circular(12))),
@@ -8369,7 +8400,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
         fillColor: const Color(0xFFF8FAFC),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12.r),
-          borderSide: BorderSide(color: Colors.black.withOpacity(0.12)),
+          borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.12)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Color(0xFF0F766E)),
@@ -8473,7 +8504,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text(
               '\u0627\u0644\u062E\u062F\u0645\u0627\u062A \u0627\u0644\u062F\u0648\u0631\u064A\u0629',
               style: GoogleFonts.cairo(
@@ -8540,7 +8571,7 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                                     width: 1),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.10),
+                                    color: Colors.black.withValues(alpha: 0.10),
                                     blurRadius: 10,
                                     offset: const Offset(0, 4),
                                   ),
@@ -8558,7 +8589,8 @@ class _PropertyServicesScreenState extends State<PropertyServicesScreen> {
                                       borderRadius: BorderRadius.circular(14.r),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.black.withOpacity(0.08),
+                                          color: Colors.black
+                                              .withValues(alpha: 0.08),
                                           blurRadius: 10,
                                           offset: const Offset(0, 3),
                                         ),
@@ -8686,7 +8718,7 @@ class _WaterCompanyExpenseAmountDialogState
         fillColor: const Color(0xFFF8FAFC),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12.r),
-          borderSide: BorderSide(color: Colors.black.withOpacity(0.12)),
+          borderSide: BorderSide(color: Colors.black.withValues(alpha: 0.12)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Color(0xFF0F766E)),

@@ -1,5 +1,5 @@
 // lib/ui/widgets/notifications_bell.dart
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -212,7 +212,7 @@ class _NotificationsBellState extends State<NotificationsBell>
                   color: const Color(0xFFFFFBEB),
                   borderRadius: BorderRadius.circular(16.r),
                   border: Border.all(
-                      color: const Color(0xFFF59E0B).withOpacity(0.45)),
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.45)),
                 ),
                 child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -225,18 +225,18 @@ class _NotificationsBellState extends State<NotificationsBell>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(alert.title,
-                                  style: GoogleFonts.tajawal(
+                                  style: GoogleFonts.cairo(
                                       fontSize: 16.sp,
                                       fontWeight: FontWeight.w800)),
                               SizedBox(height: 6.h),
                               Text(alert.body,
-                                  style: GoogleFonts.tajawal(
+                                  style: GoogleFonts.cairo(
                                       fontSize: 14.sp,
                                       fontWeight: FontWeight.w600,
                                       color: const Color(0xFF111827))),
                               SizedBox(height: 8.h),
                               Text('تاريخ الانتهاء: ${df.format(alert.endAt)}',
-                                  style: GoogleFonts.tajawal(
+                                  style: GoogleFonts.cairo(
                                       fontSize: 13.sp,
                                       fontWeight: FontWeight.w700,
                                       color: const Color(0xFF6B7280))),
@@ -313,7 +313,7 @@ class _NotificationsBellState extends State<NotificationsBell>
             // رجوع فعلي للمكتب مع دائرة التحميل (Overlay)
             try {
               final ok = await _withSpinner(() => _returnToOfficeAuthOnly());
-              if (!mounted) return;
+              if (!context.mounted) return;
               if (ok) {
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (_) => const OfficeHomePage()),
@@ -321,14 +321,14 @@ class _NotificationsBellState extends State<NotificationsBell>
                 );
               }
             } catch (e) {
-              if (!mounted) return;
+              if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text('فشل الرجوع للمكتب: ${e.toString()}')),
               );
               try {
                 await FirebaseAuth.instance.signOut();
               } catch (_) {}
-              if (!mounted) return;
+              if (!context.mounted) return;
               Navigator.of(context)
                   .pushNamedAndRemoveUntil('/login', (r) => false);
             }
@@ -338,7 +338,7 @@ class _NotificationsBellState extends State<NotificationsBell>
               OfficeRuntime.clear();
               await Future.delayed(const Duration(milliseconds: 150));
             });
-            if (!mounted) return;
+            if (!context.mounted) return;
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const OfficeHomePage()),
             );
@@ -361,7 +361,7 @@ class _NotificationsBellState extends State<NotificationsBell>
 // لو فيه تنبيه (badge) نخلي اللون نشِط، بدون تنبيه يكون خامل (باهت)
     final bool hasAlert = _badge > 0;
     final Color bellColor =
-        hasAlert ? widget.iconColor : widget.iconColor.withOpacity(0.35);
+        hasAlert ? widget.iconColor : widget.iconColor.withValues(alpha: 0.35);
 
     return Stack(
       children: [
@@ -418,13 +418,13 @@ class _OfficeStyleSpinnerOverlay extends StatelessWidget {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.20),
+                  color: Colors.black.withValues(alpha: 0.20),
                   blurRadius: 18,
                   offset: const Offset(0, 6),
                 ),
               ],
               border: Border.all(
-                color: Colors.white.withOpacity(0.35),
+                color: Colors.white.withValues(alpha: 0.35),
                 width: 2,
               ),
             ),

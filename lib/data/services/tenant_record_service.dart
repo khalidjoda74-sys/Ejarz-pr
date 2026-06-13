@@ -72,6 +72,8 @@ class TenantDraft {
   final String? companyTaxNumber;
   final String? companyRepresentativeName;
   final String? companyRepresentativePhone;
+  final String? companyRepresentativeNationalId;
+  final DateTime? companyRepresentativeDateOfBirth;
   final String? companyBankAccountNumber;
   final String? companyBankName;
   final String? serviceSpecialization;
@@ -97,6 +99,8 @@ class TenantDraft {
     required this.companyTaxNumber,
     required this.companyRepresentativeName,
     required this.companyRepresentativePhone,
+    required this.companyRepresentativeNationalId,
+    required this.companyRepresentativeDateOfBirth,
     required this.companyBankAccountNumber,
     required this.companyBankName,
     required this.serviceSpecialization,
@@ -123,6 +127,8 @@ class TenantDraft {
     tenant.companyTaxNumber = companyTaxNumber;
     tenant.companyRepresentativeName = companyRepresentativeName;
     tenant.companyRepresentativePhone = companyRepresentativePhone;
+    tenant.companyRepresentativeNationalId = companyRepresentativeNationalId;
+    tenant.companyRepresentativeDateOfBirth = companyRepresentativeDateOfBirth;
     tenant.companyBankAccountNumber = companyBankAccountNumber;
     tenant.companyBankName = companyBankName;
     tenant.serviceSpecialization = serviceSpecialization;
@@ -155,6 +161,8 @@ class TenantDraft {
       companyTaxNumber: companyTaxNumber,
       companyRepresentativeName: companyRepresentativeName,
       companyRepresentativePhone: companyRepresentativePhone,
+      companyRepresentativeNationalId: companyRepresentativeNationalId,
+      companyRepresentativeDateOfBirth: companyRepresentativeDateOfBirth,
       companyBankAccountNumber: companyBankAccountNumber,
       companyBankName: companyBankName,
       serviceSpecialization: serviceSpecialization,
@@ -176,6 +184,7 @@ class TenantRecordService {
   static final RegExp _lettersOnly = RegExp(r"^[a-zA-Z\u0600-\u06FF ]+$");
   static final RegExp _digitsUpToTen = RegExp(r'^\d{1,10}$');
   static final RegExp _digitsOnly = RegExp(r'^\d+$');
+  static final RegExp _digitsExactlyFifteen = RegExp(r'^\d{15}$');
   static final RegExp _emailPattern =
       RegExp(r'^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$');
 
@@ -235,8 +244,8 @@ class TenantRecordService {
           ),
           TenantValidationIssue(
             field: 'companyCommercialRegister',
-            label: 'رقم السجل التجاري',
-            message: 'رقم السجل التجاري مطلوب',
+            label: 'رقم السجل الموحد',
+            message: 'رقم السجل الموحد مطلوب',
           ),
           TenantValidationIssue(
             field: 'companyTaxNumber',
@@ -252,6 +261,16 @@ class TenantRecordService {
             field: 'companyRepresentativePhone',
             label: 'رقم جوال ممثل الشركة',
             message: 'رقم جوال ممثل الشركة مطلوب',
+          ),
+          TenantValidationIssue(
+            field: 'companyRepresentativeNationalId',
+            label: 'رقم هوية ممثل الشركة',
+            message: 'رقم هوية ممثل الشركة مطلوب',
+          ),
+          TenantValidationIssue(
+            field: 'companyRepresentativeDateOfBirth',
+            label: 'تاريخ ميلاد ممثل الشركة',
+            message: 'تاريخ ميلاد ممثل الشركة مطلوب',
           ),
           TenantValidationIssue(
             field: 'attachmentPaths',
@@ -313,12 +332,12 @@ class TenantRecordService {
   static String addedClientSuccessMessage(String type) {
     switch (normalizeClientType(type)) {
       case clientTypeCompany:
-        return 'تم إضافة مستأجر (شركة) بنجاح';
+        return 'تم إضافة عميل (شركة) بنجاح';
       case clientTypeServiceProvider:
         return 'تم إضافة مزود خدمة بنجاح';
       case clientTypeTenant:
       default:
-        return 'تم إضافة مستأجر بنجاح';
+        return 'تم إضافة عميل بنجاح';
     }
   }
 
@@ -359,6 +378,8 @@ class TenantRecordService {
     String? companyTaxNumber,
     String? companyRepresentativeName,
     String? companyRepresentativePhone,
+    String? companyRepresentativeNationalId,
+    DateTime? companyRepresentativeDateOfBirth,
     String? serviceSpecialization,
     Object? attachmentPaths,
     Iterable<Tenant> existingTenants = const <Tenant>[],
@@ -378,26 +399,22 @@ class TenantRecordService {
         : _optional(phone);
     final emailValue =
         normalizedType == clientTypeCompany ? null : _optional(email);
-    final nationalityValue = normalizedType == clientTypeTenant
-        ? _optional(nationality)
-        : null;
+    final nationalityValue =
+        normalizedType == clientTypeTenant ? _optional(nationality) : null;
     final dateOfBirthValue = normalizedType == clientTypeTenant
         ? (dateOfBirth == null ? null : KsaTime.dateOnly(dateOfBirth))
         : null;
     final idExpiryValue = normalizedType == clientTypeTenant
         ? (idExpiry == null ? null : KsaTime.dateOnly(idExpiry))
         : null;
-    final emergencyNameValue = normalizedType == clientTypeTenant
-        ? _optional(emergencyName)
-        : null;
-    final emergencyPhoneValue = normalizedType == clientTypeTenant
-        ? _optional(emergencyPhone)
-        : null;
+    final emergencyNameValue =
+        normalizedType == clientTypeTenant ? _optional(emergencyName) : null;
+    final emergencyPhoneValue =
+        normalizedType == clientTypeTenant ? _optional(emergencyPhone) : null;
     final notesValue =
         normalizedType == clientTypeCompany ? null : _optional(notes);
-    final companyNameValue = normalizedType == clientTypeCompany
-        ? _optional(companyName)
-        : null;
+    final companyNameValue =
+        normalizedType == clientTypeCompany ? _optional(companyName) : null;
     final companyRegisterValue = normalizedType == clientTypeCompany
         ? _optional(companyCommercialRegister)
         : null;
@@ -409,6 +426,14 @@ class TenantRecordService {
         : null;
     final companyRepPhoneValue = normalizedType == clientTypeCompany
         ? _optional(companyRepresentativePhone)
+        : null;
+    final companyRepNationalIdValue = normalizedType == clientTypeCompany
+        ? _optional(companyRepresentativeNationalId)
+        : null;
+    final companyRepDateOfBirthValue = normalizedType == clientTypeCompany
+        ? (companyRepresentativeDateOfBirth == null
+            ? null
+            : KsaTime.dateOnly(companyRepresentativeDateOfBirth))
         : null;
     final serviceSpecializationValue =
         normalizedType == clientTypeServiceProvider
@@ -448,8 +473,8 @@ class TenantRecordService {
     if (normalizedType == clientTypeCompany && companyRegisterValue == null) {
       missingFields.add(_missing(
         'companyCommercialRegister',
-        'رقم السجل التجاري',
-        'رقم السجل التجاري مطلوب',
+        'رقم السجل الموحد',
+        'رقم السجل الموحد مطلوب',
       ));
     }
     if (normalizedType == clientTypeCompany && companyTaxValue == null) {
@@ -471,6 +496,22 @@ class TenantRecordService {
         'companyRepresentativePhone',
         'رقم جوال ممثل الشركة',
         'رقم جوال ممثل الشركة مطلوب',
+      ));
+    }
+    if (normalizedType == clientTypeCompany &&
+        companyRepNationalIdValue == null) {
+      missingFields.add(_missing(
+        'companyRepresentativeNationalId',
+        'رقم هوية ممثل الشركة',
+        'رقم هوية ممثل الشركة مطلوب',
+      ));
+    }
+    if (normalizedType == clientTypeCompany &&
+        companyRepDateOfBirthValue == null) {
+      missingFields.add(_missing(
+        'companyRepresentativeDateOfBirth',
+        'تاريخ ميلاد ممثل الشركة',
+        'تاريخ ميلاد ممثل الشركة مطلوب',
       ));
     }
     if (normalizedType == clientTypeServiceProvider &&
@@ -519,14 +560,16 @@ class TenantRecordService {
         'رقم الهوية يجب أن يكون أرقامًا فقط وبحد أقصى 10 أرقام',
       );
     }
-    if (companyRegisterValue != null && !_digitsOnly.hasMatch(companyRegisterValue)) {
+    if (companyRegisterValue != null &&
+        !_digitsOnly.hasMatch(companyRegisterValue)) {
       return const TenantUpsertResult.error(
-        'رقم السجل التجاري يجب أن يحتوي على أرقام فقط',
+        'رقم السجل الموحد يجب أن يحتوي على أرقام فقط',
       );
     }
-    if (companyTaxValue != null && !_digitsOnly.hasMatch(companyTaxValue)) {
+    if (companyTaxValue != null &&
+        !_digitsExactlyFifteen.hasMatch(companyTaxValue)) {
       return const TenantUpsertResult.error(
-        'الرقم الضريبي يجب أن يحتوي على أرقام فقط',
+        'خطأ في الرقم الضريبي: يجب أن يكون 15 رقمًا',
       );
     }
     if (companyRepPhoneValue != null &&
@@ -535,8 +578,15 @@ class TenantRecordService {
         'رقم جوال ممثل الشركة يجب أن يكون أرقامًا فقط وبحد أقصى 10 أرقام',
       );
     }
+    if (companyRepNationalIdValue != null &&
+        !_digitsUpToTen.hasMatch(companyRepNationalIdValue)) {
+      return const TenantUpsertResult.error(
+        'رقم هوية ممثل الشركة يجب أن يكون أرقامًا فقط وبحد أقصى 10 أرقام',
+      );
+    }
     if (emailValue != null && emailValue.length > 40) {
-      return const TenantUpsertResult.error('الحد الأقصى للبريد الإلكتروني 40 حرفًا');
+      return const TenantUpsertResult.error(
+          'الحد الأقصى للبريد الإلكتروني 40 حرفًا');
     }
     if (emailValue != null && !_emailPattern.hasMatch(emailValue)) {
       return const TenantUpsertResult.error(
@@ -551,13 +601,15 @@ class TenantRecordService {
     if (nationalityValue != null && nationalityValue.length > 20) {
       return const TenantUpsertResult.error('الحد الأقصى للجنسية 20 حرفًا');
     }
-    if (emergencyNameValue != null && !_lettersOnly.hasMatch(emergencyNameValue)) {
+    if (emergencyNameValue != null &&
+        !_lettersOnly.hasMatch(emergencyNameValue)) {
       return const TenantUpsertResult.error(
         'اسم الطوارئ يجب أن يكون حروفًا ومسافات فقط',
       );
     }
     if (emergencyNameValue != null && emergencyNameValue.length > 50) {
-      return const TenantUpsertResult.error('الحد الأقصى لاسم الطوارئ 50 حرفًا');
+      return const TenantUpsertResult.error(
+          'الحد الأقصى لاسم الطوارئ 50 حرفًا');
     }
     if (emergencyPhoneValue != null &&
         !_digitsUpToTen.hasMatch(emergencyPhoneValue)) {
@@ -601,6 +653,8 @@ class TenantRecordService {
         companyTaxNumber: companyTaxValue,
         companyRepresentativeName: companyRepNameValue,
         companyRepresentativePhone: companyRepPhoneValue,
+        companyRepresentativeNationalId: companyRepNationalIdValue,
+        companyRepresentativeDateOfBirth: companyRepDateOfBirthValue,
         companyBankAccountNumber: null,
         companyBankName: null,
         serviceSpecialization: serviceSpecializationValue,

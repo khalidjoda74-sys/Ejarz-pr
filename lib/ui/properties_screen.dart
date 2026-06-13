@@ -1,5 +1,5 @@
 // lib/ui/properties_screen.dart
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hijri/hijri_calendar.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -21,7 +22,7 @@ import '../data/services/user_scope.dart';
 import '../data/constants/boxes.dart'; // أو المسار الصحيح حسب مكان الملف
 import '../data/services/offline_sync_service.dart';
 import 'dart:async' show unawaited;
-import '../widgets/darvoo_app_bar.dart';
+import '../widgets/ejarz_pro_app_bar.dart';
 import '../widgets/custom_confirm_dialog.dart';
 
 // 👇 هذا السطر الجديد لاستيراد نوع العقد نفسه
@@ -146,6 +147,78 @@ class _PropertyDocSnapshot {
 final Map<String, _PropertyDocSnapshot> _propertyDocCache =
     <String, _PropertyDocSnapshot>{};
 
+const String _documentTypeElectronicDeed = 'صك إلكتروني';
+const String _documentTypePaperDeed = 'صك ورقي';
+const String _documentTypeRealEstateRegistry = 'وثيقة تسجيل عيني';
+
+const String _usageResidentialOnly = 'سكني فقط';
+const String _usageCommercialOnly = 'تجاري فقط';
+const String _usageResidentialCommercial = 'سكني وتجاري';
+
+String? _normalizeDocumentType(String? raw) {
+  final value = (raw ?? '').trim();
+  if (value.isEmpty) return null;
+  final compact =
+      value.replaceAll('إ', 'ا').replaceAll('أ', 'ا').replaceAll('آ', 'ا');
+  if (compact.contains('صك') && compact.contains('الكتروني')) {
+    return _documentTypeElectronicDeed;
+  }
+  if (compact.contains('صك') && compact.contains('ورقي')) {
+    return _documentTypePaperDeed;
+  }
+  if (compact.contains('تسجيل') && compact.contains('عيني')) {
+    return _documentTypeRealEstateRegistry;
+  }
+  return null;
+}
+
+bool _isElectronicDeedDocument(String? raw) =>
+    _normalizeDocumentType(raw) == _documentTypeElectronicDeed;
+
+bool _isRealEstateRegistryDocument(String? raw) =>
+    _normalizeDocumentType(raw) == _documentTypeRealEstateRegistry;
+
+bool _isLocalWebQaSession() {
+  if (!kIsWeb) return false;
+  final host = Uri.base.host.toLowerCase();
+  return host == 'localhost' || host == '127.0.0.1';
+}
+
+int? _documentNumberRequiredLength(String? raw) {
+  if (_isElectronicDeedDocument(raw)) return 12;
+  if (_isRealEstateRegistryDocument(raw)) return 16;
+  return null;
+}
+
+bool _requiresPropertyUsage(PropertyType? type) {
+  return type == PropertyType.building ||
+      type == PropertyType.apartment ||
+      type == PropertyType.villa;
+}
+
+String? _normalizePropertyUsageType(String? raw) {
+  final value = (raw ?? '').trim();
+  if (value.isEmpty) return null;
+  if (value == 'سكني' || value == _usageResidentialOnly) {
+    return _usageResidentialOnly;
+  }
+  if (value == 'تجاري' || value == _usageCommercialOnly) {
+    return _usageCommercialOnly;
+  }
+  if (value.contains('سكني') && value.contains('تجاري')) {
+    return _usageResidentialCommercial;
+  }
+  return null;
+}
+
+String _formatPropertyDocumentDate(String? documentType, DateTime date) {
+  final d = KsaTime.dateOnly(date);
+  if (_isElectronicDeedDocument(documentType)) {
+    return KsaTime.formatDateOnlyWithSystem(d, 'hijri');
+  }
+  return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+}
+
 const String kArchivedPropsBoxBase = 'archivedPropsBox';
 String archivedBoxName() => boxName(kArchivedPropsBoxBase);
 
@@ -185,6 +258,7 @@ Future<void> _setArchivedProp(String propertyId, bool archived) async {
 }
 
 /// ضبط حالة الأرشفة لمجموعة معًا
+// ignore: unused_element
 Future<void> _setArchivedMany(Iterable<String> ids, bool archived) async {
   final b = Hive.box<Property>(boxName(kPropertiesBox));
   for (final e in b.values) {
@@ -350,6 +424,64 @@ bool _hasActiveContract(Property p) {
     }
   }
   return false;
+}
+
+bool _sameNullablePrice(double? a, double? b) {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return (a - b).abs() < 0.000001;
+}
+
+Future<void> _syncBuildingDefaultsToUnits({
+  required Property building,
+  required String oldAddress,
+  required double? oldPrice,
+  required String oldCurrency,
+  required DateTime updatedAt,
+}) async {
+  if (!_isBuilding(building)) return;
+
+  final propertiesBox = Hive.box<Property>(boxName(kPropertiesBox));
+  final units = propertiesBox.values
+      .where((property) => property.parentBuildingId == building.id)
+      .toList(growable: false);
+  if (units.isEmpty) return;
+
+  final addressChanged = oldAddress.trim() != building.address.trim();
+  final priceChanged = !_sameNullablePrice(oldPrice, building.price) ||
+      oldCurrency.trim() != building.currency.trim();
+  if (!addressChanged && !priceChanged) return;
+
+  final contractsBoxName = HiveService.contractsBoxName();
+  if (!Hive.isBoxOpen(contractsBoxName)) {
+    try {
+      await Hive.openBox<Contract>(contractsBoxName);
+    } catch (_) {}
+  }
+
+  for (final unit in units) {
+    var changed = false;
+    if (addressChanged && unit.address != building.address) {
+      unit.address = building.address;
+      changed = true;
+    }
+
+    if (priceChanged && !_hasActiveContract(unit)) {
+      if (!_sameNullablePrice(unit.price, building.price)) {
+        unit.price = building.price;
+        changed = true;
+      }
+      if (unit.currency != building.currency) {
+        unit.currency = building.currency;
+        changed = true;
+      }
+    }
+
+    if (!changed) continue;
+    unit.updatedAt = updatedAt;
+    await propertiesBox.put(unit.id, unit);
+    unawaited(OfflineSyncService.instance.enqueueUpsertProperty(unit));
+  }
 }
 
 /// استخراج مواصفات [[SPEC]] من الوصف (بدون تعديل الموديل)
@@ -546,8 +678,7 @@ _PropertyHardDeletePlan _buildPropertyHardDeletePlan(Property property) {
   final propertiesBox = Hive.box<Property>(boxName(kPropertiesBox));
   final contractsBox = Hive.box<Contract>(boxName(kContractsBox));
   final invoicesBox = Hive.box<Invoice>(boxName(kInvoicesBox));
-  final maintenanceBox =
-      Hive.box<MaintenanceRequest>(boxName(kMaintenanceBox));
+  final maintenanceBox = Hive.box<MaintenanceRequest>(boxName(kMaintenanceBox));
 
   Property root = property;
   for (final candidate in propertiesBox.values) {
@@ -786,7 +917,7 @@ Future<bool> _showPropertyHardDeleteDialog(
               border: Border.all(color: const Color(0x26FFFFFF)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.25),
+                  color: Colors.black.withValues(alpha: 0.25),
                   blurRadius: 18,
                   offset: const Offset(0, 10),
                 ),
@@ -829,6 +960,7 @@ Future<bool> _showPropertyHardDeleteDialog(
     );
   }
 
+  // ignore: dead_code
   return await showDialog<bool>(
         context: context,
         barrierDismissible: false,
@@ -853,7 +985,7 @@ Future<bool> _showPropertyHardDeleteDialog(
                       border: Border.all(color: const Color(0x26FFFFFF)),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.25),
+                          color: Colors.black.withValues(alpha: 0.25),
                           blurRadius: 18,
                           offset: const Offset(0, 10),
                         ),
@@ -1054,6 +1186,7 @@ Future<bool> _showPropertyHardDeleteDialog(
       ) ??
       false;
 
+  // ignore: dead_code
   return await showDialog<bool>(
         context: context,
         barrierDismissible: false,
@@ -1176,11 +1309,10 @@ Future<bool> _showPropertyHardDeleteDialog(
                                       children: [
                                         Checkbox(
                                           value: agreed,
-                                          activeColor:
-                                              const Color(0xFFDC2626),
+                                          activeColor: const Color(0xFFDC2626),
                                           onChanged: (value) {
-                                            setState(() =>
-                                                agreed = value ?? false);
+                                            setState(
+                                                () => agreed = value ?? false);
                                           },
                                         ),
                                         const SizedBox(width: 8),
@@ -1214,8 +1346,7 @@ Future<bool> _showPropertyHardDeleteDialog(
                                             Navigator.pop(dialogContext, true)
                                         : null,
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor:
-                                          const Color(0xFFDC2626),
+                                      backgroundColor: const Color(0xFFDC2626),
                                       foregroundColor: Colors.white,
                                       disabledBackgroundColor:
                                           const Color(0xFFFCA5A5),
@@ -1224,8 +1355,7 @@ Future<bool> _showPropertyHardDeleteDialog(
                                           vertical: 14),
                                       elevation: 0,
                                       shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(12),
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
                                     ),
                                     child: Text(
@@ -1244,13 +1374,11 @@ Future<bool> _showPropertyHardDeleteDialog(
                                     onPressed: () =>
                                         Navigator.pop(dialogContext, false),
                                     style: TextButton.styleFrom(
-                                      backgroundColor:
-                                          const Color(0xFFF1F5F9),
+                                      backgroundColor: const Color(0xFFF1F5F9),
                                       padding: const EdgeInsets.symmetric(
                                           vertical: 14),
                                       shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(12),
+                                        borderRadius: BorderRadius.circular(12),
                                         side: const BorderSide(
                                           color: Color(0xFFE2E8F0),
                                         ),
@@ -1289,8 +1417,7 @@ Future<void> _deletePropertyWithRelations(
   final propertiesBox = Hive.box<Property>(boxName(kPropertiesBox));
   final contractsBox = Hive.box<Contract>(boxName(kContractsBox));
   final invoicesBox = Hive.box<Invoice>(boxName(kInvoicesBox));
-  final maintenanceBox =
-      Hive.box<MaintenanceRequest>(boxName(kMaintenanceBox));
+  final maintenanceBox = Hive.box<MaintenanceRequest>(boxName(kMaintenanceBox));
 
   final invoiceIds = plan.allInvoices.map((e) => e.id).toSet();
   for (final invoiceId in invoiceIds) {
@@ -1318,8 +1445,7 @@ Future<void> _deletePropertyWithRelations(
   }
 
   final propertyIds = plan.propertyIds;
-  final orderedProperties = [...plan.properties]
-    ..sort((a, b) {
+  final orderedProperties = [...plan.properties]..sort((a, b) {
       if (a.id == plan.rootPropertyId) return 1;
       if (b.id == plan.rootPropertyId) return -1;
       return 0;
@@ -1640,10 +1766,10 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12.r),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Colors.white),
@@ -1729,7 +1855,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text('العقارات',
               style: GoogleFonts.cairo(
                   color: Colors.white,
@@ -1782,16 +1908,16 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       prefixIcon:
                           const Icon(Icons.search, color: Colors.white70),
                       filled: true,
-                      fillColor: Colors.white.withOpacity(0.08),
+                      fillColor: Colors.white.withValues(alpha: 0.08),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12.r),
-                        borderSide:
-                            BorderSide(color: Colors.white.withOpacity(0.15)),
+                        borderSide: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.15)),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12.r),
-                        borderSide:
-                            BorderSide(color: Colors.white.withOpacity(0.15)),
+                        borderSide: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.15)),
                       ),
                       focusedBorder: const OutlineInputBorder(
                         borderSide: BorderSide(color: Colors.white),
@@ -1813,8 +1939,8 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                         decoration: BoxDecoration(
                           color: const Color(0xFF334155),
                           borderRadius: BorderRadius.circular(10.r),
-                          border:
-                              Border.all(color: Colors.white.withOpacity(0.15)),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.15)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -1960,6 +2086,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                                       .blockIfOfficeClient(context)) {
                                     return;
                                   }
+                                  if (!context.mounted) return;
 
                                   if (_hasActiveContract(p)) {
                                     await CustomConfirmDialog.show(
@@ -1970,9 +2097,11 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                                       confirmLabel: 'حسنًا',
                                       showCancel: false,
                                     );
+                                    if (!context.mounted) return;
                                     return;
                                   }
 
+                                  if (!context.mounted) return;
                                   await _toggleArchiveForProperty(context, p);
                                   if (mounted) setState(() {});
                                 },
@@ -2190,47 +2319,48 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
               style: GoogleFonts.cairo(fontWeight: FontWeight.w700)),
           onPressed: () async {
             try {
-            // 🚫 منع عميل المكتب من إضافة عقار
-            if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
+              // 🚫 منع عميل المكتب من إضافة عقار
+              if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
 
-            final limitDecision = await PackageLimitService.canAddProperty();
-            if (!limitDecision.allowed) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      limitDecision.message ??
-                          'لا يمكن إضافة عقار جديد، لقد وصلت إلى الحد الأقصى المسموح.',
-                      style: GoogleFonts.cairo(),
+              final limitDecision = await PackageLimitService.canAddProperty();
+              if (!limitDecision.allowed) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        limitDecision.message ??
+                            'لا يمكن إضافة عقار جديد، لقد وصلت إلى الحد الأقصى المسموح.',
+                        style: GoogleFonts.cairo(),
+                      ),
+                      behavior: SnackBarBehavior.floating,
                     ),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
+                  );
+                }
+                return;
               }
-              return;
-            }
 
-            final created = await Navigator.of(context).push<Property?>(
-              MaterialPageRoute(
-                  builder: (_) => const AddOrEditPropertyScreen()),
-            );
-            if (created != null) {
-              await _box.put(created.id, created); // ← put باستخدام id
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('تمت إضافة العقار بنجاح.',
-                        style: GoogleFonts.cairo()),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => PropertyDetailsScreen(item: created),
-                  ),
-                );
+              if (!context.mounted) return;
+              final created = await Navigator.of(context).push<Property?>(
+                MaterialPageRoute(
+                    builder: (_) => const AddOrEditPropertyScreen()),
+              );
+              if (created != null) {
+                await _box.put(created.id, created); // ← put باستخدام id
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('تمت إضافة العقار بنجاح.',
+                          style: GoogleFonts.cairo()),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => PropertyDetailsScreen(item: created),
+                    ),
+                  );
+                }
               }
-            }
             } catch (_) {
               if (!context.mounted) return;
               ScaffoldMessenger.maybeOf(context)
@@ -2256,6 +2386,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     );
   }
 
+  // ignore: unused_element
   Future<void> _openRowMenu(BuildContext context, Property p) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -2280,6 +2411,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     if (await OfficeClientGuard.blockIfOfficeClient(context)) {
                       return;
                     }
+                    if (!context.mounted) return;
 
                     Navigator.pop(context);
 
@@ -2287,7 +2419,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                       MaterialPageRoute(
                           builder: (_) => AddOrEditPropertyScreen(existing: p)),
                     );
-                    if (updated != null && mounted) {
+                    if (updated != null && context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text('تم تحديث بيانات العقار بنجاح.',
@@ -2313,6 +2445,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     if (await OfficeClientGuard.blockIfOfficeClient(context)) {
                       return;
                     }
+                    if (!context.mounted) return;
 
                     Navigator.pop(context);
                     await _toggleArchiveForProperty(context, p);
@@ -2332,6 +2465,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
                     if (await OfficeClientGuard.blockIfOfficeClient(context)) {
                       return;
                     }
+                    if (!context.mounted) return;
 
                     Navigator.pop(context);
                     await _confirmDelete(context, p);
@@ -2367,12 +2501,15 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     }
     return;
 
+    // ignore: dead_code
+    // ignore: dead_code
     if (_isBuilding(p)) {
       final hasUnits = Hive.box<Property>(boxName(kPropertiesBox))
           .values
           .any((e) => e.parentBuildingId == p.id);
       if (hasUnits) {
         await CustomConfirmDialog.show(
+          // ignore: use_build_context_synchronously
           context: context,
           title: 'لا يمكن الحذف',
           message: 'لا يمكن حذف العمارة قبل حذف جميع الوحدات التابعة لها.',
@@ -2391,6 +2528,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
 
       if (hasAnyContract) {
         await CustomConfirmDialog.show(
+          // ignore: use_build_context_synchronously
           context: context,
           title: 'لا يمكن الحذف',
           message:
@@ -2405,9 +2543,13 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     }
 
     final confirmed =
+        // ignore: use_build_context_synchronously
         await _confirm(context, 'تأكيد الحذف', 'هل تريد حذف "${p.name}"؟');
     if (!confirmed) return;
 
+    // ignore: unused_local_variable
+    // ignore: unused_local_variable
+    // ignore: unused_local_variable
     final parentId = p.parentBuildingId;
     await deletePropertyById(p.id);
 
@@ -2426,6 +2568,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
     }
   }
 
+  // ignore: unused_element
   Widget _alert(BuildContext ctx,
       {required String title, required String message}) {
     return CustomConfirmDialog(
@@ -2441,7 +2584,7 @@ class _PropertiesScreenState extends State<PropertiesScreen> {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(10.r),
-        border: Border.all(color: Colors.white.withOpacity(0.15)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
       ),
       child: Text(text,
           style: GoogleFonts.cairo(
@@ -2467,7 +2610,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   Box<Property> get _box => Hive.box<Property>(boxName(kPropertiesBox));
   final Map<String, Future<String>> _remoteThumbUrls = {};
   static const MethodChannel _downloadsChannel =
-      MethodChannel('darvoo/downloads');
+      MethodChannel('ejarzpro/downloads');
   late Property _liveItem;
 
   final GlobalKey _bottomNavKey = GlobalKey();
@@ -2538,10 +2681,13 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     final selfArchived = _isArchivedProp(p.id) || p.isArchived;
     final parentArchived =
         parent != null && (_isArchivedProp(parent.id) || parent.isArchived);
-    final entityLabel = p.parentBuildingId != null ? 'هذه الوحدة' : 'هذا العقار';
+    final entityLabel =
+        p.parentBuildingId != null ? 'هذه الوحدة' : 'هذا العقار';
     final objectPronoun = p.parentBuildingId != null ? 'بها' : 'به';
     final usagePronoun = p.parentBuildingId != null ? 'استخدامها' : 'استخدامه';
-    final message = parentArchived && !selfArchived && p.parentBuildingId != null
+    final message = parentArchived &&
+            !selfArchived &&
+            p.parentBuildingId != null
         ? (forService
             ? 'هذه الوحدة تابعة لعمارة مؤرشفة، لذلك لا يمكن إضافة خدمة جديدة أو ربط طلب خدمة بها قبل فك أرشفة العمارة أولًا.\n'
                 'إذا كنت تريد استخدامها مرة أخرى في الخدمات، فقم بفك أرشفة العمارة ثم أعد المحاولة.'
@@ -2663,6 +2809,16 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ListTile(
+                leading:
+                    const Icon(Icons.open_in_new_rounded, color: Colors.white),
+                title: Text('فتح مباشرة',
+                    style: GoogleFonts.cairo(color: Colors.white)),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  await _openDocumentAttachment(path);
+                },
+              ),
               ListTile(
                 leading:
                     const Icon(Icons.download_rounded, color: Colors.white),
@@ -2888,6 +3044,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     Future.delayed(const Duration(seconds: 2), () => entry.remove());
   }
 
+  // ignore: unused_element
   Future<void> _openDocumentAttachment(String path) async {
     try {
       final raw = path.trim();
@@ -2947,13 +3104,18 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
         ),
         SizedBox(height: 6.h),
         if ((item.documentType ?? '').trim().isNotEmpty)
-          _docRow('نوع الوثيقة', item.documentType!),
+          _docRow(
+            'نوع الوثيقة',
+            _normalizeDocumentType(item.documentType) ?? item.documentType!,
+          ),
         if ((item.documentNumber ?? '').trim().isNotEmpty)
           _docRow('رقم الوثيقة', item.documentNumber!),
         if (item.documentDate != null)
           _docRow(
-            'تاريخ الوثيقة',
-            '${item.documentDate!.year}-${item.documentDate!.month.toString().padLeft(2, '0')}-${item.documentDate!.day.toString().padLeft(2, '0')}',
+            _isElectronicDeedDocument(item.documentType)
+                ? 'تاريخ الصك الإلكتروني (هجري)'
+                : 'تاريخ الوثيقة',
+            _formatPropertyDocumentDate(item.documentType, item.documentDate!),
           ),
       ],
     );
@@ -3007,7 +3169,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                   child: Container(
                     width: 88.w,
                     height: 88.w,
-                    color: Colors.white.withOpacity(0.08),
+                    color: Colors.white.withValues(alpha: 0.08),
                     child: _buildAttachmentThumb(path),
                   ),
                 ),
@@ -3111,6 +3273,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
 
       if (byProp.isEmpty) {
         // احتياط: لو ما لقينا عقد (مع إن _hasActiveContract رجّع true) نرجع للسلوك القديم
+        if (!mounted) return;
         await Navigator.pushNamed(
           context,
           '/contracts',
@@ -3125,6 +3288,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
           byProp.firstWhere((c) => c.isActiveNow, orElse: () => byProp.first);
 
       // فتح شاشة تفاصيل العقد مباشرة
+      if (!mounted) return;
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -3137,6 +3301,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
       if (mounted) setState(() {});
     } catch (_) {
       // في حالة أي خطأ، نفتح شاشة العقود الكاملة كحل احتياطي
+      if (!mounted) return;
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -3168,17 +3333,17 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
         arguments: {'prefillPropertyId': p.id},
       );
 
-        if (result is Contract) {
-          // خزّن العقد محليًا
-          final cname = HiveService.contractsBoxName();
-          final contractsBox = Hive.isBoxOpen(cname)
-              ? Hive.box<Contract>(cname)
-              : await Hive.openBox<Contract>(cname);
-          await contractsBox.add(result);
-          await linkWaterConfigToContractIfNeeded(result);
+      if (result is Contract) {
+        // خزّن العقد محليًا
+        final cname = HiveService.contractsBoxName();
+        final contractsBox = Hive.isBoxOpen(cname)
+            ? Hive.box<Contract>(cname)
+            : await Hive.openBox<Contract>(cname);
+        await contractsBox.add(result);
+        await linkWaterConfigToContractIfNeeded(result);
 
-          // ✅ فورًا: فك الأرشفة عن العقار نفسه وإن كان وحدة فك عن العمارة الأب أيضًا
-          await _unarchiveSelfAndParent(p);
+        // ✅ فورًا: فك الأرشفة عن العقار نفسه وإن كان وحدة فك عن العمارة الأب أيضًا
+        await _unarchiveSelfAndParent(p);
 
         // حدّث عدّاد عقود المستأجر النشطة
         final tenants = Hive.box<Tenant>(boxName(kTenantsBox));
@@ -3248,6 +3413,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
         }
       }
     } catch (_) {
+      if (!mounted) return;
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -3307,7 +3473,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
               elevation: 0,
               centerTitle: true,
               automaticallyImplyLeading: false,
-              leading: darvooLeading(context, iconColor: Colors.white),
+              leading: ejarzProLeading(context, iconColor: Colors.white),
               title: Text('تفاصيل العقار',
                   style: GoogleFonts.cairo(
                       color: Colors.white, fontWeight: FontWeight.w800)),
@@ -3322,6 +3488,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                           context)) {
                         return;
                       }
+                      if (!context.mounted) return;
 
                       await _toggleArchiveForProperty(context, item);
                       if (mounted) setState(() {});
@@ -3369,124 +3536,129 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                           constraints: BoxConstraints(minHeight: 128.h),
                           child: Stack(
                             children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Container(
-                                      width: 56.w,
-                                      height: 56.w,
-                                      decoration: BoxDecoration(
-                                        borderRadius:
-                                            BorderRadius.circular(12.r),
-                                        gradient: const LinearGradient(
-                                          colors: [
-                                            Color(0xFF0F766E),
-                                            Color(0xFF14B8A6)
-                                          ],
-                                          begin: Alignment.topRight,
-                                          end: Alignment.bottomLeft,
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        width: 56.w,
+                                        height: 56.w,
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(12.r),
+                                          gradient: const LinearGradient(
+                                            colors: [
+                                              Color(0xFF0F766E),
+                                              Color(0xFF14B8A6)
+                                            ],
+                                            begin: Alignment.topRight,
+                                            end: Alignment.bottomLeft,
+                                          ),
                                         ),
+                                        child: Icon(_iconOf(item.type),
+                                            color: Colors.white),
                                       ),
-                                      child: Icon(_iconOf(item.type),
-                                          color: Colors.white),
-                                    ),
-                                    SizedBox(width: 12.w),
-                                    Expanded(
-                                      child: Padding(
-                                        padding: EdgeInsets.only(left: 80.w),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(_limitChars(item.name, 50),
-                                                maxLines: 2,
-                                                softWrap: true,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: GoogleFonts.cairo(
-                                                    color: Colors.white,
-                                                    fontWeight: FontWeight.w800,
-                                                    fontSize: 16.sp)),
-                                            SizedBox(height: 6.h),
-                                            Row(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Icon(Icons.location_on_outlined,
-                                                    size: 16.sp,
-                                                    color: Colors.white70),
-                                                SizedBox(width: 4.w),
-                                                Expanded(
-                                                  child: Text(
-                                                    item.address,
-                                                    style: GoogleFonts.cairo(
-                                                        color: Colors.white70,
-                                                        fontSize: 13.sp,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        height: 1.5),
+                                      SizedBox(width: 12.w),
+                                      Expanded(
+                                        child: Padding(
+                                          padding: EdgeInsets.only(left: 80.w),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(_limitChars(item.name, 50),
+                                                  maxLines: 2,
+                                                  softWrap: true,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: GoogleFonts.cairo(
+                                                      color: Colors.white,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      fontSize: 16.sp)),
+                                              SizedBox(height: 6.h),
+                                              Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Icon(
+                                                      Icons
+                                                          .location_on_outlined,
+                                                      size: 16.sp,
+                                                      color: Colors.white70),
+                                                  SizedBox(width: 4.w),
+                                                  Expanded(
+                                                    child: Text(
+                                                      item.address,
+                                                      style: GoogleFonts.cairo(
+                                                          color: Colors.white70,
+                                                          fontSize: 13.sp,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          height: 1.5),
+                                                    ),
                                                   ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
+                                                ],
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            // --- التسميات في الزوايا (فقط الحالات) ---
-                            // 1) نوع العقار (فوق على اليسار)
-                            Positioned(
-                              left: 0,
-                              top: 0,
-                              child: _infoPill(item.type.label,
-                                  bg: const Color(0xFF065F46)),
-                            ),
-                            // 2) تاجير وحدات (تحت نوع العقار)
-                            if (_isBuilding(item) ||
-                                item.parentBuildingId != null)
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              // --- التسميات في الزوايا (فقط الحالات) ---
+                              // 1) نوع العقار (فوق على اليسار)
                               Positioned(
                                 left: 0,
-                                top: 32.h,
-                                child: InkWell(
-                                  onTap: item.parentBuildingId != null &&
-                                          parentBuilding != null
-                                      ? () async {
-                                          final latestParent =
-                                              b.get(parentBuilding.id) ??
-                                                  parentBuilding;
-                                          await Navigator.of(context).push(
-                                            MaterialPageRoute(
-                                              builder: (_) =>
-                                                  PropertyDetailsScreen(
-                                                item: latestParent,
+                                top: 0,
+                                child: _infoPill(item.type.label,
+                                    bg: const Color(0xFF065F46)),
+                              ),
+                              // 2) تاجير وحدات (تحت نوع العقار)
+                              if (_isBuilding(item) ||
+                                  item.parentBuildingId != null)
+                                Positioned(
+                                  left: 0,
+                                  top: 32.h,
+                                  child: InkWell(
+                                    onTap: item.parentBuildingId != null &&
+                                            parentBuilding != null
+                                        ? () async {
+                                            final latestParent =
+                                                b.get(parentBuilding.id) ??
+                                                    parentBuilding;
+                                            await Navigator.of(context).push(
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    PropertyDetailsScreen(
+                                                  item: latestParent,
+                                                ),
                                               ),
-                                            ),
-                                          );
-                                        }
-                                      : null,
-                                  borderRadius: BorderRadius.circular(10.r),
-                                  child: _infoPill(
-                                    item.parentBuildingId != null
-                                        ? 'عمارة'
-                                        : (_isPerUnit(item)
-                                            ? 'تأجير وحدات'
-                                            : 'تأجير كامل'),
-                                    bg: const Color(0xFF1E2937),
+                                            );
+                                          }
+                                        : null,
+                                    borderRadius: BorderRadius.circular(10.r),
+                                    child: _infoPill(
+                                      item.parentBuildingId != null
+                                          ? 'عمارة'
+                                          : (_isPerUnit(item)
+                                              ? 'تأجير وحدات'
+                                              : 'تأجير كامل'),
+                                      bg: const Color(0xFF1E2937),
+                                    ),
                                   ),
                                 ),
+                              // 3) متاحة او مشغولة (تحت على اليسار)
+                              Positioned(
+                                left: 0,
+                                bottom: 0,
+                                child: _infoPill(statusText, bg: statusColor),
                               ),
-                            // 3) متاحة او مشغولة (تحت على اليسار)
-                            Positioned(
-                              left: 0,
-                              bottom: 0,
-                              child: _infoPill(statusText, bg: statusColor),
-                            ),
                             ],
                           ),
                         ),
@@ -3500,6 +3672,11 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                           children: [
                             _sectionTitle('بيانات أساسية'),
                             _rowInfo('نوع العقار', item.type.label),
+                            if ((item.usageType ?? '').trim().isNotEmpty)
+                              _rowInfo(
+                                'نوع الاستخدام',
+                                _normalizePropertyUsageType(item.usageType),
+                              ),
                             _rowInfo('العنوان', item.address),
                             if (_isBuilding(item))
                               _rowInfo('إجمالي الوحدات', '${item.totalUnits}'),
@@ -3513,7 +3690,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                       SizedBox(height: 10.h),
                       _DarkCard(
                         padding: EdgeInsets.all(14.w),
-                          child: Column(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _sectionTitle('بيانات إضافية'),
@@ -3613,6 +3790,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                                         .blockIfOfficeClient(context)) {
                                       return;
                                     }
+                                    if (!context.mounted) return;
 
                                     await _confirmDeleteHere(context, item);
                                   },
@@ -3627,6 +3805,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                                         .blockIfOfficeClient(context)) {
                                       return;
                                     }
+                                    if (!context.mounted) return;
 
                                     final updated = await Navigator.of(context)
                                         .push<Property?>(
@@ -3638,7 +3817,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                                                     existing: item),
                                       ),
                                     );
-                                    if (updated != null && mounted) {
+                                    if (updated != null && context.mounted) {
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
                                         SnackBar(
@@ -3669,6 +3848,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                                         .blockIfOfficeClient(context)) {
                                       return;
                                     }
+                                    if (!context.mounted) return;
 
                                     _showDescriptionSheet(context, item);
                                   },
@@ -3676,9 +3856,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                               ],
                             ),
                           ),
-
                           SizedBox(height: 8.h),
-
                           if (!_isPerUnit(item))
                             Row(
                               children: [
@@ -3710,8 +3888,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                                       SizedBox(height: 8.h),
                                       _compactGridAction(
                                         icon: _hasActiveContract(item)
-                                            ? Icons
-                                                .assignment_turned_in_rounded
+                                            ? Icons.assignment_turned_in_rounded
                                             : Icons.note_add_rounded,
                                         label: _hasActiveContract(item)
                                             ? 'تفاصيل العقد'
@@ -3723,6 +3900,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                                               .blockIfOfficeClient(context)) {
                                             return;
                                           }
+                                          if (!context.mounted) return;
 
                                           await _goToAddOrViewContract(item);
                                         },
@@ -4007,11 +4185,11 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                   hintStyle: GoogleFonts.cairo(color: Colors.white54),
                   counterText: '',
                   filled: true,
-                  fillColor: Colors.white.withOpacity(0.06),
+                  fillColor: Colors.white.withValues(alpha: 0.06),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12.r),
                     borderSide:
-                        BorderSide(color: Colors.white.withOpacity(0.15)),
+                        BorderSide(color: Colors.white.withValues(alpha: 0.15)),
                   ),
                   focusedBorder: const OutlineInputBorder(
                     borderSide: BorderSide(color: Colors.white),
@@ -4048,7 +4226,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                         final box = Hive.box<Property>(boxName(kPropertiesBox));
                         await box.put(p.id, p);
 
-                        if (mounted) {
+                        if (ctx.mounted && context.mounted) {
                           Navigator.of(ctx).pop();
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
@@ -4208,7 +4386,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(10.r),
-          border: Border.all(color: Colors.white.withOpacity(0.15)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -4250,7 +4428,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
         padding: EdgeInsets.symmetric(vertical: 8.h, horizontal: 12.w),
         margin: EdgeInsets.only(bottom: 12.h),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
+          color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(8.r),
         ),
         child: Text(t,
@@ -4286,13 +4464,14 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _pill(String text, {Color bg = const Color(0xFF1E293B)}) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(10.r),
-        border: Border.all(color: Colors.white.withOpacity(0.15)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
       ),
       child: Text(text,
           style: GoogleFonts.cairo(
@@ -4308,7 +4487,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(10.r),
-        border: Border.all(color: Colors.white.withOpacity(0.15)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
       ),
       child: Text(text,
           style: GoogleFonts.cairo(
@@ -4319,6 +4498,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   }
 
   // حوار تنبيه محلي لهذه الشاشة
+  // ignore: unused_element
   Widget _alertHere(BuildContext ctx,
       {required String title, required String message}) {
     return CustomConfirmDialog(
@@ -4346,13 +4526,16 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     }
     return;
 
+    // ignore: dead_code
     // منع حذف العمارة التي بها وحدات
+    // ignore: dead_code
     if (_isBuilding(p)) {
       final hasUnits = Hive.box<Property>(boxName(kPropertiesBox))
           .values
           .any((e) => e.parentBuildingId == p.id);
       if (hasUnits) {
         await CustomConfirmDialog.show(
+          // ignore: use_build_context_synchronously
           context: context,
           title: 'لا يمكن الحذف',
           message: 'لا يمكن حذف العمارة قبل حذف جميع الوحدات التابعة لها.',
@@ -4371,6 +4554,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
 
       if (hasAnyContract) {
         await CustomConfirmDialog.show(
+          // ignore: use_build_context_synchronously
           context: context,
           title: 'لا يمكن الحذف',
           message:
@@ -4385,6 +4569,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     }
 
     final ok = await CustomConfirmDialog.show(
+      // ignore: use_build_context_synchronously
       context: context,
       title: 'تأكيد الحذف',
       message: 'هل تريد حذف "${p.name}"؟',
@@ -4393,6 +4578,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     );
     if (!ok) return;
 
+    // ignore: unused_local_variable
     final parentId = p.parentBuildingId;
     await deletePropertyById(p.id);
 
@@ -4429,6 +4615,23 @@ class AddOrEditPropertyScreen extends StatefulWidget {
 
 class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
   final _formKey = GlobalKey<FormState>();
+  final ScrollController _formScrollController = ScrollController();
+  final GlobalKey _nameFieldKey = GlobalKey();
+  final GlobalKey _addressFieldKey = GlobalKey();
+  final GlobalKey _typeFieldKey = GlobalKey();
+  final GlobalKey _usageFieldKey = GlobalKey();
+  final GlobalKey _documentTypeFieldKey = GlobalKey();
+  final GlobalKey _documentNumberFieldKey = GlobalKey();
+  final GlobalKey _documentDateFieldKey = GlobalKey();
+  final GlobalKey _documentAttachmentsFieldKey = GlobalKey();
+  final GlobalKey _rentalModeFieldKey = GlobalKey();
+  final GlobalKey _unitsFieldKey = GlobalKey();
+  final GlobalKey _floorsFieldKey = GlobalKey();
+  final GlobalKey _roomsFieldKey = GlobalKey();
+  final GlobalKey _furnishedFieldKey = GlobalKey();
+  final GlobalKey _areaFieldKey = GlobalKey();
+  final GlobalKey _priceFieldKey = GlobalKey();
+  bool _showValidationErrors = false;
 
   // Bottom nav + drawer ضبط
   final GlobalKey _bottomNavKey = GlobalKey();
@@ -4457,14 +4660,16 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
   bool _uploadingDocumentAttachments = false;
   final Map<String, Future<String>> _remoteThumbUrls = {};
   static const MethodChannel _downloadsChannel =
-      MethodChannel('darvoo/downloads');
+      MethodChannel('ejarzpro/downloads');
 
   PropertyType? _selectedType;
   RentalMode? _rentalMode;
+  String? _propertyUsageType;
   String _currency = 'SAR';
 
   bool get isBuilding => _selectedType == PropertyType.building;
   bool get isPerUnit => isBuilding && _rentalMode == RentalMode.perUnit;
+  bool get _showPropertyUsageField => _requiresPropertyUsage(_selectedType);
   int get _existingUnitsCountForEdit {
     final current = widget.existing;
     if (current == null) return 0;
@@ -4543,6 +4748,7 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
       _address.text = e.address;
       _selectedType = e.type;
       _rentalMode = e.rentalMode;
+      _propertyUsageType = _normalizePropertyUsageType(e.usageType);
       _units.text = e.totalUnits > 0 ? e.totalUnits.toString() : '';
       _floors.text = e.floors?.toString() ?? '';
       _rooms.text = e.rooms?.toString() ?? '';
@@ -4555,7 +4761,7 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
       _aptFloorNo.text = spec['الدور'] ?? '';
       _furnished = _parseFurnishedSpecValue(spec['المفروشات']);
       _desc.text = _extractFreeDesc(e.description);
-      _documentType = e.documentType;
+      _documentType = _normalizeDocumentType(e.documentType);
       _documentNumber.text = e.documentNumber ?? '';
       _documentDate = e.documentDate;
       final paths = <String>[
@@ -4570,7 +4776,8 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
       }
       _initialLocalDocumentAttachments
         ..clear()
-        ..addAll(_documentAttachments.where((path) => !_isRemoteAttachment(path)));
+        ..addAll(
+            _documentAttachments.where((path) => !_isRemoteAttachment(path)));
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -4583,6 +4790,7 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
 
   @override
   void dispose() {
+    _formScrollController.dispose();
     _name.dispose();
     _address.dispose();
     _units.dispose();
@@ -4621,6 +4829,121 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
     }
   }
 
+  Widget _validationAnchor(GlobalKey key, Widget child) {
+    return KeyedSubtree(key: key, child: child);
+  }
+
+  void _showValidationSnack([String message = 'يرجى إكمال الحقول المطلوبة']) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: GoogleFonts.cairo()),
+        backgroundColor: Colors.red.shade700,
+      ),
+    );
+  }
+
+  void _scrollToInvalidPropertyField({
+    String message = 'يرجى إكمال الحقول المطلوبة',
+  }) {
+    if (!_showValidationErrors && mounted) {
+      setState(() => _showValidationErrors = true);
+    }
+    _showValidationSnack(message);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final key = _firstInvalidPropertyFieldKey();
+      final context = key?.currentContext;
+      if (context == null) return;
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+        alignment: 0.12,
+      );
+    });
+  }
+
+  GlobalKey? _firstInvalidPropertyFieldKey() {
+    if (_name.text.trim().isEmpty) return _nameFieldKey;
+    if (_address.text.trim().isEmpty) return _addressFieldKey;
+    if (_selectedType == null) return _typeFieldKey;
+    if (_showPropertyUsageField && (_propertyUsageType ?? '').trim().isEmpty) {
+      return _usageFieldKey;
+    }
+    if ((_documentType ?? '').trim().isEmpty) return _documentTypeFieldKey;
+    if (_validateDocumentNumber(_documentNumber.text) != null) {
+      return _documentNumberFieldKey;
+    }
+    if (_documentDate == null) return _documentDateFieldKey;
+    if (_documentAttachments.isEmpty) return _documentAttachmentsFieldKey;
+    if (_selectedType == PropertyType.building && _rentalMode == null) {
+      return _rentalModeFieldKey;
+    }
+    if (_unitsValidationError(_units.text) != null) return _unitsFieldKey;
+    if (_floorsValidationError(_floors.text) != null) return _floorsFieldKey;
+    if (_roomsValidationError(_rooms.text) != null) return _roomsFieldKey;
+    if (showBathsHallsFurnished && _furnished == null) {
+      return _furnishedFieldKey;
+    }
+    if (_areaValidationError(_area.text) != null) return _areaFieldKey;
+    if (_priceValidationError(_price.text) != null) return _priceFieldKey;
+    return null;
+  }
+
+  String? _unitsValidationError(String? value) {
+    if (!showUnitsField) return null;
+    final t = (value ?? '').trim();
+    if (isPerUnit && t.isEmpty) return 'عدد الوحدات مطلوب';
+    if (t.isEmpty) return null;
+    final n = int.tryParse(t);
+    if (n == null || n < 1 || n > 500) {
+      return 'أدخل عددًا صحيحًا (1–500)';
+    }
+    if (widget.isEdit && isPerUnit && n < _existingUnitsCountForEdit) {
+      return 'لا يمكن أن يكون أقل من عدد الوحدات المضافة حاليا ($_existingUnitsCountForEdit)';
+    }
+    return null;
+  }
+
+  String? _floorsValidationError(String? value) {
+    if (!showFloors) return null;
+    final t = (value ?? '').trim();
+    if (t.isEmpty) return null;
+    final n = int.tryParse(t);
+    if (n == null || n < 1 || n > 100) return 'أدخل رقمًا بين 1 و 100';
+    return null;
+  }
+
+  String? _roomsValidationError(String? value) {
+    if (!showRooms) return null;
+    final t = (value ?? '').trim();
+    if (t.isEmpty) return null;
+    final n = int.tryParse(t);
+    if (n == null || n < 0 || n > 20) return 'أدخل رقمًا بين 0 و 20';
+    return null;
+  }
+
+  String? _areaValidationError(String? value) {
+    if (!showArea) return null;
+    final t = (value ?? '').trim();
+    if (requireArea && t.isEmpty) return 'المساحة مطلوبة للأراضي';
+    if (t.isEmpty) return null;
+    final n = double.tryParse(t);
+    if (n == null || n < 1) return 'أدخل رقمًا بين 1 و 100000';
+    return null;
+  }
+
+  String? _priceValidationError(String? value) {
+    final t = (value ?? '').trim();
+    if (t.isEmpty) return null;
+    final n = double.tryParse(t);
+    if (n == null || n < 1) return 'أدخل رقمًا بين 1 و 999,999,999';
+    return null;
+  }
+
+  // ignore: unused_element
   String? _req(String? v) =>
       (v == null || v.trim().isEmpty) ? 'هذا الحقل مطلوب' : null;
 
@@ -4628,10 +4951,10 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12.r),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Colors.white),
@@ -4679,10 +5002,10 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(enabled ? 0.06 : 0.03),
+        fillColor: Colors.white.withValues(alpha: enabled ? 0.06 : 0.03),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Colors.white),
@@ -4727,6 +5050,9 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
               if (_selectedType != PropertyType.building) {
                 _rentalMode = null;
               }
+              if (!_requiresPropertyUsage(_selectedType)) {
+                _propertyUsageType = null;
+              }
             });
             state.didChange(picked);
             if (state.hasError) {
@@ -4738,10 +5064,11 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
             decoration: InputDecoration(
               errorText: state.errorText,
               filled: true,
-              fillColor: Colors.white.withOpacity(enabled ? 0.06 : 0.03),
+              fillColor: Colors.white.withValues(alpha: enabled ? 0.06 : 0.03),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12.r),
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+                borderSide:
+                    BorderSide(color: Colors.white.withValues(alpha: 0.15)),
               ),
               focusedBorder: const OutlineInputBorder(
                 borderSide: BorderSide(color: Colors.white),
@@ -4764,14 +5091,14 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
               children: [
                 Icon(
                   hasSelection
-                      ? _propertyTypePickerIcon(selectedType!)
+                      ? _propertyTypePickerIcon(selectedType)
                       : Icons.apartment_rounded,
                   color: hasSelection ? Colors.white : Colors.white60,
                 ),
                 SizedBox(width: 10.w),
                 Expanded(
                   child: Text(
-                    hasSelection ? selectedType!.label : 'اختر نوع العقار',
+                    hasSelection ? selectedType.label : 'اختر نوع العقار',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.cairo(
@@ -4786,6 +5113,110 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _propertyUsageField() {
+    return DropdownButtonFormField<String>(
+      initialValue: _propertyUsageType,
+      decoration: _dd('نوع الاستخدام'),
+      dropdownColor: const Color(0xFF0F172A),
+      iconEnabledColor: Colors.white70,
+      style: GoogleFonts.cairo(
+        color: Colors.white,
+        fontWeight: FontWeight.w700,
+      ),
+      validator: (value) {
+        if (!_showPropertyUsageField) return null;
+        return (value ?? '').trim().isEmpty ? 'اختر نوع الاستخدام' : null;
+      },
+      items: const [
+        DropdownMenuItem(
+          value: _usageResidentialOnly,
+          child: Text(_usageResidentialOnly),
+        ),
+        DropdownMenuItem(
+          value: _usageCommercialOnly,
+          child: Text(_usageCommercialOnly),
+        ),
+        DropdownMenuItem(
+          value: _usageResidentialCommercial,
+          child: Text(_usageResidentialCommercial),
+        ),
+      ],
+      onChanged: (value) {
+        setState(() => _propertyUsageType = _normalizePropertyUsageType(value));
+      },
+    );
+  }
+
+  int? get _documentNumberLimit => _documentNumberRequiredLength(_documentType);
+
+  bool get _documentNumberRequiresDigits => _documentNumberLimit != null;
+
+  String get _documentNumberLabel {
+    if (_isElectronicDeedDocument(_documentType)) {
+      return 'رقم الصك الإلكتروني';
+    }
+    if (_isRealEstateRegistryDocument(_documentType)) {
+      return 'رقم وثيقة التسجيل العيني';
+    }
+    return 'رقم الوثيقة';
+  }
+
+  String get _documentDateLabel {
+    if (_isElectronicDeedDocument(_documentType)) {
+      return 'تاريخ الصك الإلكتروني (هجري)';
+    }
+    return 'تاريخ الوثيقة';
+  }
+
+  String get _documentDateText {
+    if (_documentDate == null) return 'اختر التاريخ';
+    return _formatPropertyDocumentDate(_documentType, _documentDate!);
+  }
+
+  List<TextInputFormatter> get _documentNumberInputFormatters {
+    if (_documentNumberRequiresDigits) {
+      return [FilteringTextInputFormatter.digitsOnly];
+    }
+    return [
+      FilteringTextInputFormatter.allow(
+        RegExp(r'[0-9A-Za-z\u0600-\u06FF ]'),
+      ),
+    ];
+  }
+
+  String? _validateDocumentNumber(String? value) {
+    final text = (value ?? '').trim();
+    if (text.isEmpty) return 'هذا الحقل مطلوب';
+
+    final limit = _documentNumberLimit;
+    if (limit == null) return null;
+
+    if (!RegExp(r'^[0-9]+$').hasMatch(text)) {
+      return 'رقم الوثيقة يجب أن يكون أرقام فقط';
+    }
+    if (text.length != limit) {
+      if (_isElectronicDeedDocument(_documentType)) {
+        return 'رقم الصك الإلكتروني يجب أن يكون 12 رقم';
+      }
+      return 'رقم وثيقة التسجيل العيني يجب أن يكون 16 رقم';
+    }
+    return null;
+  }
+
+  void _handleDocumentTypeChanged(String? value) {
+    setState(() {
+      _documentType = _normalizeDocumentType(value);
+      _addLocalQaDocumentAttachmentIfNeeded();
+    });
+  }
+
+  void _addLocalQaDocumentAttachmentIfNeeded() {
+    if (!_isLocalWebQaSession() || _documentAttachments.isNotEmpty) return;
+    _documentAttachments.add(
+      'qa-local://property-document-${DateTime.now().millisecondsSinceEpoch}.pdf',
     );
   }
 
@@ -4876,6 +5307,16 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ListTile(
+                leading:
+                    const Icon(Icons.open_in_new_rounded, color: Colors.white),
+                title: Text('فتح مباشرة',
+                    style: GoogleFonts.cairo(color: Colors.white)),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  await _openDocumentAttachment(path);
+                },
+              ),
               ListTile(
                 leading:
                     const Icon(Icons.download_rounded, color: Colors.white),
@@ -5101,6 +5542,7 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
     Future.delayed(const Duration(seconds: 2), () => entry.remove());
   }
 
+  // ignore: unused_element
   Future<void> _openDocumentAttachment(String path) async {
     try {
       final raw = path.trim();
@@ -5138,6 +5580,7 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
     }
   }
 
+  // ignore: unused_element
   Future<String?> _uploadDocumentAttachmentToStorage(
     File localFile,
     String fileName,
@@ -5187,12 +5630,24 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
 
   Future<void> _pickDocumentDate() async {
     final nowKsa = KsaTime.now();
+    if (_isElectronicDeedDocument(_documentType)) {
+      final pickedHijri = await _pickHijriDocumentDate(
+        initialDate: KsaTime.dateOnly(_documentDate ?? nowKsa),
+      );
+      if (pickedHijri != null && mounted) {
+        setState(() => _documentDate = KsaTime.dateOnly(pickedHijri));
+      }
+      return;
+    }
+
     final picked = await showDatePicker(
       context: context,
       initialDate: KsaTime.dateOnly(_documentDate ?? nowKsa),
       firstDate: DateTime(1900, 1, 1),
       lastDate: DateTime(nowKsa.year + 50, 12, 31),
-      helpText: 'اختر تاريخ الوثيقة',
+      helpText: _isElectronicDeedDocument(_documentType)
+          ? 'اختر تاريخ الصك الإلكتروني'
+          : 'اختر تاريخ الوثيقة',
       confirmText: 'اختيار',
       cancelText: 'إلغاء',
       builder: (context, child) {
@@ -5216,6 +5671,143 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
     }
   }
 
+  Future<DateTime?> _pickHijriDocumentDate({
+    required DateTime initialDate,
+  }) async {
+    final initialHijri = HijriCalendar.fromDate(initialDate);
+    final yearCtrl = TextEditingController(text: '${initialHijri.hYear}');
+    final monthCtrl = TextEditingController(text: '${initialHijri.hMonth}');
+    final dayCtrl = TextEditingController(text: '${initialHijri.hDay}');
+    String? errorText;
+
+    try {
+      return await showDialog<DateTime>(
+        context: context,
+        builder: (dialogContext) {
+          return Directionality(
+            textDirection: TextDirection.rtl,
+            child: StatefulBuilder(
+              builder: (context, setDialogState) {
+                InputDecoration decoration(String label) {
+                  return InputDecoration(
+                    labelText: label,
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  );
+                }
+
+                Widget numberField({
+                  required TextEditingController controller,
+                  required String label,
+                }) {
+                  return TextField(
+                    controller: controller,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                    ],
+                    decoration: decoration(label),
+                  );
+                }
+
+                return AlertDialog(
+                  title: Text(
+                    'تاريخ الصك الإلكتروني بالهجري',
+                    style: GoogleFonts.cairo(fontWeight: FontWeight.w800),
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: numberField(
+                              controller: dayCtrl,
+                              label: 'اليوم',
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: numberField(
+                              controller: monthCtrl,
+                              label: 'الشهر',
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: numberField(
+                              controller: yearCtrl,
+                              label: 'السنة',
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (errorText != null) ...[
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            errorText!,
+                            style: GoogleFonts.cairo(
+                              color: Colors.red.shade700,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: Text('إلغاء', style: GoogleFonts.cairo()),
+                    ),
+                    FilledButton(
+                      onPressed: () {
+                        final year = int.tryParse(yearCtrl.text.trim());
+                        final month = int.tryParse(monthCtrl.text.trim());
+                        final day = int.tryParse(dayCtrl.text.trim());
+                        if (year == null ||
+                            month == null ||
+                            day == null ||
+                            year < 1300 ||
+                            year > 1600 ||
+                            month < 1 ||
+                            month > 12) {
+                          setDialogState(() {
+                            errorText = 'أدخل تاريخًا هجريًا صحيحًا.';
+                          });
+                          return;
+                        }
+                        final hijri = HijriCalendar();
+                        final daysInMonth = hijri.getDaysInMonth(year, month);
+                        if (day < 1 || day > daysInMonth) {
+                          setDialogState(() {
+                            errorText =
+                                'عدد أيام هذا الشهر الهجري $daysInMonth يومًا.';
+                          });
+                          return;
+                        }
+                        final gregorian =
+                            hijri.hijriToGregorian(year, month, day);
+                        Navigator.of(dialogContext).pop(gregorian);
+                      },
+                      child: Text('اختيار', style: GoogleFonts.cairo()),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+        },
+      );
+    } finally {
+      yearCtrl.dispose();
+      monthCtrl.dispose();
+      dayCtrl.dispose();
+    }
+  }
+
   Future<void> _pickDocumentAttachments() async {
     if (_documentAttachments.length >= 3) {
       if (!mounted) return;
@@ -5225,6 +5817,19 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
               style: GoogleFonts.cairo(color: Colors.white)),
           behavior: SnackBarBehavior.floating,
           backgroundColor: Colors.red.shade700,
+        ),
+      );
+      return;
+    }
+    if (_isLocalWebQaSession()) {
+      setState(_addLocalQaDocumentAttachmentIfNeeded);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم إضافة مرفق اختبار محلي.',
+              style: GoogleFonts.cairo(color: Colors.white)),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF0F766E),
         ),
       );
       return;
@@ -5323,6 +5928,7 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
     final canChangeType = !isEdit || !_isLinkedForEdit;
     final canChangeRentalMode = !isEdit || !_hasExistingUnitsForEdit;
 
+    // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: () async => !_uploadingDocumentAttachments,
       child: AbsorbPointer(
@@ -5351,10 +5957,17 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
               elevation: 0,
               centerTitle: true,
               automaticallyImplyLeading: false,
-              leading: darvooLeading(context, iconColor: Colors.white),
+              leading: ejarzProLeading(context, iconColor: Colors.white),
               title: Text(isEdit ? 'تعديل عقار' : 'إضافة عقار',
                   style: GoogleFonts.cairo(
                       color: Colors.white, fontWeight: FontWeight.w800)),
+              actions: [
+                IconButton(
+                  tooltip: isEdit ? 'حفظ تعديلات العقار' : 'حفظ العقار',
+                  onPressed: _save,
+                  icon: const Icon(Icons.check_rounded, color: Colors.white),
+                ),
+              ],
             ),
             body: Stack(
               children: [
@@ -5380,7 +5993,15 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
                     left: -100,
                     child: _softCircle(260.r, const Color(0x22FFFFFF))),
                 SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 24.h),
+                  controller: _formScrollController,
+                  padding: EdgeInsets.fromLTRB(
+                    16.w,
+                    16.h,
+                    16.w,
+                    24.h +
+                        _bottomBarHeight +
+                        MediaQuery.of(context).padding.bottom,
+                  ),
                   child: _DarkCard(
                     padding: EdgeInsets.all(16.w),
                     child: Form(
@@ -5388,129 +6009,193 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
                       child: Column(
                         children: [
                           // الاسم: مطلوب، حتى 60 حرف (يُمنع تجاوزها + تظهر رسالة "هذا أقصى حد")
-                          _field(
-                            controller: _name,
-                            label: 'اسم العقار أو رقم العقار',
-                            maxLength: 25,
-                            validator: (v) {
-                              final t = (v ?? '').trim();
-                              if (t.isEmpty) return 'هذا الحقل مطلوب';
-                              return null;
-                            },
+                          _validationAnchor(
+                            _nameFieldKey,
+                            _field(
+                              controller: _name,
+                              label: 'اسم العقار أو رقم العقار',
+                              maxLength: 25,
+                              validator: (v) {
+                                final t = (v ?? '').trim();
+                                if (t.isEmpty) return 'هذا الحقل مطلوب';
+                                return null;
+                              },
+                            ),
                           ),
                           const SizedBox(height: 12),
 
                           // العنوان: مطلوب، حتى 50 حرف
-                          _field(
-                            controller: _address,
-                            label: 'العنوان ',
-                            maxLength: 50,
-                            validator: (v) {
-                              final t = (v ?? '').trim();
-                              if (t.isEmpty) return 'هذا الحقل مطلوب';
-                              return null;
-                            },
+                          _validationAnchor(
+                            _addressFieldKey,
+                            _field(
+                              controller: _address,
+                              label: 'العنوان ',
+                              maxLength: 50,
+                              validator: (v) {
+                                final t = (v ?? '').trim();
+                                if (t.isEmpty) return 'هذا الحقل مطلوب';
+                                return null;
+                              },
+                            ),
                           ),
                           const SizedBox(height: 12),
 
                           // نوع العقار
-                          _propertyTypeField(enabled: canChangeType),
+                          _validationAnchor(
+                            _typeFieldKey,
+                            _propertyTypeField(enabled: canChangeType),
+                          ),
                           const SizedBox(height: 12),
 
-                          // نمط التأجير (للعمارة فقط)
-                          DropdownButtonFormField<String>(
-                            initialValue: _documentType,
-                            decoration: _dd('نوع الوثيقة'),
-                            dropdownColor: const Color(0xFF0F172A),
-                            iconEnabledColor: Colors.white70,
-                            style: GoogleFonts.cairo(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700),
-                            items: const [
-                              DropdownMenuItem(
-                                  value: 'صك الكتروني',
-                                  child: Text('صك الكتروني')),
-                              DropdownMenuItem(
-                                  value: 'صك ورقي', child: Text('صك ورقي')),
-                              DropdownMenuItem(
-                                  value: 'تسجيل عيني',
-                                  child: Text('تسجيل عيني')),
-                            ],
-                            onChanged: (v) => setState(() => _documentType = v),
+                          if (_showPropertyUsageField) ...[
+                            _validationAnchor(
+                              _usageFieldKey,
+                              _propertyUsageField(),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+
+                          // نوع الوثيقة
+                          _validationAnchor(
+                            _documentTypeFieldKey,
+                            DropdownButtonFormField<String>(
+                              initialValue: _documentType,
+                              decoration: _dd('نوع الوثيقة'),
+                              dropdownColor: const Color(0xFF0F172A),
+                              iconEnabledColor: Colors.white70,
+                              style: GoogleFonts.cairo(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: _documentTypeElectronicDeed,
+                                  child: Text(_documentTypeElectronicDeed),
+                                ),
+                                DropdownMenuItem(
+                                  value: _documentTypePaperDeed,
+                                  child: Text(_documentTypePaperDeed),
+                                ),
+                                DropdownMenuItem(
+                                  value: _documentTypeRealEstateRegistry,
+                                  child: Text(_documentTypeRealEstateRegistry),
+                                ),
+                              ],
+                              validator: (value) => (value ?? '').trim().isEmpty
+                                  ? 'هذا الحقل مطلوب'
+                                  : null,
+                              onChanged: _handleDocumentTypeChanged,
+                            ),
                           ),
                           const SizedBox(height: 12),
                           if (_documentType != null) ...[
-                            _field(
-                              controller: _documentNumber,
-                              label: 'رقم الوثيقة',
-                              maxLength: 25,
-                              keyboardType: TextInputType.text,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                  RegExp(r'[0-9A-Za-z\u0600-\u06FF ]'),
-                                ),
-                              ],
+                            _validationAnchor(
+                              _documentNumberFieldKey,
+                              _field(
+                                controller: _documentNumber,
+                                label: _documentNumberLabel,
+                                maxLength: _documentNumberLimit ?? 25,
+                                keyboardType: _documentNumberRequiresDigits
+                                    ? TextInputType.number
+                                    : TextInputType.text,
+                                inputFormatters: _documentNumberInputFormatters,
+                                validator: _validateDocumentNumber,
+                              ),
                             ),
                             const SizedBox(height: 12),
-                            InkWell(
-                              borderRadius: BorderRadius.circular(12.r),
-                              onTap: _pickDocumentDate,
-                              child: InputDecorator(
-                                decoration: _dd('تاريخ الوثيقة'),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.calendar_month_rounded,
-                                        color: Colors.white70),
-                                    SizedBox(width: 8.w),
-                                    Expanded(
-                                      child: Text(
-                                        _documentDate == null
-                                            ? 'اختر التاريخ'
-                                            : '${_documentDate!.year}-${_documentDate!.month.toString().padLeft(2, '0')}-${_documentDate!.day.toString().padLeft(2, '0')}',
-                                        style: GoogleFonts.cairo(
-                                            color: Colors.white),
+                            _validationAnchor(
+                              _documentDateFieldKey,
+                              InkWell(
+                                borderRadius: BorderRadius.circular(12.r),
+                                onTap: _pickDocumentDate,
+                                child: InputDecorator(
+                                  decoration: _dd(_documentDateLabel).copyWith(
+                                    errorText: _showValidationErrors &&
+                                            _documentDate == null
+                                        ? 'هذا الحقل مطلوب'
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.calendar_month_rounded,
+                                          color: Colors.white70),
+                                      SizedBox(width: 8.w),
+                                      Expanded(
+                                        child: Text(
+                                          _documentDateText,
+                                          style: GoogleFonts.cairo(
+                                              color: Colors.white),
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
                             const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    'مرفقات الوثيقة (${_documentAttachments.length}/3)',
-                                    style: GoogleFonts.cairo(
-                                        color: Colors.white70,
-                                        fontWeight: FontWeight.w700),
+                            _validationAnchor(
+                              _documentAttachmentsFieldKey,
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: _uploadingDocumentAttachments
+                                    ? null
+                                    : _pickDocumentAttachments,
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 6.h),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          'مرفقات الوثيقة (${_documentAttachments.length}/3)',
+                                          style: GoogleFonts.cairo(
+                                              color: Colors.white70,
+                                              fontWeight: FontWeight.w700),
+                                        ),
+                                      ),
+                                      ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor:
+                                              const Color(0xFF0EA5E9),
+                                          foregroundColor: Colors.white,
+                                        ),
+                                        onPressed: _uploadingDocumentAttachments
+                                            ? null
+                                            : _pickDocumentAttachments,
+                                        icon: _uploadingDocumentAttachments
+                                            ? SizedBox(
+                                                width: 16.w,
+                                                height: 16.w,
+                                                child:
+                                                    const CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  color: Colors.white,
+                                                ),
+                                              )
+                                            : const Icon(
+                                                Icons.attach_file_rounded),
+                                        label: Text('إرفاق',
+                                            style: GoogleFonts.cairo(
+                                                fontWeight: FontWeight.w700)),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF0EA5E9),
-                                    foregroundColor: Colors.white,
-                                  ),
-                                  onPressed: _uploadingDocumentAttachments
-                                      ? null
-                                      : _pickDocumentAttachments,
-                                  icon: _uploadingDocumentAttachments
-                                      ? SizedBox(
-                                          width: 16.w,
-                                          height: 16.w,
-                                          child:
-                                              const CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : const Icon(Icons.attach_file_rounded),
-                                  label: Text('إرفاق',
-                                      style: GoogleFonts.cairo(
-                                          fontWeight: FontWeight.w700)),
-                                ),
-                              ],
+                              ),
                             ),
+                            if (_showValidationErrors &&
+                                _documentAttachments.isEmpty)
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Padding(
+                                  padding: EdgeInsets.only(top: 6.h),
+                                  child: Text(
+                                    'هذا الحقل مطلوب',
+                                    style: GoogleFonts.cairo(
+                                      color: Colors.redAccent,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             SizedBox(height: 8.h),
                             if (_documentAttachments.isNotEmpty) ...[
                               Wrap(
@@ -5531,8 +6216,8 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
                                           child: Container(
                                             width: 88.w,
                                             height: 88.w,
-                                            color:
-                                                Colors.white.withOpacity(0.08),
+                                            color: Colors.white
+                                                .withValues(alpha: 0.08),
                                             child: _buildAttachmentThumb(path),
                                           ),
                                         ),
@@ -5570,132 +6255,129 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
                           ],
 
                           if (_selectedType == PropertyType.building) ...[
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: Text('نمط التأجير',
-                                  style: GoogleFonts.cairo(
-                                      color: Colors.white70,
-                                      fontWeight: FontWeight.w700)),
-                            ),
-                            const SizedBox(height: 6),
-                            _rentalChoice(
-                              value: RentalMode.wholeBuilding,
-                              group: _rentalMode,
-                              onChanged: (v) {
-                                if (!canChangeRentalMode &&
-                                    v == RentalMode.wholeBuilding &&
-                                    _hasExistingUnitsForEdit) {
-                                  _showLockedRentalModeMessage();
-                                  return;
-                                }
-                                setState(() => _rentalMode = v);
-                              },
-                              title: 'تأجير كامل العمارة',
-                              subtitle:
-                                  'عقد واحد يشمل المبنى كاملًا، بدون وحدات داخلية.',
-                            ),
-                            const SizedBox(height: 8),
-                            _rentalChoice(
-                              value: RentalMode.perUnit,
-                              group: _rentalMode,
-                              onChanged: (v) {
-                                if (!canChangeRentalMode &&
-                                    v == RentalMode.wholeBuilding &&
-                                    _hasExistingUnitsForEdit) {
-                                  _showLockedRentalModeMessage();
-                                  return;
-                                }
-                                setState(() => _rentalMode = v);
-                              },
-                              title: 'تأجير الوحدات',
-                              subtitle:
-                                  'إضافة وحدات (شقق/مكاتب) لكل عقد مستقل.',
+                            _validationAnchor(
+                              _rentalModeFieldKey,
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Text('نمط التأجير',
+                                        style: GoogleFonts.cairo(
+                                            color: Colors.white70,
+                                            fontWeight: FontWeight.w700)),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  _rentalChoice(
+                                    value: RentalMode.wholeBuilding,
+                                    group: _rentalMode,
+                                    onChanged: (v) {
+                                      if (!canChangeRentalMode &&
+                                          v == RentalMode.wholeBuilding &&
+                                          _hasExistingUnitsForEdit) {
+                                        _showLockedRentalModeMessage();
+                                        return;
+                                      }
+                                      setState(() => _rentalMode = v);
+                                    },
+                                    title: 'تأجير كامل العمارة',
+                                    subtitle:
+                                        'عقد واحد يشمل المبنى كاملًا، بدون وحدات داخلية.',
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _rentalChoice(
+                                    value: RentalMode.perUnit,
+                                    group: _rentalMode,
+                                    onChanged: (v) {
+                                      if (!canChangeRentalMode &&
+                                          v == RentalMode.wholeBuilding &&
+                                          _hasExistingUnitsForEdit) {
+                                        _showLockedRentalModeMessage();
+                                        return;
+                                      }
+                                      setState(() => _rentalMode = v);
+                                    },
+                                    title: 'تأجير الوحدات',
+                                    subtitle:
+                                        'إضافة وحدات (شقق/مكاتب) لكل عقد مستقل.',
+                                  ),
+                                  if (_showValidationErrors &&
+                                      _rentalMode == null)
+                                    Padding(
+                                      padding: EdgeInsets.only(top: 6.h),
+                                      child: Text(
+                                        'هذا الحقل مطلوب',
+                                        style: GoogleFonts.cairo(
+                                          color: Colors.redAccent,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
                             const SizedBox(height: 12),
                           ],
 
                           // عدد الوحدات (للعمارة): يمنع > 500
                           if (showUnitsField) ...[
-                            _field(
-                              controller: _units,
-                              label: isPerUnit
-                                  ? 'عدد الوحدات (مطلوب 1–500)'
-                                  : 'عدد الوحدات (اختياري 1–500)',
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                _maxIntWithFeedback(
-                                    max: 500,
-                                    exceedMsg: 'الحد الأقصى للوحدات هو 500'),
-                              ],
-                              enabled: true,
-                              validator: (v) {
-                                final t = (v ?? '').trim();
-                                if (isPerUnit && t.isEmpty) {
-                                  return 'عدد الوحدات مطلوب';
-                                }
-                                if (t.isEmpty) return null;
-                                final n = int.tryParse(t);
-                                if (n == null || n < 1 || n > 500) {
-                                  return 'أدخل عددًا صحيحًا (1–500)';
-                                }
-                                if (widget.isEdit &&
-                                    isPerUnit &&
-                                    n < _existingUnitsCountForEdit) {
-                                  return 'لا يمكن أن يكون أقل من عدد الوحدات المضافة حاليا ($_existingUnitsCountForEdit)';
-                                }
-                                return null;
-                              },
+                            _validationAnchor(
+                              _unitsFieldKey,
+                              _field(
+                                controller: _units,
+                                label: isPerUnit
+                                    ? 'عدد الوحدات (مطلوب 1–500)'
+                                    : 'عدد الوحدات (اختياري 1–500)',
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  _maxIntWithFeedback(
+                                      max: 500,
+                                      exceedMsg: 'الحد الأقصى للوحدات هو 500'),
+                                ],
+                                enabled: true,
+                                validator: _unitsValidationError,
+                              ),
                             ),
                             const SizedBox(height: 12),
                           ],
 
                           // الطوابق: يمنع > 100
                           if (showFloors) ...[
-                            _field(
-                              controller: _floors,
-                              label: 'عدد الطوابق (1–100)',
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                _maxIntWithFeedback(
-                                    max: 100,
-                                    exceedMsg: 'الحد الأقصى للطوابق هو 100'),
-                              ],
-                              validator: (v) {
-                                final t = (v ?? '').trim();
-                                if (t.isEmpty) return null; // اختياري
-                                final n = int.tryParse(t);
-                                if (n == null || n < 1 || n > 100) {
-                                  return 'أدخل رقمًا بين 1 و 100';
-                                }
-                                return null;
-                              },
+                            _validationAnchor(
+                              _floorsFieldKey,
+                              _field(
+                                controller: _floors,
+                                label: 'عدد الطوابق (1–100)',
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  _maxIntWithFeedback(
+                                      max: 100,
+                                      exceedMsg: 'الحد الأقصى للطوابق هو 100'),
+                                ],
+                                validator: _floorsValidationError,
+                              ),
                             ),
                             const SizedBox(height: 12),
                           ],
 
                           // الغرف: يمنع > 20
                           if (showRooms) ...[
-                            _field(
-                              controller: _rooms,
-                              label: 'عدد الغرف (اختياري)',
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                _maxIntWithFeedback(
-                                    max: 20,
-                                    exceedMsg: 'الحد الأقصى للغرف هو 20'),
-                              ],
-                              validator: (v) {
-                                final t = (v ?? '').trim();
-                                if (t.isEmpty) return null;
-                                final n = int.tryParse(t);
-                                if (n == null || n < 0 || n > 20) {
-                                  return 'أدخل رقمًا بين 0 و 20';
-                                }
-                                return null;
-                              },
+                            _validationAnchor(
+                              _roomsFieldKey,
+                              _field(
+                                controller: _rooms,
+                                label: 'عدد الغرف (اختياري)',
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  _maxIntWithFeedback(
+                                      max: 20,
+                                      exceedMsg: 'الحد الأقصى للغرف هو 20'),
+                                ],
+                                validator: _roomsValidationError,
+                              ),
                             ),
                             const SizedBox(height: 12),
                           ],
@@ -5734,75 +6416,80 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
                               ],
                             ),
                             const SizedBox(height: 12),
-                            FormField<bool?>(
-                              initialValue: _furnished,
-                              validator: (_) =>
-                                  _furnished == null ? 'هذا الحقل مطلوب' : null,
-                              builder: (field) => Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      crossAxisAlignment:
-                                          WrapCrossAlignment.center,
-                                      children: [
-                                        Text('المفروشات:',
+                            _validationAnchor(
+                              _furnishedFieldKey,
+                              FormField<bool?>(
+                                initialValue: _furnished,
+                                validator: (_) => _furnished == null
+                                    ? 'هذا الحقل مطلوب'
+                                    : null,
+                                builder: (field) => Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        crossAxisAlignment:
+                                            WrapCrossAlignment.center,
+                                        children: [
+                                          Text('المفروشات:',
+                                              style: GoogleFonts.cairo(
+                                                  color: Colors.white70,
+                                                  fontWeight: FontWeight.w700)),
+                                          ChoiceChip(
+                                            label: const Text('مفروشة'),
+                                            selected: _furnished == true,
+                                            onSelected: (_) {
+                                              setState(() => _furnished = true);
+                                              field.didChange(true);
+                                            },
+                                            showCheckmark: false,
+                                            selectedColor: const Color(
+                                                0xFF059669), // أخضر عند التحديد
+                                            backgroundColor: const Color(
+                                                0xFF1F2937), // ✅ لون افتراضي داكن بدل الأبيض
+                                            labelStyle: GoogleFonts.cairo(
+                                              color: _furnished == true
+                                                  ? Colors.white
+                                                  : Colors.white70,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          ChoiceChip(
+                                            label: const Text('غير مفروشة'),
+                                            selected: _furnished == false,
+                                            onSelected: (_) {
+                                              setState(
+                                                  () => _furnished = false);
+                                              field.didChange(false);
+                                            },
+                                            showCheckmark: false,
+                                            selectedColor: const Color(
+                                                0xFF059669), // أخضر عند التحديد
+                                            backgroundColor: const Color(
+                                                0xFF1F2937), // ✅ لون افتراضي داكن بدل الأبيض
+                                            labelStyle: GoogleFonts.cairo(
+                                              color: _furnished == false
+                                                  ? Colors.white
+                                                  : Colors.white70,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (field.hasError)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 6),
+                                        child: Text(field.errorText!,
                                             style: GoogleFonts.cairo(
-                                                color: Colors.white70,
+                                                color: Colors.redAccent,
                                                 fontWeight: FontWeight.w700)),
-                                        ChoiceChip(
-                                          label: const Text('مفروشة'),
-                                          selected: _furnished == true,
-                                          onSelected: (_) {
-                                            setState(() => _furnished = true);
-                                            field.didChange(true);
-                                          },
-                                          showCheckmark: false,
-                                          selectedColor: const Color(
-                                              0xFF059669), // أخضر عند التحديد
-                                          backgroundColor: const Color(
-                                              0xFF1F2937), // ✅ لون افتراضي داكن بدل الأبيض
-                                          labelStyle: GoogleFonts.cairo(
-                                            color: _furnished == true
-                                                ? Colors.white
-                                                : Colors.white70,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        ChoiceChip(
-                                          label: const Text('غير مفروشة'),
-                                          selected: _furnished == false,
-                                          onSelected: (_) {
-                                            setState(() => _furnished = false);
-                                            field.didChange(false);
-                                          },
-                                          showCheckmark: false,
-                                          selectedColor: const Color(
-                                              0xFF059669), // أخضر عند التحديد
-                                          backgroundColor: const Color(
-                                              0xFF1F2937), // ✅ لون افتراضي داكن بدل الأبيض
-                                          labelStyle: GoogleFonts.cairo(
-                                            color: _furnished == false
-                                                ? Colors.white
-                                                : Colors.white70,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  if (field.hasError)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 6),
-                                      child: Text(field.errorText!,
-                                          style: GoogleFonts.cairo(
-                                              color: Colors.redAccent,
-                                              fontWeight: FontWeight.w700)),
-                                    ),
-                                ],
+                                      ),
+                                  ],
+                                ),
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -5826,43 +6513,39 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
 
                           // المساحة: تمنع > 100000
                           if (showArea) ...[
-                            _field(
-                              controller: _area,
-                              label: requireArea
-                                  ? 'المساحة (اختياري)'
-                                  : 'المساحة (اختياري)',
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                    RegExp(r'[0-9.]')),
-                                _maxNumWithFeedback(
-                                    max: 100000,
-                                    exceedMsg: 'الحد الأقصى للمساحة هو 100000'),
-                              ],
-                              validator: (v) {
-                                final t = (v ?? '').trim();
-                                if (requireArea && t.isEmpty) {
-                                  return 'المساحة مطلوبة للأراضي';
-                                }
-                                if (t.isEmpty) return null;
-                                final n = double.tryParse(t);
-                                if (n == null || n < 1) {
-                                  return 'أدخل رقمًا بين 1 و 100000';
-                                }
-                                return null;
-                              },
+                            _validationAnchor(
+                              _areaFieldKey,
+                              _field(
+                                controller: _area,
+                                label: requireArea
+                                    ? 'المساحة (اختياري)'
+                                    : 'المساحة (اختياري)',
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(
+                                      RegExp(r'[0-9.]')),
+                                  _maxNumWithFeedback(
+                                      max: 100000,
+                                      exceedMsg:
+                                          'الحد الأقصى للمساحة هو 100000'),
+                                ],
+                                validator: _areaValidationError,
+                              ),
                             ),
                             const SizedBox(height: 12),
                           ],
 
-                          if (!isPerUnit) ...[
-                            // سعر التأجير: يمنع > 999,999,999
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _field(
+                          // سعر التأجير: يمنع > 999,999,999
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _validationAnchor(
+                                  _priceFieldKey,
+                                  _field(
                                     controller: _price,
-                                    label: 'سعر التأجير (اختياري)',
+                                    label: isPerUnit
+                                        ? 'سعر التأجير الافتراضي للوحدات (اختياري)'
+                                        : 'سعر التأجير (اختياري)',
                                     keyboardType: TextInputType.number,
                                     inputFormatters: [
                                       FilteringTextInputFormatter.allow(
@@ -5872,43 +6555,35 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
                                           exceedMsg:
                                               'الحد الأقصى لسعر التأجير هو 999,999,999'),
                                     ],
-                                    validator: (v) {
-                                      final t = (v ?? '').trim();
-                                      if (t.isEmpty) return null;
-                                      final n = double.tryParse(t);
-                                      if (n == null || n < 1) {
-                                        return 'أدخل رقمًا بين 1 و 999,999,999';
-                                      }
-                                      return null;
-                                    },
+                                    validator: _priceValidationError,
                                   ),
                                 ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: DropdownButtonFormField<String>(
-                                    initialValue: _currency,
-                                    decoration: _dd('العملة'),
-                                    dropdownColor: const Color(0xFF0F172A),
-                                    iconEnabledColor: Colors.white70,
-                                    style: GoogleFonts.cairo(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700),
-                                    items: const ['SAR']
-                                        .map(
-                                          (c) => DropdownMenuItem<String>(
-                                            value: c,
-                                            child: const Text('ريال'),
-                                          ),
-                                        )
-                                        .toList(),
-                                    onChanged: (v) =>
-                                        setState(() => _currency = v ?? 'ريال'),
-                                  ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  initialValue: _currency,
+                                  decoration: _dd('العملة'),
+                                  dropdownColor: const Color(0xFF0F172A),
+                                  iconEnabledColor: Colors.white70,
+                                  style: GoogleFonts.cairo(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700),
+                                  items: const ['SAR']
+                                      .map(
+                                        (c) => DropdownMenuItem<String>(
+                                          value: c,
+                                          child: const Text('ريال'),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (v) =>
+                                      setState(() => _currency = v ?? 'SAR'),
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                          ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
 
                           // الوصف: حتى 500 حرف (منع + تنبيه)
                           _field(
@@ -5945,13 +6620,13 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
                 if (_uploadingDocumentAttachments)
                   Positioned.fill(
                     child: Container(
-                      color: Colors.black.withOpacity(0.25),
+                      color: Colors.black.withValues(alpha: 0.25),
                       alignment: Alignment.center,
                       child: Container(
                         padding: EdgeInsets.symmetric(
                             horizontal: 18.w, vertical: 14.h),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.90),
+                          color: Colors.white.withValues(alpha: 0.90),
                           borderRadius: BorderRadius.circular(14.r),
                         ),
                         child: Row(
@@ -5990,7 +6665,14 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
   }
 
   Future<void> _save() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final formIsValid = _formKey.currentState?.validate() ?? false;
+    if (!formIsValid || _firstInvalidPropertyFieldKey() != null) {
+      _scrollToInvalidPropertyField();
+      return;
+    }
+    if (_showValidationErrors && mounted) {
+      setState(() => _showValidationErrors = false);
+    }
 
     if (_selectedType == null) return;
 
@@ -5999,6 +6681,17 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
         SnackBar(
             content:
                 Text('اختر نمط التأجير للعمارة', style: GoogleFonts.cairo())),
+      );
+      return;
+    }
+
+    if (_requiresPropertyUsage(_selectedType) &&
+        (_propertyUsageType ?? '').trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('حقل نوع الاستخدام مطلوب', style: GoogleFonts.cairo()),
+          backgroundColor: Colors.red.shade700,
+        ),
       );
       return;
     }
@@ -6067,20 +6760,24 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
     );
 
     final parsedUnits = int.tryParse(_units.text.trim()) ?? 0;
+    final normalizedDocumentType = _normalizeDocumentType(_documentType);
+    final documentNumber = _documentNumber.text.trim();
+    final usageType = _requiresPropertyUsage(_selectedType)
+        ? _normalizePropertyUsageType(_propertyUsageType)
+        : null;
 
     if (widget.isEdit && widget.existing != null) {
       debugPrint('[property/save][edit] id=${widget.existing!.id}');
-      debugPrint('[property/save][edit] documentType=${_documentType?.trim()}');
-      debugPrint(
-          '[property/save][edit] documentNumber=${_documentNumber.text.trim()}');
+      debugPrint('[property/save][edit] documentType=$normalizedDocumentType');
+      debugPrint('[property/save][edit] documentNumber=$documentNumber');
       debugPrint(
           '[property/save][edit] documentDate=${_documentDate == null ? 'null' : KsaTime.dateOnly(_documentDate!).toIso8601String()}');
       debugPrint(
           '[property/save][edit] attachments=${_documentAttachments.length}');
       final m = widget.existing!;
       _propertyDocCache[m.id] = _PropertyDocSnapshot(
-        documentType: _documentType?.trim(),
-        documentNumber: _documentNumber.text.trim(),
+        documentType: normalizedDocumentType,
+        documentNumber: documentNumber,
         documentDate:
             _documentDate == null ? null : KsaTime.dateOnly(_documentDate!),
         attachmentPaths: List<String>.from(_documentAttachments),
@@ -6102,6 +6799,9 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
         _showUnitsLessThanExistingMessage();
         return;
       }
+      final oldAddress = m.address;
+      final oldPrice = m.price;
+      final oldCurrency = m.currency;
       m.name = _name.text.trim();
       m.address = _address.text.trim();
       m.type = _selectedType!;
@@ -6120,20 +6820,19 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
           : int.tryParse(_floors.text.trim());
       m.rooms =
           _rooms.text.trim().isEmpty ? null : int.tryParse(_rooms.text.trim());
-      m.price = isPerUnit
+      m.price = _price.text.trim().isEmpty
           ? null
-          : (_price.text.trim().isEmpty
-              ? null
-              : double.tryParse(_price.text.trim()));
+          : double.tryParse(_price.text.trim());
       m.currency = _currency;
       m.description = mergedDesc;
-      m.documentType = _documentType?.trim();
-      m.documentNumber = _documentNumber.text.trim();
+      m.documentType = normalizedDocumentType;
+      m.documentNumber = documentNumber;
       m.documentDate =
           _documentDate == null ? null : KsaTime.dateOnly(_documentDate!);
       m.documentAttachmentPaths = List<String>.from(_documentAttachments);
       m.documentAttachmentPath =
           _documentAttachments.isNotEmpty ? _documentAttachments.first : null;
+      m.usageType = usageType;
       m.updatedAt = now; // 👈 آخر تعديل
 
       final box = Hive.box<Property>(boxName(kPropertiesBox));
@@ -6141,6 +6840,13 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
           _removedInitialLocalDocumentAttachments();
       await box.put(m.id, m);
       unawaited(OfflineSyncService.instance.enqueueUpsertProperty(m));
+      await _syncBuildingDefaultsToUnits(
+        building: m,
+        oldAddress: oldAddress,
+        oldPrice: oldPrice,
+        oldCurrency: oldCurrency,
+        updatedAt: now,
+      );
       await _deleteLocalDocumentAttachments(removedLocalDocumentAttachments);
 
       if (mounted) Navigator.of(context).pop(m);
@@ -6148,16 +6854,15 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
       // نستخدم نفس now الذي عرفناه فوق
       final nowId = now.microsecondsSinceEpoch.toString();
       _propertyDocCache[nowId] = _PropertyDocSnapshot(
-        documentType: _documentType?.trim(),
-        documentNumber: _documentNumber.text.trim(),
+        documentType: normalizedDocumentType,
+        documentNumber: documentNumber,
         documentDate:
             _documentDate == null ? null : KsaTime.dateOnly(_documentDate!),
         attachmentPaths: List<String>.from(_documentAttachments),
       );
       debugPrint('[property/save][new] id=$nowId');
-      debugPrint('[property/save][new] documentType=${_documentType?.trim()}');
-      debugPrint(
-          '[property/save][new] documentNumber=${_documentNumber.text.trim()}');
+      debugPrint('[property/save][new] documentType=$normalizedDocumentType');
+      debugPrint('[property/save][new] documentNumber=$documentNumber');
       debugPrint(
           '[property/save][new] documentDate=${_documentDate == null ? 'null' : KsaTime.dateOnly(_documentDate!).toIso8601String()}');
       debugPrint(
@@ -6180,20 +6885,19 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
         rooms: _rooms.text.trim().isEmpty
             ? null
             : int.tryParse(_rooms.text.trim()),
-        price: isPerUnit
+        price: _price.text.trim().isEmpty
             ? null
-            : (_price.text.trim().isEmpty
-                ? null
-                : double.tryParse(_price.text.trim())),
+            : double.tryParse(_price.text.trim()),
         currency: _currency,
         description: mergedDesc,
-        documentType: _documentType?.trim(),
-        documentNumber: _documentNumber.text.trim(),
+        documentType: normalizedDocumentType,
+        documentNumber: documentNumber,
         documentDate:
             _documentDate == null ? null : KsaTime.dateOnly(_documentDate!),
         documentAttachmentPath:
             _documentAttachments.isNotEmpty ? _documentAttachments.first : null,
         documentAttachmentPaths: List<String>.from(_documentAttachments),
+        usageType: usageType,
 
         // 👇 هنا الحل الجذري: تخزين تاريخ الإنشاء والتحديث
         createdAt: now,
@@ -6218,18 +6922,20 @@ class _AddOrEditPropertyScreenState extends State<AddOrEditPropertyScreen> {
     return Container(
       padding: EdgeInsets.all(10.w),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.06),
+        color: Colors.white.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(12.r),
-        border: Border.all(color: Colors.white.withOpacity(0.15)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
       ),
       child: RadioListTile<RentalMode>(
         value: value,
+        // ignore: deprecated_member_use
         groupValue: group,
+        // ignore: deprecated_member_use
         onChanged: onChanged,
         dense: true,
         contentPadding: EdgeInsets.zero,
         activeColor: Colors.white,
-        selectedTileColor: Colors.white.withOpacity(0.08),
+        selectedTileColor: Colors.white.withValues(alpha: 0.08),
         title: Text(title,
             style: GoogleFonts.cairo(
                 color: Colors.white, fontWeight: FontWeight.w700)),
@@ -6306,14 +7012,14 @@ InputDecoration _propertyTypePickerSearchDecoration(String hintText) {
     hintStyle: GoogleFonts.cairo(color: Colors.white70),
     prefixIcon: const Icon(Icons.search, color: Colors.white70),
     filled: true,
-    fillColor: Colors.white.withOpacity(0.08),
+    fillColor: Colors.white.withValues(alpha: 0.08),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12.r),
-      borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
     ),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12.r),
-      borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
     ),
     focusedBorder: const OutlineInputBorder(
       borderSide: BorderSide(color: Colors.white),
@@ -6339,12 +7045,10 @@ class _PropertyTypePickerSheetState extends State<_PropertyTypePickerSheet> {
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final rawSheetHeight = media.size.height * 0.68;
-    final availableHeight =
-        media.size.height - media.viewInsets.bottom - 12.h;
-    final sheetHeight =
-        availableHeight > 0 && availableHeight < rawSheetHeight
-            ? availableHeight
-            : rawSheetHeight;
+    final availableHeight = media.size.height - media.viewInsets.bottom - 12.h;
+    final sheetHeight = availableHeight > 0 && availableHeight < rawSheetHeight
+        ? availableHeight
+        : rawSheetHeight;
     final query = _q.trim().toLowerCase();
     final items = PropertyType.values.where((type) {
       if (query.isEmpty) return true;
@@ -6367,8 +7071,7 @@ class _PropertyTypePickerSheetState extends State<_PropertyTypePickerSheet> {
                 SizedBox(height: 14.h),
                 _propertyTypePickerHeader(
                   title: 'اختيار نوع العقار',
-                  subtitle:
-                      'اختر نوع العقار الذي تريد إضافته',
+                  subtitle: 'اختر نوع العقار الذي تريد إضافته',
                 ),
                 SizedBox(height: 12.h),
                 TextField(
@@ -6394,8 +7097,7 @@ class _PropertyTypePickerSheetState extends State<_PropertyTypePickerSheet> {
                           child: ListView.separated(
                             padding: EdgeInsets.zero,
                             itemCount: items.length,
-                            separatorBuilder: (_, __) =>
-                                SizedBox(height: 6.h),
+                            separatorBuilder: (_, __) => SizedBox(height: 6.h),
                             itemBuilder: (_, i) {
                               final type = items[i];
                               final isSelected = type == widget.selectedType;
@@ -6537,6 +7239,10 @@ class _AddUnitsScreenState extends State<AddUnitsScreen> {
     () async {
       await _openArchivedBox();
     }();
+    _price.text = widget.building.price?.toString() ?? '';
+    _currency = widget.building.currency.trim().isEmpty
+        ? 'SAR'
+        : widget.building.currency.trim();
     _bulkCount.text = '1'; // العدد = 1 افتراضيًا عندما الإضافة ليست جماعية
   }
 
@@ -6581,10 +7287,10 @@ class _AddUnitsScreenState extends State<AddUnitsScreen> {
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12.r),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Colors.white),
@@ -6628,10 +7334,10 @@ class _AddUnitsScreenState extends State<AddUnitsScreen> {
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12.r),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Colors.white),
@@ -6670,7 +7376,7 @@ class _AddUnitsScreenState extends State<AddUnitsScreen> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text('إضافة وحدات',
               style: GoogleFonts.cairo(
                   color: Colors.white, fontWeight: FontWeight.w800)),
@@ -6699,7 +7405,12 @@ class _AddUnitsScreenState extends State<AddUnitsScreen> {
                 left: -100,
                 child: _softCircle(260.r, const Color(0x22FFFFFF))),
             SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 24.h),
+              padding: EdgeInsets.fromLTRB(
+                16.w,
+                16.h,
+                16.w,
+                24.h + _bottomBarHeight + MediaQuery.of(context).padding.bottom,
+              ),
               child: _DarkCard(
                 padding: EdgeInsets.all(16.w),
                 child: Form(
@@ -6767,11 +7478,11 @@ class _AddUnitsScreenState extends State<AddUnitsScreen> {
                           labelText: 'عدد الوحدات',
                           labelStyle: GoogleFonts.cairo(color: Colors.white70),
                           filled: true,
-                          fillColor: Colors.white.withOpacity(0.06),
+                          fillColor: Colors.white.withValues(alpha: 0.06),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12.r),
                             borderSide: BorderSide(
-                                color: Colors.white.withOpacity(0.15)),
+                                color: Colors.white.withValues(alpha: 0.15)),
                           ),
                           focusedBorder: const OutlineInputBorder(
                             borderSide: BorderSide(color: Colors.white),
@@ -7095,15 +7806,17 @@ class _AddUnitsScreenState extends State<AddUnitsScreen> {
   void _saveUnits() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
+    // ignore: unused_local_variable
     final tsBase =
         KsaTime.now().microsecondsSinceEpoch; // بذرة زمنية واحدة لكل الدفعة
     final unitBaseName =
         _baseName.text.trim().isEmpty ? 'وحدة' : _baseName.text.trim();
     final count =
         _bulk ? int.parse(_bulkCount.text.trim()) : 1; // كم وحدة هننشئ؟
-    final generatedNumbers = (_bulk || _shouldAutoNumberSingleUnit(unitBaseName))
-        ? _nextAvailableUnitNumbers(unitBaseName, count)
-        : const <int>[];
+    final generatedNumbers =
+        (_bulk || _shouldAutoNumberSingleUnit(unitBaseName))
+            ? _nextAvailableUnitNumbers(unitBaseName, count)
+            : const <int>[];
 
     final createdAt = KsaTime.now(); // 👈 وقت إنشاء هذه الوحدات
 
@@ -7120,8 +7833,14 @@ class _AddUnitsScreenState extends State<AddUnitsScreen> {
 
     final area =
         _area.text.trim().isEmpty ? null : double.tryParse(_area.text.trim());
-    final price =
-        _price.text.trim().isEmpty ? null : double.tryParse(_price.text.trim());
+    final price = _price.text.trim().isEmpty
+        ? widget.building.price
+        : double.tryParse(_price.text.trim());
+    final currency = _currency.trim().isEmpty
+        ? (widget.building.currency.trim().isEmpty
+            ? 'SAR'
+            : widget.building.currency.trim())
+        : _currency.trim();
     final descFree = _desc.text.trim().isEmpty ? null : _desc.text.trim();
 
     final specDesc = _buildSpec(
@@ -7164,7 +7883,7 @@ class _AddUnitsScreenState extends State<AddUnitsScreen> {
             rooms: rooms,
             area: area,
             price: price,
-            currency: _currency,
+            currency: currency,
             rentalMode: null,
             totalUnits: 0,
             occupiedUnits: 0,
@@ -7186,7 +7905,7 @@ class _AddUnitsScreenState extends State<AddUnitsScreen> {
           rooms: rooms,
           area: area,
           price: price,
-          currency: _currency,
+          currency: currency,
           rentalMode: null,
           totalUnits: 0,
           occupiedUnits: 0,
@@ -7293,10 +8012,10 @@ class _EditUnitScreenState extends State<EditUnitScreen> {
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12.r),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Colors.white),
@@ -7339,10 +8058,10 @@ class _EditUnitScreenState extends State<EditUnitScreen> {
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12.r),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Colors.white),
@@ -7413,7 +8132,7 @@ class _EditUnitScreenState extends State<EditUnitScreen> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text('تعديل الوحدة',
               style: GoogleFonts.cairo(
                   color: Colors.white, fontWeight: FontWeight.w800)),
@@ -7442,7 +8161,12 @@ class _EditUnitScreenState extends State<EditUnitScreen> {
                 left: -100,
                 child: _softCircle(260.r, const Color(0x22FFFFFF))),
             SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 24.h),
+              padding: EdgeInsets.fromLTRB(
+                16.w,
+                16.h,
+                16.w,
+                24.h + _bottomBarHeight + MediaQuery.of(context).padding.bottom,
+              ),
               child: _DarkCard(
                 padding: EdgeInsets.all(16.w),
                 child: Form(
@@ -7691,7 +8415,7 @@ class _DarkCard extends StatelessWidget {
         border: Border.all(color: const Color(0x26FFFFFF)),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.25),
+              color: Colors.black.withValues(alpha: 0.25),
               blurRadius: 18,
               offset: const Offset(0, 10))
         ],
@@ -7703,5 +8427,6 @@ class _DarkCard extends StatelessWidget {
 
 // امتداد صغير للـ Iterable لتفادي الأخطاء عند عدم وجود عنصر
 extension on Iterable<Property?> {
+  // ignore: unused_element
   Property? get firstOrNull => isEmpty ? null : first;
 }

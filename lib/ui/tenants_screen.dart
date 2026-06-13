@@ -1,5 +1,5 @@
 // lib/ui/tenants_screen.dart
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -40,7 +40,7 @@ import '../models/property.dart'; // نحتاجه لتحديث إشغال الع
 import 'widgets/app_bottom_nav.dart';
 import 'widgets/app_side_drawer.dart';
 import 'widgets/entity_audit_info_button.dart';
-import '../widgets/darvoo_app_bar.dart';
+import '../widgets/ejarz_pro_app_bar.dart';
 import '../widgets/custom_confirm_dialog.dart';
 
 /// ===== عناصر خلفية/ستايل موحّدة =====
@@ -71,7 +71,7 @@ class _DarkCard extends StatelessWidget {
         border: Border.all(color: const Color(0x26FFFFFF)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.25),
+            color: Colors.black.withValues(alpha: 0.25),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -145,13 +145,13 @@ int _countProviderMaintenanceRequests(String providerName) {
 
   var count = 0;
   for (final item in box.values) {
-      final assigned = _normProviderName(item.assignedTo);
-      if (!item.isArchived &&
-          assigned == target &&
-          _isMaintenanceProviderCurrentStatus(item.status)) {
-        count += 1;
-      }
+    final assigned = _normProviderName(item.assignedTo);
+    if (!item.isArchived &&
+        assigned == target &&
+        _isMaintenanceProviderCurrentStatus(item.status)) {
+      count += 1;
     }
+  }
   return count;
 }
 
@@ -272,16 +272,17 @@ Color _clientTypeColor(String type) {
 String _addedClientSuccessMessage(String type) {
   switch (_normalizeClientType(type)) {
     case _clientTypeCompany:
-      return 'تم إضافة مستأجر (شركة) بنجاح';
+      return 'تم إضافة عميل (شركة) بنجاح';
     case _clientTypeServiceProvider:
       return 'تم إضافة مزود خدمة بنجاح';
     case _clientTypeTenant:
     default:
-      return 'تم إضافة مستأجر بنجاح';
+      return 'تم إضافة عميل بنجاح';
   }
 }
 
 /// ✅ دوال مشتركة Top-Level
+// ignore: unused_element
 String _fmtDate(DateTime d) {
   final dd = KsaTime.dateOnly(d);
   return '${dd.year}-${dd.month.toString().padLeft(2, '0')}-${dd.day.toString().padLeft(2, '0')}';
@@ -314,7 +315,7 @@ Widget _sectionTitle(String t) => Container(
       padding: EdgeInsets.symmetric(vertical: 8.h, horizontal: 12.w),
       margin: EdgeInsets.only(bottom: 12.h),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
+        color: Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(8.r),
       ),
       child: Text(t,
@@ -529,6 +530,7 @@ class _TenantsScreenState extends State<TenantsScreen> {
     });
   }
 
+  // ignore: unused_element
   Future<void> _openProviderMaintenanceRequests(Tenant t) async {
     final args = <String, dynamic>{
       'filterAssignedTo': t.fullName,
@@ -539,6 +541,7 @@ class _TenantsScreenState extends State<TenantsScreen> {
       await Navigator.of(context).pushNamed('/maintenance', arguments: args);
       return;
     } catch (_) {}
+    // ignore: use_build_context_synchronously
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const maintenance_ui.MaintenanceScreen(),
@@ -574,10 +577,10 @@ class _TenantsScreenState extends State<TenantsScreen> {
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12.r),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Colors.white),
@@ -600,13 +603,13 @@ class _TenantsScreenState extends State<TenantsScreen> {
       case _TenantTypeFilter.tenants:
         switch (_fTenantSubType) {
           case _TenantSubTypeFilter.individuals:
-            parts.add('مستأجرون أفراد');
+            parts.add('عملاء أفراد');
             break;
           case _TenantSubTypeFilter.companies:
-            parts.add('مستأجرون شركات');
+            parts.add('عملاء شركات');
             break;
           case _TenantSubTypeFilter.all:
-            parts.add('مستأجرون');
+            parts.add('عملاء');
             break;
         }
         break;
@@ -671,204 +674,205 @@ class _TenantsScreenState extends State<TenantsScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                  Center(
-                    child: Text(
-                      'تصفية',
-                      style: GoogleFonts.cairo(
-                          color: Colors.white, fontWeight: FontWeight.w800),
+                    Center(
+                      child: Text(
+                        'تصفية',
+                        style: GoogleFonts.cairo(
+                            color: Colors.white, fontWeight: FontWeight.w800),
+                      ),
                     ),
-                  ),
-                  SizedBox(height: 12.h),
+                    SizedBox(height: 12.h),
 
-                  // ——— قوائم منسدلة مثل شاشة العقارات ———
-                  DropdownButtonFormField<_TenantTypeFilter>(
-                    initialValue: tempTenantType,
-                    decoration: _dropdownDeco('النوع'),
-                    dropdownColor: const Color(0xFF0B1220),
-                    iconEnabledColor: Colors.white70,
-                    items: const [
-                      DropdownMenuItem(
-                          value: _TenantTypeFilter.all, child: Text('الكل')),
-                      DropdownMenuItem(
-                          value: _TenantTypeFilter.tenants,
-                          child: Text('مستأجرون')),
-                      DropdownMenuItem(
-                          value: _TenantTypeFilter.serviceProviders,
-                          child: Text('مقدمو خدمات')),
-                    ],
-                    onChanged: (v) => setM(() {
-                      tempTenantType = v ?? _TenantTypeFilter.all;
-                      if (tempTenantType != _TenantTypeFilter.tenants) {
-                        tempTenantSubType = _TenantSubTypeFilter.all;
-                        tempLinked = _LinkedFilter.all;
-                        tempId = _IdExpiryFilter.all;
-                      }
-                    }),
-                    style: GoogleFonts.cairo(color: Colors.white),
-                  ),
-                  if (tempTenantType == _TenantTypeFilter.tenants) ...[
-                    SizedBox(height: 10.h),
-                    DropdownButtonFormField<_TenantSubTypeFilter>(
-                      initialValue: tempTenantSubType,
-                      decoration: _dropdownDeco('نوع المستأجرين'),
+                    // ——— قوائم منسدلة مثل شاشة العقارات ———
+                    DropdownButtonFormField<_TenantTypeFilter>(
+                      initialValue: tempTenantType,
+                      decoration: _dropdownDeco('النوع'),
                       dropdownColor: const Color(0xFF0B1220),
                       iconEnabledColor: Colors.white70,
                       items: const [
                         DropdownMenuItem(
-                            value: _TenantSubTypeFilter.all,
-                            child: Text('الكل')),
+                            value: _TenantTypeFilter.all, child: Text('الكل')),
                         DropdownMenuItem(
-                            value: _TenantSubTypeFilter.individuals,
-                            child: Text('أفراد')),
+                            value: _TenantTypeFilter.tenants,
+                            child: Text('عملاء')),
                         DropdownMenuItem(
-                            value: _TenantSubTypeFilter.companies,
-                            child: Text('شركات')),
+                            value: _TenantTypeFilter.serviceProviders,
+                            child: Text('مقدمو خدمات')),
                       ],
                       onChanged: (v) => setM(() {
-                        tempTenantSubType = v ?? _TenantSubTypeFilter.all;
-                        if (tempTenantSubType !=
-                            _TenantSubTypeFilter.individuals) {
+                        tempTenantType = v ?? _TenantTypeFilter.all;
+                        if (tempTenantType != _TenantTypeFilter.tenants) {
+                          tempTenantSubType = _TenantSubTypeFilter.all;
+                          tempLinked = _LinkedFilter.all;
                           tempId = _IdExpiryFilter.all;
                         }
                       }),
                       style: GoogleFonts.cairo(color: Colors.white),
                     ),
-                    SizedBox(height: 10.h),
-                    DropdownButtonFormField<_LinkedFilter>(
-                    initialValue: tempLinked,
-                    decoration: _dropdownDeco('الارتباط بالعقود'),
-                    dropdownColor: const Color(0xFF0B1220),
-                    iconEnabledColor: Colors.white70,
-                    items: const [
-                      DropdownMenuItem(
-                          value: _LinkedFilter.all, child: Text('الكل')),
-                      DropdownMenuItem(
-                          value: _LinkedFilter.linked,
-                          child: Text('مربوطون بعقد')),
-                      DropdownMenuItem(
-                          value: _LinkedFilter.unlinked,
-                          child: Text('غير مربوطين بعقد')),
+                    if (tempTenantType == _TenantTypeFilter.tenants) ...[
+                      SizedBox(height: 10.h),
+                      DropdownButtonFormField<_TenantSubTypeFilter>(
+                        initialValue: tempTenantSubType,
+                        decoration: _dropdownDeco('نوع العملاء'),
+                        dropdownColor: const Color(0xFF0B1220),
+                        iconEnabledColor: Colors.white70,
+                        items: const [
+                          DropdownMenuItem(
+                              value: _TenantSubTypeFilter.all,
+                              child: Text('الكل')),
+                          DropdownMenuItem(
+                              value: _TenantSubTypeFilter.individuals,
+                              child: Text('أفراد')),
+                          DropdownMenuItem(
+                              value: _TenantSubTypeFilter.companies,
+                              child: Text('شركات')),
+                        ],
+                        onChanged: (v) => setM(() {
+                          tempTenantSubType = v ?? _TenantSubTypeFilter.all;
+                          if (tempTenantSubType !=
+                              _TenantSubTypeFilter.individuals) {
+                            tempId = _IdExpiryFilter.all;
+                          }
+                        }),
+                        style: GoogleFonts.cairo(color: Colors.white),
+                      ),
+                      SizedBox(height: 10.h),
+                      DropdownButtonFormField<_LinkedFilter>(
+                        initialValue: tempLinked,
+                        decoration: _dropdownDeco('الارتباط بالعقود'),
+                        dropdownColor: const Color(0xFF0B1220),
+                        iconEnabledColor: Colors.white70,
+                        items: const [
+                          DropdownMenuItem(
+                              value: _LinkedFilter.all, child: Text('الكل')),
+                          DropdownMenuItem(
+                              value: _LinkedFilter.linked,
+                              child: Text('مربوطون بعقد')),
+                          DropdownMenuItem(
+                              value: _LinkedFilter.unlinked,
+                              child: Text('غير مربوطين بعقد')),
+                        ],
+                        onChanged: (v) =>
+                            setM(() => tempLinked = v ?? _LinkedFilter.all),
+                        style: GoogleFonts.cairo(color: Colors.white),
+                      ),
                     ],
-                    onChanged: (v) =>
-                        setM(() => tempLinked = v ?? _LinkedFilter.all),
-                    style: GoogleFonts.cairo(color: Colors.white),
-                  ),
-                  ],
-                  if (tempTenantType == _TenantTypeFilter.tenants &&
-                      tempTenantSubType ==
-                          _TenantSubTypeFilter.individuals) ...[
-                    SizedBox(height: 10.h),
-                    DropdownButtonFormField<_IdExpiryFilter>(
-                    initialValue: tempId,
-                    decoration: _dropdownDeco('حالة الهوية'),
-                    dropdownColor: const Color(0xFF0B1220),
-                    iconEnabledColor: Colors.white70,
-                    items: const [
-                      DropdownMenuItem(
-                          value: _IdExpiryFilter.all, child: Text('الكل')),
-                      DropdownMenuItem(
-                          value: _IdExpiryFilter.expired,
-                          child: Text('هوية منتهية')),
-                      DropdownMenuItem(
-                          value: _IdExpiryFilter.valid,
-                          child: Text('هوية سارية')),
+                    if (tempTenantType == _TenantTypeFilter.tenants &&
+                        tempTenantSubType ==
+                            _TenantSubTypeFilter.individuals) ...[
+                      SizedBox(height: 10.h),
+                      DropdownButtonFormField<_IdExpiryFilter>(
+                        initialValue: tempId,
+                        decoration: _dropdownDeco('حالة الهوية'),
+                        dropdownColor: const Color(0xFF0B1220),
+                        iconEnabledColor: Colors.white70,
+                        items: const [
+                          DropdownMenuItem(
+                              value: _IdExpiryFilter.all, child: Text('الكل')),
+                          DropdownMenuItem(
+                              value: _IdExpiryFilter.expired,
+                              child: Text('هوية منتهية')),
+                          DropdownMenuItem(
+                              value: _IdExpiryFilter.valid,
+                              child: Text('هوية سارية')),
+                        ],
+                        onChanged: (v) =>
+                            setM(() => tempId = v ?? _IdExpiryFilter.all),
+                        style: GoogleFonts.cairo(color: Colors.white),
+                      ),
                     ],
-                      onChanged: (v) =>
-                          setM(() => tempId = v ?? _IdExpiryFilter.all),
-                      style: GoogleFonts.cairo(color: Colors.white),
-                    ),
-                  ],
 
-                  // —— الأرشفة مثل شاشة العقارات: خياران جنب بعض
-                  SizedBox(height: 14.h),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      'الأرشفة',
-                      style: GoogleFonts.cairo(
-                          color: Colors.white70, fontWeight: FontWeight.w700),
+                    // —— الأرشفة مثل شاشة العقارات: خياران جنب بعض
+                    SizedBox(height: 14.h),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        'الأرشفة',
+                        style: GoogleFonts.cairo(
+                            color: Colors.white70, fontWeight: FontWeight.w700),
+                      ),
                     ),
-                  ),
-                  SizedBox(height: 8.h),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ChoiceChip(
-                          label: Text('غير مؤرشفة', style: GoogleFonts.cairo()),
-                          selected: !arch,
-                          onSelected: (_) => setM(() => arch = false),
+                    SizedBox(height: 8.h),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ChoiceChip(
+                            label:
+                                Text('غير مؤرشفة', style: GoogleFonts.cairo()),
+                            selected: !arch,
+                            onSelected: (_) => setM(() => arch = false),
+                          ),
                         ),
-                      ),
-                      SizedBox(width: 8.w),
-                      Expanded(
-                        child: ChoiceChip(
-                          label: Text('مؤرشفة', style: GoogleFonts.cairo()),
-                          selected: arch,
-                          onSelected: (_) => setM(() => arch = true),
+                        SizedBox(width: 8.w),
+                        Expanded(
+                          child: ChoiceChip(
+                            label: Text('مؤرشفة', style: GoogleFonts.cairo()),
+                            selected: arch,
+                            onSelected: (_) => setM(() => arch = true),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
 
-                  SizedBox(height: 16.h),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _fTenantType = tempTenantType;
-                              _fTenantSubType =
-                                  tempTenantType == _TenantTypeFilter.tenants
-                                      ? tempTenantSubType
-                                      : _TenantSubTypeFilter.all;
-                              _fLinked =
-                                  tempTenantType == _TenantTypeFilter.tenants
-                                      ? tempLinked
-                                      : _LinkedFilter.all;
-                              _fIdExpiry =
-                                  tempTenantType == _TenantTypeFilter.tenants &&
-                                          tempTenantSubType ==
-                                              _TenantSubTypeFilter.individuals
-                                      ? tempId
-                                      : _IdExpiryFilter.all;
-                              _fArchive = arch
-                                  ? _ArchiveFilter.archived
-                                  : _ArchiveFilter.notArchived;
-                            });
-                            Navigator.pop(context);
-                          },
-                          style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF0F766E)),
-                          child: Text('تطبيق',
-                              style: GoogleFonts.cairo(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700)),
+                    SizedBox(height: 16.h),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                _fTenantType = tempTenantType;
+                                _fTenantSubType =
+                                    tempTenantType == _TenantTypeFilter.tenants
+                                        ? tempTenantSubType
+                                        : _TenantSubTypeFilter.all;
+                                _fLinked =
+                                    tempTenantType == _TenantTypeFilter.tenants
+                                        ? tempLinked
+                                        : _LinkedFilter.all;
+                                _fIdExpiry = tempTenantType ==
+                                            _TenantTypeFilter.tenants &&
+                                        tempTenantSubType ==
+                                            _TenantSubTypeFilter.individuals
+                                    ? tempId
+                                    : _IdExpiryFilter.all;
+                                _fArchive = arch
+                                    ? _ArchiveFilter.archived
+                                    : _ArchiveFilter.notArchived;
+                              });
+                              Navigator.pop(context);
+                            },
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0F766E)),
+                            child: Text('تطبيق',
+                                style: GoogleFonts.cairo(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700)),
+                          ),
                         ),
-                      ),
-                      SizedBox(width: 10.w),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {
-                            setState(() {
-                              _fTenantType = _TenantTypeFilter.all;
-                              _fTenantSubType = _TenantSubTypeFilter.all;
-                              _fLinked = _LinkedFilter.all;
-                              _fIdExpiry = _IdExpiryFilter.all;
-                              _fArchive = _ArchiveFilter.notArchived;
-                            });
-                            Navigator.pop(context);
-                          },
-                          style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Colors.white24)),
-                          child: Text('إلغاء',
-                              style: GoogleFonts.cairo(
-                                  color: Colors.white70,
-                                  fontWeight: FontWeight.w700)),
+                        SizedBox(width: 10.w),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              setState(() {
+                                _fTenantType = _TenantTypeFilter.all;
+                                _fTenantSubType = _TenantSubTypeFilter.all;
+                                _fLinked = _LinkedFilter.all;
+                                _fIdExpiry = _IdExpiryFilter.all;
+                                _fArchive = _ArchiveFilter.notArchived;
+                              });
+                              Navigator.pop(context);
+                            },
+                            style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Colors.white24)),
+                            child: Text('إلغاء',
+                                style: GoogleFonts.cairo(
+                                    color: Colors.white70,
+                                    fontWeight: FontWeight.w700)),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -881,10 +885,9 @@ class _TenantsScreenState extends State<TenantsScreen> {
 
   Future<void> _tryArchive(Tenant t) async {
     final type = _effectiveClientType(t);
-    final currentProviderRequests =
-        type == _clientTypeServiceProvider
-            ? _countProviderMaintenanceRequests(t.fullName)
-            : 0;
+    final currentProviderRequests = type == _clientTypeServiceProvider
+        ? _countProviderMaintenanceRequests(t.fullName)
+        : 0;
 
     // إذا كان مؤرشفًا → فك الأرشفة مباشرة
     if (t.isArchived) {
@@ -971,7 +974,7 @@ class _TenantsScreenState extends State<TenantsScreen> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text('العملاء',
               style: GoogleFonts.cairo(
                   color: Colors.white,
@@ -1024,16 +1027,16 @@ class _TenantsScreenState extends State<TenantsScreen> {
                       prefixIcon:
                           const Icon(Icons.search, color: Colors.white70),
                       filled: true,
-                      fillColor: Colors.white.withOpacity(0.08),
+                      fillColor: Colors.white.withValues(alpha: 0.08),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12.r),
-                        borderSide:
-                            BorderSide(color: Colors.white.withOpacity(0.15)),
+                        borderSide: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.15)),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12.r),
-                        borderSide:
-                            BorderSide(color: Colors.white.withOpacity(0.15)),
+                        borderSide: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.15)),
                       ),
                       focusedBorder: const OutlineInputBorder(
                         borderSide: BorderSide(color: Colors.white),
@@ -1055,8 +1058,8 @@ class _TenantsScreenState extends State<TenantsScreen> {
                         decoration: BoxDecoration(
                           color: const Color(0xFF334155),
                           borderRadius: BorderRadius.circular(10.r),
-                          border:
-                              Border.all(color: Colors.white.withOpacity(0.15)),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.15)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -1133,8 +1136,7 @@ class _TenantsScreenState extends State<TenantsScreen> {
                       }
                       // حالة الهوية
                       if (_fTenantType == _TenantTypeFilter.tenants &&
-                          _fTenantSubType ==
-                              _TenantSubTypeFilter.individuals) {
+                          _fTenantSubType == _TenantSubTypeFilter.individuals) {
                         if (_fIdExpiry == _IdExpiryFilter.expired) {
                           items = items
                               .where((t) =>
@@ -1165,13 +1167,13 @@ class _TenantsScreenState extends State<TenantsScreen> {
                       // ترتيب: الأحدث أولاً (مع حماية null)
                       // ترتيب ثابت: الأحدث تعديلًا ثم إنشاءً، ثم كاسر تعادل بالـ id
                       items.sort((a, b) {
-                        final au = a.updatedAt.millisecondsSinceEpoch ?? 0;
-                        final bu = b.updatedAt.millisecondsSinceEpoch ?? 0;
+                        final au = a.updatedAt.millisecondsSinceEpoch;
+                        final bu = b.updatedAt.millisecondsSinceEpoch;
                         final cmpU = bu.compareTo(au);
                         if (cmpU != 0) return cmpU;
 
-                        final ac = a.createdAt.millisecondsSinceEpoch ?? 0;
-                        final bc = b.createdAt.millisecondsSinceEpoch ?? 0;
+                        final ac = a.createdAt.millisecondsSinceEpoch;
+                        final bc = b.createdAt.millisecondsSinceEpoch;
                         final cmpC = bc.compareTo(ac);
                         if (cmpC != 0) return cmpC;
 
@@ -1180,7 +1182,7 @@ class _TenantsScreenState extends State<TenantsScreen> {
 
                       if (items.isEmpty) {
                         return Center(
-                          child: Text('لا يوجد مستأجرون',
+                          child: Text('لا يوجد عملاء',
                               style: GoogleFonts.cairo(
                                   color: Colors.white70,
                                   fontWeight: FontWeight.w700)),
@@ -1338,45 +1340,50 @@ class _TenantsScreenState extends State<TenantsScreen> {
           foregroundColor: Colors.white,
           elevation: 6,
           icon: const Icon(Icons.person_add_alt_1_rounded),
-          label: Text('إضافة مستأجر',
+          label: Text('إضافة عميل',
               style: GoogleFonts.cairo(fontWeight: FontWeight.w700)),
           onPressed: () async {
             try {
-            // 🚫 منع عميل المكتب من إضافة مستأجر
-            if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
+              // 🚫 منع عميل المكتب من إضافة عميل
+              if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
 
-            final limitDecision = await PackageLimitService.canAddClient();
-            if (!limitDecision.allowed) {
-              if (!mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    limitDecision.message ??
-                        'لا يمكن إضافة عميل جديد، لقد وصلت إلى الحد الأقصى المسموح.',
-                    style: GoogleFonts.cairo(),
+              final limitDecision = await PackageLimitService.canAddClient();
+              if (!limitDecision.allowed) {
+                if (!mounted) return;
+                // ignore: use_build_context_synchronously
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      limitDecision.message ??
+                          'لا يمكن إضافة عميل جديد، لقد وصلت إلى الحد الأقصى المسموح.',
+                      style: GoogleFonts.cairo(),
+                    ),
+                    behavior: SnackBarBehavior.floating,
                   ),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-              return;
-            }
+                );
+                return;
+              }
 
-            final created = await Navigator.of(context).push<Tenant?>(
-              MaterialPageRoute(builder: (_) => const AddOrEditTenantScreen()),
-            );
-            if (created != null) {
-              // ✅ حفظ محلي سريع + طابور المزامنة (الـ Snackbar ظهر في شاشة الإضافة)
-              await _box.put(created.id, created);
-              _sync.enqueueUpsertTenant(created); // بدون await
-              if (!mounted) return;
-              await Navigator.of(context).push(
+              // ignore: use_build_context_synchronously
+              final created = await Navigator.of(context).push<Tenant?>(
                 MaterialPageRoute(
-                  builder: (_) => TenantDetailsScreen(tenant: created),
-                ),
+                    builder: (_) => const AddOrEditTenantScreen()),
               );
-            }
+              if (created != null) {
+                // ✅ حفظ محلي سريع + طابور المزامنة (الـ Snackbar ظهر في شاشة الإضافة)
+                await _box.put(created.id, created);
+                _sync.enqueueUpsertTenant(created); // بدون await
+                if (!mounted) return;
+                // ignore: use_build_context_synchronously
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => TenantDetailsScreen(tenant: created),
+                  ),
+                );
+              }
             } catch (_) {
               if (!mounted) return;
+              // ignore: use_build_context_synchronously
               ScaffoldMessenger.maybeOf(context)
                 ?..hideCurrentSnackBar()
                 ..showSnackBar(
@@ -1408,7 +1415,7 @@ class _TenantsScreenState extends State<TenantsScreen> {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(10.r),
-        border: Border.all(color: Colors.white.withOpacity(0.15)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
       ),
       child: Text(
         text,
@@ -1435,7 +1442,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
   int _providerMaintenanceCount = 0;
   final Map<String, Future<String>> _remoteThumbUrls = {};
   static const MethodChannel _downloadsChannel =
-      MethodChannel('darvoo/downloads');
+      MethodChannel('ejarzpro/downloads');
   late Tenant _liveTenant;
 
   // مساعد بسيط
@@ -1589,10 +1596,9 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
 
   Future<void> _toggleArchive(Tenant t) async {
     final type = _effectiveClientType(t);
-    final currentProviderRequests =
-        type == _clientTypeServiceProvider
-            ? _countProviderMaintenanceRequests(t.fullName)
-            : 0;
+    final currentProviderRequests = type == _clientTypeServiceProvider
+        ? _countProviderMaintenanceRequests(t.fullName)
+        : 0;
 
     if (!t.isArchived) {
       // محاولة أرشفة
@@ -1683,7 +1689,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text('تفاصيل العميل',
               style: GoogleFonts.cairo(
                   color: Colors.white, fontWeight: FontWeight.w800)),
@@ -1864,7 +1870,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
                         _sectionTitle('بيانات أساسية'),
                         if (_effectiveClientType(tenant) == _clientTypeCompany)
                           _rowInfo(
-                            'رقم السجل التجاري',
+                            'رقم السجل الموحد',
                             (tenant.companyCommercialRegister ?? '')
                                     .trim()
                                     .isEmpty
@@ -1890,6 +1896,15 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
                               tenant.companyRepresentativeName),
                           _rowInfo(
                               'رقم الجوال', tenant.companyRepresentativePhone),
+                          _rowInfo('رقم هوية ممثل الشركة',
+                              tenant.companyRepresentativeNationalId),
+                          _rowInfo(
+                            'تاريخ ميلاد ممثل الشركة',
+                            tenant.companyRepresentativeDateOfBirth == null
+                                ? null
+                                : _fmtDateDynamic(
+                                    tenant.companyRepresentativeDateOfBirth!),
+                          ),
                         ],
                         if (isServiceProvider) ...[
                           _rowInfo('الاسم الكامل', tenant.fullName),
@@ -1922,8 +1937,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
                               tenant.companyRepresentativePhone),
                         if (isServiceProvider)
                           _rowInfo('رقم الجوال', tenant.phone),
-                        if (isTenant)
-                          _rowInfo('رقم الجوال', tenant.phone),
+                        if (isTenant) _rowInfo('رقم الجوال', tenant.phone),
                       ],
                     ),
                   ),
@@ -1962,7 +1976,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
                                   child: Container(
                                     width: 92.w,
                                     height: 92.w,
-                                    color: Colors.white.withOpacity(0.08),
+                                    color: Colors.white.withValues(alpha: 0.08),
                                     child: _buildAttachmentThumb(path),
                                   ),
                                 ),
@@ -2002,6 +2016,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
                             }
 
                             final updated =
+                                // ignore: use_build_context_synchronously
                                 await Navigator.of(context).push<Tenant?>(
                               MaterialPageRoute(
                                 builder: (_) =>
@@ -2034,6 +2049,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
                               return;
                             }
 
+                            // ignore: use_build_context_synchronously
                             _showNotesSheet(context, tenant);
                           },
                           bg: const Color(0xFF334155),
@@ -2063,8 +2079,10 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
 
                             if (_effectiveClientType(tenant) ==
                                 _clientTypeServiceProvider) {
+                              // ignore: use_build_context_synchronously
                               _goToAddMaintenance(context, tenant);
                             } else {
+                              // ignore: use_build_context_synchronously
                               _goToAddContract(context, tenant);
                             }
                           },
@@ -2098,11 +2116,14 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
                               icon: Icons.history_rounded,
                               label: 'خدمات سابقة',
                               onTap: () async {
-                                if (await _blockArchivedProviderAction(tenant)) {
+                                if (await _blockArchivedProviderAction(
+                                    tenant)) {
                                   return;
                                 }
                                 await _openProviderMaintenanceHistory(
-                                    context, tenant);
+                                    // ignore: use_build_context_synchronously
+                                    context,
+                                    tenant);
                               },
                               bg: const Color(0xFF4338CA),
                             ),
@@ -2122,6 +2143,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
                                 return;
                               }
 
+                              // ignore: use_build_context_synchronously
                               _confirmDelete(context, tenant);
                             },
                             bg: const Color(0xFF7F1D1D),
@@ -2153,7 +2175,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(10.r),
-        border: Border.all(color: Colors.white.withOpacity(0.15)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
       ),
       child: Text(
         text,
@@ -2180,7 +2202,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(10.r),
-          border: Border.all(color: Colors.white.withOpacity(0.15)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -2314,6 +2336,16 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ListTile(
+                leading:
+                    const Icon(Icons.open_in_new_rounded, color: Colors.white),
+                title: Text('فتح مباشرة',
+                    style: GoogleFonts.cairo(color: Colors.white)),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  await _openAttachment(path);
+                },
+              ),
               ListTile(
                 leading:
                     const Icon(Icons.download_rounded, color: Colors.white),
@@ -2539,6 +2571,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
     Future.delayed(const Duration(seconds: 2), () => entry.remove());
   }
 
+  // ignore: unused_element
   Future<void> _openAttachment(String path) async {
     try {
       final raw = path.trim();
@@ -2591,6 +2624,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
     } catch (_) {
       // لو المسار غير معرّف، نعمل fallback بفتح ContractsScreen وتمرير نفس الـ arguments
     }
+    // ignore: use_build_context_synchronously
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const contracts_ui.ContractsScreen(),
@@ -2611,6 +2645,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
       await _refreshProviderMaintenanceCount();
       return;
     } catch (_) {}
+    // ignore: use_build_context_synchronously
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const maintenance_ui.MaintenanceScreen(),
@@ -2632,6 +2667,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
       await _refreshProviderMaintenanceCount();
       return;
     } catch (_) {}
+    // ignore: use_build_context_synchronously
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const maintenance_ui.MaintenanceScreen(),
@@ -2706,11 +2742,11 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
                   hintText: 'اكتب ملاحظات المستأجر هنا…',
                   hintStyle: GoogleFonts.cairo(color: Colors.white54),
                   filled: true,
-                  fillColor: Colors.white.withOpacity(0.06),
+                  fillColor: Colors.white.withValues(alpha: 0.06),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12.r),
                     borderSide:
-                        BorderSide(color: Colors.white.withOpacity(0.15)),
+                        BorderSide(color: Colors.white.withValues(alpha: 0.15)),
                   ),
                   focusedBorder: const OutlineInputBorder(
                     borderSide: BorderSide(color: Colors.white),
@@ -2741,7 +2777,9 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
                         _sync.enqueueUpsertTenant(t);
 
                         if (mounted) {
+                          // ignore: use_build_context_synchronously
                           Navigator.of(ctx).pop();
+                          // ignore: use_build_context_synchronously
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text('تم حفظ الملاحظات',
@@ -2780,6 +2818,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
     }
     try {
       // نمرر المفتاح المتوافق مع شاشة العقود
+      // ignore: use_build_context_synchronously
       final created = await Navigator.of(context).pushNamed(
         '/contracts/new',
         arguments: {
@@ -2797,6 +2836,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
         await _onContractCreatedFromTenantFlow(created, t);
 
         if (!mounted) return;
+        // ignore: use_build_context_synchronously
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('تم إضافة العقد', style: GoogleFonts.cairo()),
@@ -2805,6 +2845,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
         );
 
         // (اختياري) افتح تفاصيل العقد مباشرة
+        // ignore: use_build_context_synchronously
         await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) =>
@@ -2831,6 +2872,7 @@ class _TenantDetailsScreenState extends State<TenantDetailsScreen> {
       return;
     }
     try {
+      // ignore: use_build_context_synchronously
       await Navigator.of(context).pushNamed(
         '/maintenance/new',
         arguments: {
@@ -2946,6 +2988,7 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
   final _companyTaxNumber = TextEditingController();
   final _companyRepresentativeName = TextEditingController();
   final _companyRepresentativePhone = TextEditingController();
+  final _companyRepresentativeNationalId = TextEditingController();
   final _companyBankAccountNumber = TextEditingController();
   final _companyBankName = TextEditingController();
   final _serviceSpecialization = TextEditingController();
@@ -2955,10 +2998,11 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
   bool _uploadingAttachments = false;
   final Map<String, Future<String>> _remoteThumbUrls = {};
   static const MethodChannel _downloadsChannel =
-      MethodChannel('darvoo/downloads');
+      MethodChannel('ejarzpro/downloads');
 
   DateTime? _idExpiry;
   DateTime? _dateOfBirth;
+  DateTime? _companyRepresentativeDateOfBirth;
   // منع تجاوز الحد + تنبيه قصير
   DateTime? _lastExceedShownAt;
 
@@ -3029,6 +3073,9 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
       _companyTaxNumber.text = t.companyTaxNumber ?? '';
       _companyRepresentativeName.text = t.companyRepresentativeName ?? '';
       _companyRepresentativePhone.text = t.companyRepresentativePhone ?? '';
+      _companyRepresentativeNationalId.text =
+          t.companyRepresentativeNationalId ?? '';
+      _companyRepresentativeDateOfBirth = t.companyRepresentativeDateOfBirth;
       _companyBankAccountNumber.text = t.companyBankAccountNumber ?? '';
       _companyBankName.text = t.companyBankName ?? '';
       _serviceSpecialization.text = t.serviceSpecialization ?? '';
@@ -3083,6 +3130,7 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
     _companyTaxNumber.dispose();
     _companyRepresentativeName.dispose();
     _companyRepresentativePhone.dispose();
+    _companyRepresentativeNationalId.dispose();
     _companyBankAccountNumber.dispose();
     _companyBankName.dispose();
     _serviceSpecialization.dispose();
@@ -3093,6 +3141,7 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
   Widget build(BuildContext context) {
     final isEdit = widget.existing != null;
 
+    // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: () async => !_uploadingAttachments,
       child: AbsorbPointer(
@@ -3121,7 +3170,7 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
               elevation: 0,
               centerTitle: true,
               automaticallyImplyLeading: false,
-              leading: darvooLeading(context, iconColor: Colors.white),
+              leading: ejarzProLeading(context, iconColor: Colors.white),
               title: Text(isEdit ? 'تعديل عميل' : 'إضافة عميل',
                   style: GoogleFonts.cairo(
                       color: Colors.white, fontWeight: FontWeight.w800)),
@@ -3150,7 +3199,14 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
                     left: -100,
                     child: _softCircle(260.r, const Color(0x22FFFFFF))),
                 SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 24.h),
+                  padding: EdgeInsets.fromLTRB(
+                    16.w,
+                    16.h,
+                    16.w,
+                    24.h +
+                        _bottomBarHeight +
+                        MediaQuery.of(context).padding.bottom,
+                  ),
                   child: _DarkCard(
                     padding: EdgeInsets.all(16.w),
                     child: Form(
@@ -3356,35 +3412,6 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
                               ),
                               SizedBox(height: 12.h),
                             ],
-
-                            if (_normalizeClientType(_clientType) !=
-                                _clientTypeServiceProvider) ...[
-                              // تاريخ انتهاء الهوية
-                              InkWell(
-                                borderRadius: BorderRadius.circular(12.r),
-                                onTap: _pickIdExpiry,
-                                child: InputDecorator(
-                                  decoration:
-                                      _dd('تاريخ انتهاء الهوية (اختياري)'),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.event_outlined,
-                                          color: Colors.white70),
-                                      SizedBox(width: 8.w),
-                                      Text(
-                                        _idExpiry == null
-                                            ? '—'
-                                            : _fmtDateDynamic(_idExpiry!),
-                                        style: GoogleFonts.cairo(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w700),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              SizedBox(height: 12.h),
-                            ],
                           ],
                           if (_normalizeClientType(_clientType) ==
                               _clientTypeTenant) ...[
@@ -3466,7 +3493,7 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
                             SizedBox(height: 12.h),
                             _field(
                               controller: _companyCommercialRegister,
-                              label: 'رقم السجل التجاري',
+                              label: 'رقم السجل الموحد',
                               keyboardType: TextInputType.number,
                               inputFormatters: [
                                 FilteringTextInputFormatter.digitsOnly
@@ -3481,32 +3508,93 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
                               inputFormatters: [
                                 FilteringTextInputFormatter.digitsOnly
                               ],
-                              validator: _req,
+                              validator: (v) {
+                                final s = (v ?? '').trim();
+                                if (s.isEmpty) return 'هذا الحقل مطلوب';
+                                if (!RegExp(r'^\d{15}$').hasMatch(s)) {
+                                  return 'خطأ في الرقم الضريبي: يجب أن يكون 15 رقمًا';
+                                }
+                                return null;
+                              },
                             ),
                             SizedBox(height: 12.h),
+                            _sectionTitle('بيانات ممثل الشركة'),
+                            SizedBox(height: 8.h),
                             _field(
                               controller: _companyRepresentativeName,
                               label: 'اسم ممثل الشركة',
                               validator: _req,
                             ),
                             SizedBox(height: 12.h),
-                            _field(
-                              controller: _companyRepresentativePhone,
-                              label: 'رقم الجوال',
-                              keyboardType: TextInputType.number,
-                              maxLength: 10,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _field(
+                                    controller:
+                                        _companyRepresentativeNationalId,
+                                    label: 'رقم الهوية',
+                                    keyboardType: TextInputType.number,
+                                    maxLength: 10,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly
+                                    ],
+                                    validator: (v) {
+                                      if ((v ?? '').trim().isEmpty) {
+                                        return 'هذا الحقل مطلوب';
+                                      }
+                                      if (!RegExp(r'^\d{1,10}$').hasMatch(v!)) {
+                                        return 'الهوية أرقام فقط وبحد أقصى 10 رقمًا';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                                SizedBox(width: 10.w),
+                                Expanded(
+                                  child: _field(
+                                    controller: _companyRepresentativePhone,
+                                    label: 'رقم الجوال',
+                                    keyboardType: TextInputType.number,
+                                    maxLength: 10,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly
+                                    ],
+                                    validator: (v) {
+                                      if ((v ?? '').trim().isEmpty) {
+                                        return 'هذا الحقل مطلوب';
+                                      }
+                                      if (!RegExp(r'^\d{1,10}$').hasMatch(v!)) {
+                                        return 'الجوال أرقام فقط وبحد أقصى 10 رقمًا';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
                               ],
-                              validator: (v) {
-                                if ((v ?? '').trim().isEmpty) {
-                                  return 'هذا الحقل مطلوب';
-                                }
-                                if (!RegExp(r'^\d{1,10}$').hasMatch(v!)) {
-                                  return 'الجوال أرقام فقط وبحد أقصى 10 رقمًا';
-                                }
-                                return null;
-                              },
+                            ),
+                            SizedBox(height: 12.h),
+                            InkWell(
+                              borderRadius: BorderRadius.circular(12.r),
+                              onTap: _pickCompanyRepresentativeDateOfBirth,
+                              child: InputDecorator(
+                                decoration: _dd('تاريخ ميلاد ممثل الشركة'),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.cake_outlined,
+                                        color: Colors.white70),
+                                    SizedBox(width: 8.w),
+                                    Text(
+                                      _companyRepresentativeDateOfBirth == null
+                                          ? '—'
+                                          : _fmtDateDynamic(
+                                              _companyRepresentativeDateOfBirth!),
+                                      style: GoogleFonts.cairo(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                             SizedBox(height: 12.h),
                           ],
@@ -3573,7 +3661,8 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
                                         child: Container(
                                           width: 88.w,
                                           height: 88.w,
-                                          color: Colors.white.withOpacity(0.08),
+                                          color: Colors.white
+                                              .withValues(alpha: 0.08),
                                           child: _buildAttachmentThumb(path),
                                         ),
                                       ),
@@ -3634,13 +3723,13 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
                     child: IgnorePointer(
                       ignoring: false,
                       child: Container(
-                        color: Colors.black.withOpacity(0.30),
+                        color: Colors.black.withValues(alpha: 0.30),
                         alignment: Alignment.center,
                         child: Container(
                           padding: EdgeInsets.symmetric(
                               horizontal: 18.w, vertical: 14.h),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.90),
+                            color: Colors.white.withValues(alpha: 0.90),
                             borderRadius: BorderRadius.circular(14.r),
                           ),
                           child: Row(
@@ -3684,10 +3773,10 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12.r),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Colors.white),
@@ -3814,6 +3903,16 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ListTile(
+                leading:
+                    const Icon(Icons.open_in_new_rounded, color: Colors.white),
+                title: Text('فتح مباشرة',
+                    style: GoogleFonts.cairo(color: Colors.white)),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  await _openAttachment(path);
+                },
+              ),
               ListTile(
                 leading:
                     const Icon(Icons.download_rounded, color: Colors.white),
@@ -4039,6 +4138,7 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
     Future.delayed(const Duration(seconds: 2), () => entry.remove());
   }
 
+  // ignore: unused_element
   Future<void> _openAttachment(String path) async {
     try {
       final raw = path.trim();
@@ -4076,6 +4176,7 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
     }
   }
 
+  // ignore: unused_element
   Future<String?> _uploadAttachmentToStorage(
     File localFile,
     String fileName,
@@ -4187,10 +4288,8 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
   }
 
   List<String> _removedInitialLocalAttachments() {
-    final currentPaths = _attachments
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toSet();
+    final currentPaths =
+        _attachments.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
     return _initialLocalAttachments
         .where((path) => !currentPaths.contains(path))
         .toList(growable: false);
@@ -4221,36 +4320,6 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
     );
     if (ok != true || !mounted) return;
     setState(() => _attachments.remove(path));
-  }
-
-  Future<void> _pickIdExpiry() async {
-    final nowKsa = KsaTime.now();
-    final init = _idExpiry ?? nowKsa;
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: KsaTime.dateOnly(init),
-      firstDate: DateTime(1990, 1, 1),
-      lastDate: DateTime(nowKsa.year + 30, 12, 31),
-      helpText: 'اختر تاريخ انتهاء الهوية',
-      confirmText: 'اختيار',
-      cancelText: 'إلغاء',
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.dark(
-              primary: Colors.white,
-              onPrimary: Colors.black,
-              surface: Color(0xFF0B1220),
-              onSurface: Colors.white,
-            ),
-            dialogTheme:
-                const DialogThemeData(backgroundColor: Color(0xFF0B1220)),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null) setState(() => _idExpiry = KsaTime.dateOnly(picked));
   }
 
   Future<void> _pickDateOfBirth() async {
@@ -4285,6 +4354,39 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
     }
   }
 
+  Future<void> _pickCompanyRepresentativeDateOfBirth() async {
+    final nowKsa = KsaTime.now();
+    final init = _companyRepresentativeDateOfBirth ?? DateTime(1990, 1, 1);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: KsaTime.dateOnly(init),
+      firstDate: DateTime(1920, 1, 1),
+      lastDate: nowKsa,
+      helpText: 'اختر تاريخ ميلاد ممثل الشركة',
+      confirmText: 'اختيار',
+      cancelText: 'إلغاء',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Colors.white,
+              onPrimary: Colors.black,
+              surface: Color(0xFF0B1220),
+              onSurface: Colors.white,
+            ),
+            dialogTheme:
+                const DialogThemeData(backgroundColor: Color(0xFF0B1220)),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(
+          () => _companyRepresentativeDateOfBirth = KsaTime.dateOnly(picked));
+    }
+  }
+
   void _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
@@ -4305,6 +4407,8 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
       companyTaxNumber: _companyTaxNumber.text,
       companyRepresentativeName: _companyRepresentativeName.text,
       companyRepresentativePhone: _companyRepresentativePhone.text,
+      companyRepresentativeNationalId: _companyRepresentativeNationalId.text,
+      companyRepresentativeDateOfBirth: _companyRepresentativeDateOfBirth,
       serviceSpecialization: _serviceSpecialization.text,
       attachmentPaths: _attachments,
       existingTenants: _box.values.cast<Tenant>(),
@@ -4348,6 +4452,7 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
         SnackBar(content: Text('تم التحديث', style: GoogleFonts.cairo())),
       );
       await Future.delayed(const Duration(milliseconds: 200));
+      // ignore: use_build_context_synchronously
       Navigator.of(context).pop<Tenant>(t);
     } else {
       // إنشاء المستأجر الجديد
@@ -4369,6 +4474,7 @@ class _AddOrEditTenantScreenState extends State<AddOrEditTenantScreen> {
                 style: GoogleFonts.cairo())),
       );
       await Future.delayed(const Duration(milliseconds: 200));
+      // ignore: use_build_context_synchronously
       Navigator.of(context).pop<Tenant>(t);
     }
   }

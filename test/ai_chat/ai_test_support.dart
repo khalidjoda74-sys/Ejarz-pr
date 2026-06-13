@@ -1,12 +1,12 @@
 import 'dart:io';
 
-import 'package:darvoo/data/constants/boxes.dart';
-import 'package:darvoo/data/services/user_scope.dart';
-import 'package:darvoo/models/property.dart';
-import 'package:darvoo/models/tenant.dart';
-import 'package:darvoo/ui/contracts_screen.dart' show ContractAdapter;
-import 'package:darvoo/ui/invoices_screen.dart' show InvoiceAdapter;
-import 'package:darvoo/ui/maintenance_screen.dart'
+import 'package:ejarz_pro/data/constants/boxes.dart';
+import 'package:ejarz_pro/data/services/user_scope.dart';
+import 'package:ejarz_pro/models/property.dart';
+import 'package:ejarz_pro/models/tenant.dart';
+import 'package:ejarz_pro/ui/contracts_screen.dart' show ContractAdapter;
+import 'package:ejarz_pro/ui/invoices_screen.dart' show InvoiceAdapter;
+import 'package:ejarz_pro/ui/maintenance_screen.dart'
     show
         MaintenancePriorityAdapter,
         MaintenanceRequestAdapter,

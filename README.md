@@ -1,6 +1,6 @@
-# darvoo
+# Ejarz Pro
 
-A new Flutter project.
+Real estate management app built with Flutter and Firebase.
 
 ## Getting Started
 

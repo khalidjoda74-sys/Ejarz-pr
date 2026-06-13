@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import 'package:darvoo/data/services/user_scope.dart';
-import 'package:darvoo/ui/ai_chat/core/ai_audit_log_store.dart';
-import 'package:darvoo/ui/ai_chat/core/ai_chat_types.dart';
-import 'package:darvoo/ui/ai_chat/core/ai_pending_action_store.dart';
+import 'package:ejarz_pro/data/services/user_scope.dart';
+import 'package:ejarz_pro/ui/ai_chat/core/ai_audit_log_store.dart';
+import 'package:ejarz_pro/ui/ai_chat/core/ai_chat_types.dart';
+import 'package:ejarz_pro/ui/ai_chat/core/ai_pending_action_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 
@@ -13,7 +13,7 @@ void main() {
   late Directory tempDir;
 
   setUpAll(() async {
-    tempDir = await initAiTestHive('darvoo_ai_storage_test_');
+    tempDir = await initAiTestHive('ejarzpro_ai_storage_test_');
     await openAiCoreBoxes();
   });
 
@@ -26,7 +26,8 @@ void main() {
     await closeAiTestHive(tempDir);
   });
 
-  test('pending action store keeps working locally without Firebase setup', () async {
+  test('pending action store keeps working locally without Firebase setup',
+      () async {
     final record = AiPendingActionRecord(
       id: 'pending_local_only',
       conversationId: 'conv_local',

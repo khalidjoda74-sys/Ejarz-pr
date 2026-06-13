@@ -1,1 +1,54 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"darvoo","appId":"1:142850470461:android:713464ae047721fbb97054","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"darvoo","configurations":{"android":"1:142850470461:android:713464ae047721fbb97054","ios":"1:142850470461:ios:5e9fa1d0ad211d60b97054"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "darvoo",
+          "appId": "1:142850470461:android:6b32d6569d337ac2b97054",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "darvoo",
+          "configurations": {
+            "android": "1:142850470461:android:6b32d6569d337ac2b97054",
+            "ios": "1:142850470461:ios:9b05f5ac2506e7ebb97054",
+            "web": "1:142850470461:web:f5f2012c8f0a618ab97054"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|css|png|jpg|jpeg|gif|svg|webp|woff|woff2)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public,max-age=31536000,immutable"
+          }
+        ]
+      }
+    ]
+  }
+}

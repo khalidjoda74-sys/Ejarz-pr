@@ -159,9 +159,11 @@ class PropertiesRepo {
       'waterMode': p.waterMode,
       'waterShare': p.waterShare,
       'waterAmount': p.waterAmount,
+      'usageType': p.usageType,
       // الحالة والمزامنة:
       'isArchived': p.isArchived == true,
-      'createdAt': p.createdAt == null ? null : Timestamp.fromDate(p.createdAt!),
+      'createdAt':
+          p.createdAt == null ? null : Timestamp.fromDate(p.createdAt!),
       'isDeleted': false,
       'updatedAt': FieldValue.serverTimestamp(),
     }..removeWhere((k, v) => v == null || (v is String && v.trim().isEmpty));
@@ -218,6 +220,7 @@ class PropertiesRepo {
       waterMode: (m['waterMode'] as String?),
       waterShare: (m['waterShare'] as String?),
       waterAmount: (m['waterAmount'] as String?),
+      usageType: (m['usageType'] as String?),
       createdAt: _toDate(m['createdAt']),
       updatedAt: _toDate(m['updatedAt']),
       isArchived: m['isArchived'] == true,
@@ -277,6 +280,7 @@ class PropertiesRepo {
       'address': p.address,
       'type': p.type.name,
       'rentalMode': p.rentalMode?.name,
+      'usageType': p.usageType,
       'totalUnits': p.totalUnits,
       'occupiedUnits': p.occupiedUnits,
       'isArchived': p.isArchived,
@@ -293,6 +297,7 @@ class PropertiesRepo {
       'address': (m['address'] ?? '').toString(),
       'type': (m['type'] ?? '').toString(),
       'rentalMode': (m['rentalMode'] ?? '').toString(),
+      'usageType': (m['usageType'] ?? '').toString(),
       'totalUnits': _toInt(m['totalUnits']),
       'occupiedUnits': _toInt(m['occupiedUnits']),
       'isArchived': m['isArchived'] == true,

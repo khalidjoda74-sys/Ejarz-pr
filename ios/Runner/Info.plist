@@ -6,7 +6,7 @@
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 
 		<key>CFBundleDisplayName</key>
-		<string>Darvoo</string>
+		<string>Ejarz Pro</string>
 
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>
@@ -18,7 +18,7 @@
 		<string>6.0</string>
 
 		<key>CFBundleName</key>
-		<string>darvoo</string>
+		<string>Ejarz Pro</string>
 
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
@@ -41,13 +41,13 @@
 		<key>UIMainStoryboardFile</key>
 		<string>Main</string>
 
-		<!-- iPhone only: نحدد أن التطبيق يعمل على iPhone فقط -->
+		<!-- iPhone only. -->
 		<key>UIDeviceFamily</key>
 		<array>
 			<integer>1</integer>
 		</array>
 
-		<!-- الاتجاهات المدعومة على الآيفون -->
+		<!-- Supported orientations on iPhone. -->
 		<key>UISupportedInterfaceOrientations</key>
 		<array>
 			<string>UIInterfaceOrientationPortrait</string>
@@ -62,13 +62,13 @@
 		<true/>
 
 		<key>NSPhotoLibraryUsageDescription</key>
-		<string>نحتاج الوصول إلى الصور لكي يتمكن المستخدم من اختيار صور العقارات أو الصورة الشخصية ورفعها داخل التطبيق.</string>
+		<string>نحتاج الوصول إلى الصور حتى تتمكن من اختيار صور العقارات أو المستندات ورفعها داخل التطبيق.</string>
 
 		<key>NSCameraUsageDescription</key>
-		<string>نحتاج الوصول إلى الكاميرا لكي يتمكن المستخدم من التقاط صور العقارات أو الصورة الشخصية ورفعها داخل التطبيق.</string>
+		<string>نحتاج الوصول إلى الكاميرا حتى تتمكن من التقاط صور العقارات أو المستندات ورفعها داخل التطبيق.</string>
 
 		<key>NSPhotoLibraryAddUsageDescription</key>
-		<string>نحتاج حفظ الصور في المعرض عند قيام المستخدم بتنزيل أو حفظ الصور من داخل التطبيق.</string>
+		<string>نحتاج حفظ الصور في المعرض عند تنزيل أو حفظ ملفات وصور من داخل التطبيق.</string>
 
 		<key>UIStatusBarHidden</key>
 		<false/>

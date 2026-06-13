@@ -4,7 +4,7 @@
 // - الإضافة تظهر فورًا في الواجهة وتبقى ثابتة في موضعها (يُدار الترتيب في الواجهة عبر سجل محلي).
 // - التعديل على عميل "محلي" يندمج مباشرةً مع عنصر الإضافة المعلّق بدل محاولة إرسال تعديل على UID غير موجود.
 // - تفريغ الطوابير يتم بهدوء عند توفر الإنترنت، دون تغيير سلوك الواجهة.
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 
 import 'dart:async';
 import 'dart:io' show InternetAddress;
@@ -233,6 +233,8 @@ class OfflineSyncService {
       companyTaxNumber: t.companyTaxNumber,
       companyRepresentativeName: t.companyRepresentativeName,
       companyRepresentativePhone: t.companyRepresentativePhone,
+      companyRepresentativeNationalId: t.companyRepresentativeNationalId,
+      companyRepresentativeDateOfBirth: t.companyRepresentativeDateOfBirth,
       companyBankAccountNumber: t.companyBankAccountNumber,
       companyBankName: t.companyBankName,
       serviceSpecialization: t.serviceSpecialization,
@@ -529,7 +531,8 @@ class OfflineSyncService {
               ? (item['workspaceUid'] ?? '').toString().trim()
               : officeUid;
       try {
-        final result = await functions.httpsCallable('officeCreateClient').call({
+        final result =
+            await functions.httpsCallable('officeCreateClient').call({
           'name': item['name'],
           'email': item['email'],
           'phone': item['phone'],

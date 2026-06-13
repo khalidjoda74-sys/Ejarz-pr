@@ -5,8 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'dart:ui' as ui;
 
-import 'package:darvoo/data/models/activity_log.dart';
-import 'package:darvoo/data/services/user_scope.dart' as scope;
+import 'package:ejarz_pro/data/models/activity_log.dart';
+import 'package:ejarz_pro/data/services/user_scope.dart' as scope;
 
 class ActivityLogScreen extends StatefulWidget {
   const ActivityLogScreen({super.key});

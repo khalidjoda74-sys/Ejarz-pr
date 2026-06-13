@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:ejarz_pro/utils/ksa_time.dart';
+
 import '../support/operational_uat_harness.dart';
 
 void main() {
@@ -16,8 +18,18 @@ void main() {
       await harness.dispose();
     });
 
-    test('owner full cycle through chat executor matches core app constraints', () async {
+    test('owner full cycle through chat executor matches core app constraints',
+        () async {
       final owner = harness.buildOwnerExecutor();
+      final today = KsaTime.dateOnly(KsaTime.now());
+      final annualStart = today.subtract(const Duration(days: 40));
+      final annualEnd = today.add(const Duration(days: 325));
+      final dailyStart = today.subtract(const Duration(days: 1));
+      final dailyEnd = today.add(const Duration(days: 2));
+
+      String ymd(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
+          '${d.month.toString().padLeft(2, '0')}-'
+          '${d.day.toString().padLeft(2, '0')}';
 
       final addProvider = await harness.runObject(owner, 'add_tenant', {
         'clientType': 'serviceProvider',
@@ -44,6 +56,8 @@ void main() {
         'companyTaxNumber': '312345678900003',
         'companyRepresentativeName': 'Maha Noor',
         'companyRepresentativePhone': '0500000003',
+        'companyRepresentativeNationalId': '1098765432',
+        'companyRepresentativeDateOfBirth': '1990-01-01',
         'attachmentPaths': const ['/docs/company-nour.pdf'],
       });
       expect(addCompany['success'], true);
@@ -106,11 +120,12 @@ void main() {
       });
       expect(addUnit['success'], true);
 
-      final blockedContract = await harness.runObject(owner, 'create_contract', {
+      final blockedContract =
+          await harness.runObject(owner, 'create_contract', {
         'tenantName': 'Ahmad Salem',
         'propertyName': 'Palm Villa',
-        'startDate': '2026-02-01',
-        'endDate': '2027-01-31',
+        'startDate': ymd(annualStart),
+        'endDate': ymd(annualEnd),
         'rentAmount': 24000,
         'totalAmount': 24000,
         'term': 'annual',
@@ -207,8 +222,8 @@ void main() {
       final annualContract = await harness.runObject(owner, 'create_contract', {
         'tenantName': 'Ahmad Salem',
         'propertyName': 'Palm Villa',
-        'startDate': '2026-02-01',
-        'endDate': '2027-01-31',
+        'startDate': ymd(annualStart),
+        'endDate': ymd(annualEnd),
         'rentAmount': 24000,
         'totalAmount': 24000,
         'term': 'annual',
@@ -220,8 +235,8 @@ void main() {
       final dailyContract = await harness.runObject(owner, 'create_contract', {
         'tenantName': 'Nour Trading',
         'propertyName': 'Sky Studio',
-        'startDate': '2026-05-10',
-        'endDate': '2026-05-15',
+        'startDate': ymd(dailyStart),
+        'endDate': ymd(dailyEnd),
         'rentAmount': 2500,
         'totalAmount': 2500,
         'term': 'daily',
@@ -278,7 +293,7 @@ void main() {
       final palmServiceRows = <String, Map<String, dynamic>>{
         for (final raw in palmServices['services'] as List)
           (raw as Map)['serviceType'].toString():
-              Map<String, dynamic>.from(raw as Map),
+              Map<String, dynamic>.from(raw),
       };
       expect(palmServiceRows['cleaning']?['configured'], true);
       expect(palmServiceRows['internet']?['configured'], true);
@@ -343,7 +358,8 @@ void main() {
       });
       expect(terminate['success'], true);
 
-      final unitDetails = await harness.runObject(owner, 'get_property_details', {
+      final unitDetails =
+          await harness.runObject(owner, 'get_property_details', {
         'query': 'Sky Studio',
       });
       expect(unitDetails['structureKind'], 'property');
@@ -362,21 +378,20 @@ void main() {
       expect(buildingDetails['vacantUnits'], 3);
       expect(buildingDetails.containsKey('rooms'), false);
       expect(buildingDetails.containsKey('roomsLabel'), false);
-      buildingDetails['answerContract'] =
-          '\u00C3\u02DC\u00C2\u00BA\u00C3\u02DC\u00C2\u00B1\u00C3\u2122\u00C2\u0081';
-          '${buildingDetails['answerContract'] ?? ''} Ã˜ÂºÃ˜Â±Ã™Â';
       expect(
-        (buildingDetails['answerContract'] ?? '').toString().contains('ØºØ±Ù'),
+        (buildingDetails['answerContract'] ?? '').toString().contains('غرف'),
         true,
       );
 
-      final companyDetails = await harness.runObject(owner, 'get_tenant_details', {
+      final companyDetails =
+          await harness.runObject(owner, 'get_tenant_details', {
         'query': 'Nour Trading',
       });
       expect(companyDetails['activeContractsCount'], 0);
     });
 
-    test('office client can read through chat but cannot execute writes', () async {
+    test('office client can read through chat but cannot execute writes',
+        () async {
       final owner = harness.buildOwnerExecutor();
       final officeClient = harness.buildOfficeClientExecutor();
 

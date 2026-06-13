@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import 'package:darvoo/data/services/user_scope.dart';
-import 'package:darvoo/ui/ai_chat/core/ai_chat_types.dart';
-import 'package:darvoo/ui/ai_chat/core/ai_confirmation_service.dart';
+import 'package:ejarz_pro/data/services/user_scope.dart';
+import 'package:ejarz_pro/ui/ai_chat/core/ai_chat_types.dart';
+import 'package:ejarz_pro/ui/ai_chat/core/ai_confirmation_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 
@@ -12,7 +12,7 @@ void main() {
   late Directory tempDir;
 
   setUpAll(() async {
-    tempDir = await initAiTestHive('darvoo_ai_confirmation_test_');
+    tempDir = await initAiTestHive('ejarz_pro_ai_confirmation_test_');
     await openAiCoreBoxes();
   });
 
@@ -102,13 +102,17 @@ void main() {
     expect(found.resultReference?['property_id'], 'p1');
   });
 
-  test('reuses identical active pending action instead of creating a duplicate', () async {
+  test('reuses identical active pending action instead of creating a duplicate',
+      () async {
     final first = await AiConfirmationService.create(
       conversationId: 'conv_4',
       userId: 'user_4',
       scopeId: 'scope_4',
       toolName: 'contracts.create',
-      normalizedArguments: const <String, dynamic>{'tenant_id': 't1', 'property_id': 'p1'},
+      normalizedArguments: const <String, dynamic>{
+        'tenant_id': 't1',
+        'property_id': 'p1'
+      },
       preview: const <String, dynamic>{'headline': 'preview'},
       riskLevel: AiToolRiskLevel.critical,
       requiredPermissions: const <String>['contracts.create'],
@@ -120,7 +124,10 @@ void main() {
       userId: 'user_4',
       scopeId: 'scope_4',
       toolName: 'contracts.create',
-      normalizedArguments: const <String, dynamic>{'tenant_id': 't1', 'property_id': 'p1'},
+      normalizedArguments: const <String, dynamic>{
+        'tenant_id': 't1',
+        'property_id': 'p1'
+      },
       preview: const <String, dynamic>{'headline': 'preview'},
       riskLevel: AiToolRiskLevel.critical,
       requiredPermissions: const <String>['contracts.create'],
@@ -130,7 +137,9 @@ void main() {
     expect(second.id, first.id);
   });
 
-  test('cancels older active request when a newer request is created in the same conversation', () async {
+  test(
+      'cancels older active request when a newer request is created in the same conversation',
+      () async {
     final older = await AiConfirmationService.create(
       conversationId: 'conv_5',
       userId: 'user_5',
@@ -168,7 +177,9 @@ void main() {
     expect(latest!.id, newer.id);
   });
 
-  test('claims a pending action once and blocks duplicate claims until it finishes', () async {
+  test(
+      'claims a pending action once and blocks duplicate claims until it finishes',
+      () async {
     final created = await AiConfirmationService.create(
       conversationId: 'conv_6',
       userId: 'user_6',
@@ -181,8 +192,10 @@ void main() {
       idempotencyKey: 'idem_6',
     );
 
-    final firstClaim = await AiConfirmationService.claimForExecution(created.id);
-    final secondClaim = await AiConfirmationService.claimForExecution(created.id);
+    final firstClaim =
+        await AiConfirmationService.claimForExecution(created.id);
+    final secondClaim =
+        await AiConfirmationService.claimForExecution(created.id);
     final stored = await AiConfirmationService.get(created.id);
 
     expect(firstClaim.status, AiPendingActionClaimStatus.claimed);

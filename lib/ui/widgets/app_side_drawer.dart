@@ -1,9 +1,9 @@
 // lib/ui/widgets/app_side_drawer.dart
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:async';
 import 'dart:ui' as ui; // لاستخدام ui.TextDirection.rtl
 import 'package:flutter/material.dart';
-import 'package:darvoo/widgets/custom_confirm_dialog.dart';
+import 'package:ejarz_pro/widgets/custom_confirm_dialog.dart';
 // MaxLengthEnforcement
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -32,11 +32,10 @@ class AppSideDrawer extends StatelessWidget {
   static const Color _primary = Color(0xFF0F766E);
 
   // روابط
-  static final Uri _privacyUri = Uri.parse(
-      'https://www.notion.so/darvoo-2c2c4186d1998080a134eeba1cc8e0b6?source=copy_link');
-  static final Uri _termsUri = Uri.parse(
-      'https://www.notion.so/darvoo-2-2c2c4186d199809995f2e4168dd95d75?source=copy_link');
-  static const String _supportEmail = 'support@darvoo.com';
+  static final Uri _privacyUri = Uri.parse('https://www.ejarzpro.sa/privacy');
+  static final Uri _termsUri = Uri.parse('https://www.ejarzpro.sa/terms');
+  // ignore: unused_field
+  static const String _supportEmail = 'Info@ejarzpro.sa';
   static const String _kDailyContractEndHourField = 'daily_contract_end_hour';
 
   static Future<void> openSettingsSheet(BuildContext context) async {
@@ -55,6 +54,7 @@ class AppSideDrawer extends StatelessWidget {
   Future<void> _openExternal(BuildContext context, Uri uri) async {
     final ok = await canLaunchUrl(uri);
     if (!ok || !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تعذّر فتح الرابط.')),
       );
@@ -125,7 +125,9 @@ class AppSideDrawer extends StatelessWidget {
   DocumentReference<Map<String, dynamic>>? _workspacePrefsRef() {
     final workspaceUid = scope.effectiveUid().trim();
     if (workspaceUid.isEmpty || workspaceUid == 'guest') return null;
-    return FirebaseFirestore.instance.collection('user_prefs').doc(workspaceUid);
+    return FirebaseFirestore.instance
+        .collection('user_prefs')
+        .doc(workspaceUid);
   }
 
   Future<Map<String, dynamic>> _safeReadDocData(
@@ -194,6 +196,7 @@ class AppSideDrawer extends StatelessWidget {
     return KsaTime.dateOnly(KsaTime.toKsa(utcMid));
   }
 
+  // ignore: unused_element
   String _normSlash(String s) => s.replaceAll('-', '/');
 
   // ======= مساعدات الخطة (المدة والسعر) =======
@@ -542,7 +545,8 @@ class AppSideDrawer extends StatelessWidget {
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final dailyContractEndHour = payload.containsKey(_kDailyContractEndHourField)
+    final dailyContractEndHour = payload
+            .containsKey(_kDailyContractEndHourField)
         ? _normalizeDailyContractEndHour(payload[_kDailyContractEndHourField])
         : null;
 
@@ -571,8 +575,7 @@ class AppSideDrawer extends StatelessWidget {
             .set({
           'uid': workspacePrefs.id,
           _kDailyContractEndHourField: dailyContractEndHour,
-        }, SetOptions(merge: true))
-            .catchError((_) {
+        }, SetOptions(merge: true)).catchError((_) {
           // نعتمد على التخزين المحلي عند فشل الشبكة.
         });
       }
@@ -611,6 +614,7 @@ class AppSideDrawer extends StatelessWidget {
     }
 
     // 3) رسالة للمستخدم (تُعرض دائمًا حتى بدون إنترنت)
+    // ignore: use_build_context_synchronously
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(successMessage),
@@ -651,10 +655,10 @@ class AppSideDrawer extends StatelessWidget {
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
           title: Text('إعادة ضبط كامل',
-              style: GoogleFonts.tajawal(fontWeight: FontWeight.w900)),
+              style: GoogleFonts.cairo(fontWeight: FontWeight.w900)),
           content: Text(
             'سيتم حذف جميع بياناتك (العقارات، العقود، السندات، المستأجرون، الإشعارات، والإعدادات). هل تريد المتابعة؟',
-            style: GoogleFonts.tajawal(
+            style: GoogleFonts.cairo(
                 fontSize: 14.sp, height: 1.6, fontWeight: FontWeight.w700),
           ),
           actionsAlignment: MainAxisAlignment.spaceBetween,
@@ -668,12 +672,12 @@ class AppSideDrawer extends StatelessWidget {
               ),
               onPressed: () => Navigator.of(context).pop(true),
               child: Text('تأكيد الحذف',
-                  style: GoogleFonts.tajawal(fontWeight: FontWeight.w900)),
+                  style: GoogleFonts.cairo(fontWeight: FontWeight.w900)),
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
               child: Text('إلغاء',
-                  style: GoogleFonts.tajawal(fontWeight: FontWeight.w900)),
+                  style: GoogleFonts.cairo(fontWeight: FontWeight.w900)),
             ),
           ],
         ),
@@ -681,6 +685,7 @@ class AppSideDrawer extends StatelessWidget {
     );
 
     if (ok == true) {
+      // ignore: use_build_context_synchronously
       await _factoryReset(context);
     }
   }
@@ -809,16 +814,18 @@ class AppSideDrawer extends StatelessWidget {
 
     // ========== إظهار شاشة التحميل (تمنع الرجوع) ==========
     showDialog(
+      // ignore: use_build_context_synchronously
       context: context,
       barrierDismissible: false, // لا يمكن إغلاقها بالضغط خارجها
       builder: (dialogContext) {
+        // ignore: deprecated_member_use
         return WillPopScope(
           onWillPop: () async => false, // يمنع زر الرجوع
           child: Center(
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 24.h),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.75),
+                color: Colors.black.withValues(alpha: 0.75),
                 borderRadius: BorderRadius.circular(16.r),
               ),
               child: Column(
@@ -969,12 +976,14 @@ class AppSideDrawer extends StatelessWidget {
       }
 
       // 4) رسالة نجاح للمستخدم (حتى لو كان أوفلاين)
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text('تم حذف جميع بياناتك وإعادة ضبط التطبيق بنجاح.')),
       );
     } finally {
       // إغلاق شاشة "جاري إعادة الضبط..."
+      // ignore: use_build_context_synchronously
       Navigator.of(context, rootNavigator: true).pop();
     }
   }
@@ -1013,7 +1022,7 @@ class AppSideDrawer extends StatelessWidget {
                     child: Text(
                       'تعذّر تحميل تفاصيل الاشتراك.\n${snap.error}',
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.tajawal(
+                      style: GoogleFonts.cairo(
                           fontWeight: FontWeight.w900, color: Colors.red),
                     ),
                   ),
@@ -1054,7 +1063,7 @@ class AppSideDrawer extends StatelessWidget {
                         height: 5.h,
                         margin: EdgeInsets.only(bottom: 12.h),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.12),
+                          color: Colors.black.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8.r),
                         ),
                       ),
@@ -1075,7 +1084,7 @@ class AppSideDrawer extends StatelessWidget {
                           Expanded(
                             child: Text(
                               'اشتراكي',
-                              style: GoogleFonts.tajawal(
+                              style: GoogleFonts.cairo(
                                 fontSize: 18.sp,
                                 fontWeight: FontWeight.w900,
                                 color: const Color(0xFF0F172A),
@@ -1097,7 +1106,7 @@ class AppSideDrawer extends StatelessWidget {
                             ),
                             child: Text(
                               active ? 'فعّال' : 'منتهي',
-                              style: GoogleFonts.tajawal(
+                              style: GoogleFonts.cairo(
                                 fontSize: 12.sp,
                                 fontWeight: FontWeight.w900,
                                 color: active
@@ -1191,7 +1200,7 @@ class AppSideDrawer extends StatelessWidget {
                               ),
                               child: Text(
                                 'إغلاق',
-                                style: GoogleFonts.tajawal(
+                                style: GoogleFonts.cairo(
                                   fontWeight: FontWeight.w900,
                                   color: primary,
                                 ),
@@ -1262,7 +1271,7 @@ class AppSideDrawer extends StatelessWidget {
                           child: Text(
                             'تعذّر تحميل الإعدادات.\n${snap.error}',
                             textAlign: TextAlign.center,
-                            style: GoogleFonts.tajawal(
+                            style: GoogleFonts.cairo(
                                 fontWeight: FontWeight.w900, color: Colors.red),
                           ),
                         );
@@ -1354,6 +1363,7 @@ class AppSideDrawer extends StatelessWidget {
                       cMsgAnnualBeforeCtrl ??= TextEditingController(
                           text: data.contractAnnualMsgBefore);
 
+                      // ignore: unused_element
                       Widget redBanner(String text) {
                         return Container(
                           width: double.infinity,
@@ -1366,7 +1376,7 @@ class AppSideDrawer extends StatelessWidget {
                           ),
                           child: Text(
                             text,
-                            style: GoogleFonts.tajawal(
+                            style: GoogleFonts.cairo(
                               fontSize: 13.5.sp,
                               height: 1.6,
                               color: const Color(0xFFB91C1C),
@@ -1389,7 +1399,7 @@ class AppSideDrawer extends StatelessWidget {
                                   Row(
                                     children: [
                                       Text('اللغة',
-                                          style: GoogleFonts.tajawal(
+                                          style: GoogleFonts.cairo(
                                               fontWeight: FontWeight.w800)),
                                       const Spacer(),
                                       Container(
@@ -1404,7 +1414,7 @@ class AppSideDrawer extends StatelessWidget {
                                         ),
                                         child: Text(
                                           'العربية فقط',
-                                          style: GoogleFonts.tajawal(
+                                          style: GoogleFonts.cairo(
                                               fontWeight: FontWeight.w900,
                                               color: const Color(0xFF059669)),
                                         ),
@@ -1415,15 +1425,15 @@ class AppSideDrawer extends StatelessWidget {
 
                                   // نظام التاريخ
                                   Text('نظام التاريخ',
-                                      style: GoogleFonts.tajawal(
+                                      style: GoogleFonts.cairo(
                                           fontWeight: FontWeight.w800)),
                                   SizedBox(height: 8.h),
-                                   Wrap(
-                                     spacing: 8.w,
-                                     children: [
+                                  Wrap(
+                                    spacing: 8.w,
+                                    children: [
                                       ChoiceChip(
                                         label: Text('ميلادي',
-                                            style: GoogleFonts.tajawal(
+                                            style: GoogleFonts.cairo(
                                                 fontWeight: FontWeight.w900)),
                                         selected: dateSystem == 'gregorian',
                                         onSelected: (_) => setState(() =>
@@ -1432,7 +1442,7 @@ class AppSideDrawer extends StatelessWidget {
                                       ),
                                       ChoiceChip(
                                         label: Text('هجري',
-                                            style: GoogleFonts.tajawal(
+                                            style: GoogleFonts.cairo(
                                                 fontWeight: FontWeight.w900)),
                                         selected: dateSystem == 'hijri',
                                         onSelected: (_) => setState(() =>
@@ -1445,11 +1455,11 @@ class AppSideDrawer extends StatelessWidget {
                                   Divider(
                                     height: 24.h,
                                     thickness: 1,
-                                    color: Colors.black.withOpacity(0.08),
+                                    color: Colors.black.withValues(alpha: 0.08),
                                   ),
                                   Text(
                                     'إعدادات العقود اليومية',
-                                    style: GoogleFonts.tajawal(
+                                    style: GoogleFonts.cairo(
                                       fontWeight: FontWeight.w900,
                                     ),
                                   ),
@@ -1461,7 +1471,8 @@ class AppSideDrawer extends StatelessWidget {
                                       color: const Color(0xFFF8FAFC),
                                       borderRadius: BorderRadius.circular(12.r),
                                       border: Border.all(
-                                        color: Colors.black.withOpacity(0.08),
+                                        color: Colors.black
+                                            .withValues(alpha: 0.08),
                                       ),
                                     ),
                                     child: Column(
@@ -1473,7 +1484,7 @@ class AppSideDrawer extends StatelessWidget {
                                             Expanded(
                                               child: Text(
                                                 'وقت انتهاء اليومي المعتمد',
-                                                style: GoogleFonts.tajawal(
+                                                style: GoogleFonts.cairo(
                                                   fontWeight: FontWeight.w800,
                                                 ),
                                               ),
@@ -1502,15 +1513,12 @@ class AppSideDrawer extends StatelessWidget {
                                                     ? 'غير مضبوط'
                                                     : _formatHourAmPm(
                                                         dailyContractEndHour!),
-                                                style: GoogleFonts.tajawal(
+                                                style: GoogleFonts.cairo(
                                                   fontWeight: FontWeight.w900,
-                                                  color:
-                                                      dailyContractEndHour ==
-                                                              null
-                                                          ? const Color(
-                                                              0xFF9A3412)
-                                                          : const Color(
-                                                              0xFF059669),
+                                                  color: dailyContractEndHour ==
+                                                          null
+                                                      ? const Color(0xFF9A3412)
+                                                      : const Color(0xFF059669),
                                                 ),
                                               ),
                                             ),
@@ -1538,14 +1546,14 @@ class AppSideDrawer extends StatelessWidget {
                                                     vertical: 10.h,
                                                   ),
                                                 ),
-                                                items: List.generate(12,
-                                                        (i) => i + 1)
+                                                items: List.generate(
+                                                        12, (i) => i + 1)
                                                     .map(
                                                       (hour) =>
                                                           DropdownMenuItem<int>(
                                                         value: hour,
-                                                        child:
-                                                            Text(hour.toString()),
+                                                        child: Text(
+                                                            hour.toString()),
                                                       ),
                                                     )
                                                     .toList(),
@@ -1608,11 +1616,11 @@ class AppSideDrawer extends StatelessWidget {
                                         SizedBox(height: 8.h),
                                         Text(
                                           'يُستخدم هذا الوقت تلقائيًا في جميع العقود اليومية داخل هذا المكتب.',
-                                          style: GoogleFonts.tajawal(
+                                          style: GoogleFonts.cairo(
                                             fontSize: 12.5.sp,
                                             fontWeight: FontWeight.w700,
-                                            color:
-                                                Colors.black.withOpacity(0.65),
+                                            color: Colors.black
+                                                .withValues(alpha: 0.65),
                                           ),
                                         ),
                                       ],
@@ -1644,6 +1652,7 @@ class AppSideDrawer extends StatelessWidget {
                           }) {
                             final TextEditingController activeCtrl =
                                 (mode == 0) ? beforeCtrl : onCtrl;
+                            // ignore: unused_local_variable
                             final atLimit = activeCtrl.text.length >= maxMsgLen;
 
                             return Container(
@@ -1654,10 +1663,12 @@ class AppSideDrawer extends StatelessWidget {
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(14.r),
                                 border: Border.all(
-                                    color: Colors.black.withOpacity(0.08)),
+                                    color:
+                                        Colors.black.withValues(alpha: 0.08)),
                                 boxShadow: [
                                   BoxShadow(
-                                      color: Colors.black.withOpacity(0.04),
+                                      color:
+                                          Colors.black.withValues(alpha: 0.04),
                                       blurRadius: 8,
                                       offset: const Offset(0, 2))
                                 ],
@@ -1671,7 +1682,7 @@ class AppSideDrawer extends StatelessWidget {
                                     child: Row(
                                       children: [
                                         Text(title,
-                                            style: GoogleFonts.tajawal(
+                                            style: GoogleFonts.cairo(
                                                 fontWeight: FontWeight.w900,
                                                 fontSize: 15.5.sp)),
                                         const Spacer(),
@@ -1689,11 +1700,11 @@ class AppSideDrawer extends StatelessWidget {
                                     ],
                                     Text(
                                       'ملاحظة: يمكنك إضافة تنبيه قبل $minDays يوم إلى $maxDays يوم.',
-                                      style: GoogleFonts.tajawal(
+                                      style: GoogleFonts.cairo(
                                           fontSize: 13.5.sp,
                                           fontWeight: FontWeight.w700,
-                                          color:
-                                              Colors.black.withOpacity(0.75)),
+                                          color: Colors.black
+                                              .withValues(alpha: 0.75)),
                                     ),
                                     SizedBox(height: 10.h),
 
@@ -1701,7 +1712,7 @@ class AppSideDrawer extends StatelessWidget {
                                     Row(
                                       children: [
                                         Text('أيام التنبيه مسبقًا',
-                                            style: GoogleFonts.tajawal(
+                                            style: GoogleFonts.cairo(
                                                 fontWeight: FontWeight.w800)),
                                         const Spacer(),
                                         Container(
@@ -1714,7 +1725,7 @@ class AppSideDrawer extends StatelessWidget {
                                             border: Border.all(color: _primary),
                                           ),
                                           child: Text('$valueDays يوم',
-                                              style: GoogleFonts.tajawal(
+                                              style: GoogleFonts.cairo(
                                                   fontWeight: FontWeight.w900,
                                                   color: _primary)),
                                         ),
@@ -1755,6 +1766,7 @@ class AppSideDrawer extends StatelessWidget {
                             required String saveFieldMsgBefore,
                             Widget? headerExtra,
                           }) {
+                            // ignore: unused_local_variable
                             final atLimit = beforeCtrl.text.length >= maxMsgLen;
                             return Container(
                               width: double.infinity,
@@ -1764,10 +1776,12 @@ class AppSideDrawer extends StatelessWidget {
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(14.r),
                                 border: Border.all(
-                                    color: Colors.black.withOpacity(0.08)),
+                                    color:
+                                        Colors.black.withValues(alpha: 0.08)),
                                 boxShadow: [
                                   BoxShadow(
-                                      color: Colors.black.withOpacity(0.04),
+                                      color:
+                                          Colors.black.withValues(alpha: 0.04),
                                       blurRadius: 8,
                                       offset: const Offset(0, 2)),
                                 ],
@@ -1782,7 +1796,7 @@ class AppSideDrawer extends StatelessWidget {
                                       children: [
                                         Expanded(
                                           child: Text(title,
-                                              style: GoogleFonts.tajawal(
+                                              style: GoogleFonts.cairo(
                                                   fontWeight: FontWeight.w900,
                                                   fontSize: 15.5.sp)),
                                         ),
@@ -1824,7 +1838,7 @@ class AppSideDrawer extends StatelessWidget {
                                             Expanded(
                                               child: Text(
                                                 'الإعدادات',
-                                                style: GoogleFonts.tajawal(
+                                                style: GoogleFonts.cairo(
                                                   fontSize: 18.sp,
                                                   fontWeight: FontWeight.w900,
                                                   color:
@@ -1841,7 +1855,7 @@ class AppSideDrawer extends StatelessWidget {
                                           children: [
                                             Text(
                                               'ذكّرني قبل (بالأيام):',
-                                              style: GoogleFonts.tajawal(
+                                              style: GoogleFonts.cairo(
                                                   fontWeight: FontWeight.w800),
                                             ),
                                             Container(
@@ -1855,7 +1869,7 @@ class AppSideDrawer extends StatelessWidget {
                                               ),
                                               child: Text(
                                                 '$valueDays يوم',
-                                                style: GoogleFonts.tajawal(
+                                                style: GoogleFonts.cairo(
                                                     fontWeight: FontWeight.w900,
                                                     color: _primary),
                                               ),
@@ -1904,7 +1918,8 @@ class AppSideDrawer extends StatelessWidget {
                                     width: 42.w,
                                     height: 5.h,
                                     decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.12),
+                                      color:
+                                          Colors.black.withValues(alpha: 0.12),
                                       borderRadius: BorderRadius.circular(8.r),
                                     ),
                                   ),
@@ -1931,7 +1946,7 @@ class AppSideDrawer extends StatelessWidget {
                                   Expanded(
                                     child: Text(
                                       'الإعدادات',
-                                      style: GoogleFonts.tajawal(
+                                      style: GoogleFonts.cairo(
                                         fontSize: 18.sp,
                                         fontWeight: FontWeight.w900,
                                         color: const Color(0xFF0F172A),
@@ -1957,7 +1972,7 @@ class AppSideDrawer extends StatelessWidget {
                                           Expanded(
                                             child: ChoiceChip(
                                               label: Text('دورة السداد',
-                                                  style: GoogleFonts.tajawal(
+                                                  style: GoogleFonts.cairo(
                                                       fontWeight:
                                                           FontWeight.w900)),
                                               selected: topTab == 0,
@@ -1970,7 +1985,7 @@ class AppSideDrawer extends StatelessWidget {
                                           Expanded(
                                             child: ChoiceChip(
                                               label: Text('العقود',
-                                                  style: GoogleFonts.tajawal(
+                                                  style: GoogleFonts.cairo(
                                                       fontWeight:
                                                           FontWeight.w900)),
                                               selected: topTab == 1,
@@ -1999,11 +2014,11 @@ class AppSideDrawer extends StatelessWidget {
                                                 BorderRadius.circular(14.r),
                                             border: Border.all(
                                                 color: Colors.black
-                                                    .withOpacity(0.08)),
+                                                    .withValues(alpha: 0.08)),
                                             boxShadow: [
                                               BoxShadow(
                                                   color: Colors.black
-                                                      .withOpacity(0.04),
+                                                      .withValues(alpha: 0.04),
                                                   blurRadius: 8,
                                                   offset: const Offset(0, 2)),
                                             ],
@@ -2030,13 +2045,12 @@ class AppSideDrawer extends StatelessWidget {
                                                     Expanded(
                                                         child: Text(
                                                             'دفعات يومية (يوم)',
-                                                            style: GoogleFonts
-                                                                .tajawal(
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .w900,
-                                                                    fontSize: 15.5
-                                                                        .sp))),
+                                                            style: GoogleFonts.cairo(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w900,
+                                                                fontSize:
+                                                                    15.5.sp))),
                                                     const Icon(
                                                         Icons
                                                             .expand_more_rounded,
@@ -2078,7 +2092,7 @@ class AppSideDrawer extends StatelessWidget {
                                                         Expanded(
                                                             child: Text(
                                                                 'الإعدادات',
-                                                                style: GoogleFonts.tajawal(
+                                                                style: GoogleFonts.cairo(
                                                                     fontSize:
                                                                         18.sp,
                                                                     fontWeight:
@@ -2096,11 +2110,10 @@ class AppSideDrawer extends StatelessWidget {
                                                       children: [
                                                         Text(
                                                             'ذكّرني قبل (بالأيام):',
-                                                            style: GoogleFonts
-                                                                .tajawal(
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .w800)),
+                                                            style: GoogleFonts.cairo(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w800)),
                                                         Container(
                                                           padding: EdgeInsets
                                                               .symmetric(
@@ -2116,7 +2129,7 @@ class AppSideDrawer extends StatelessWidget {
                                                                       .circular(
                                                                           8.r)),
                                                           child: Text('1 يوم',
-                                                              style: GoogleFonts.tajawal(
+                                                              style: GoogleFonts.cairo(
                                                                   fontWeight:
                                                                       FontWeight
                                                                           .w900,
@@ -2134,7 +2147,7 @@ class AppSideDrawer extends StatelessWidget {
                                                             .showSnackBar(SnackBar(
                                                                 content: Text(
                                                                     'دورة السداد اليومية: التنبيه فقط قبل يوم واحد',
-                                                                    style: GoogleFonts.tajawal(
+                                                                    style: GoogleFonts.cairo(
                                                                         fontWeight:
                                                                             FontWeight.w800))));
                                                       },
@@ -2145,7 +2158,7 @@ class AppSideDrawer extends StatelessWidget {
                                                             .showSnackBar(SnackBar(
                                                                 content: Text(
                                                                     'دورة السداد اليومية: التنبيه فقط قبل يوم واحد',
-                                                                    style: GoogleFonts.tajawal(
+                                                                    style: GoogleFonts.cairo(
                                                                         fontWeight:
                                                                             FontWeight.w800))));
                                                       },
@@ -2164,7 +2177,7 @@ class AppSideDrawer extends StatelessWidget {
                                                     SizedBox(height: 8.h),
                                                     Text(
                                                         'ملاحظة: دورة السداد اليومية — التنبيه فقط قبل يوم واحد ولا يمكن تعديله.',
-                                                        style: GoogleFonts.tajawal(
+                                                        style: GoogleFonts.cairo(
                                                             fontWeight:
                                                                 FontWeight.w800,
                                                             color: const Color(
@@ -2290,7 +2303,7 @@ class AppSideDrawer extends StatelessWidget {
                                               Expanded(
                                                 child: Text(
                                                   'المدة السنوية',
-                                                  style: GoogleFonts.tajawal(
+                                                  style: GoogleFonts.cairo(
                                                       fontWeight:
                                                           FontWeight.w800),
                                                 ),
@@ -2324,7 +2337,7 @@ class AppSideDrawer extends StatelessWidget {
                                                             ? 'سنة'
                                                             : '$y سنوات',
                                                         style:
-                                                            GoogleFonts.tajawal(
+                                                            GoogleFonts.cairo(
                                                                 fontWeight:
                                                                     FontWeight
                                                                         .w700),
@@ -2360,11 +2373,11 @@ class AppSideDrawer extends StatelessWidget {
                                                 BorderRadius.circular(14.r),
                                             border: Border.all(
                                                 color: Colors.black
-                                                    .withOpacity(0.08)),
+                                                    .withValues(alpha: 0.08)),
                                             boxShadow: [
                                               BoxShadow(
                                                   color: Colors.black
-                                                      .withOpacity(0.04),
+                                                      .withValues(alpha: 0.04),
                                                   blurRadius: 8,
                                                   offset: const Offset(0, 2)),
                                             ],
@@ -2391,13 +2404,12 @@ class AppSideDrawer extends StatelessWidget {
                                                     Expanded(
                                                         child: Text(
                                                             'عقد يومي (يوم)',
-                                                            style: GoogleFonts
-                                                                .tajawal(
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .w900,
-                                                                    fontSize: 15.5
-                                                                        .sp))),
+                                                            style: GoogleFonts.cairo(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w900,
+                                                                fontSize:
+                                                                    15.5.sp))),
                                                     const Icon(
                                                         Icons
                                                             .expand_more_rounded,
@@ -2439,7 +2451,7 @@ class AppSideDrawer extends StatelessWidget {
                                                         Expanded(
                                                             child: Text(
                                                                 'الإعدادات',
-                                                                style: GoogleFonts.tajawal(
+                                                                style: GoogleFonts.cairo(
                                                                     fontSize:
                                                                         18.sp,
                                                                     fontWeight:
@@ -2457,11 +2469,10 @@ class AppSideDrawer extends StatelessWidget {
                                                       children: [
                                                         Text(
                                                             'ذكّرني قبل (بالأيام):',
-                                                            style: GoogleFonts
-                                                                .tajawal(
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .w800)),
+                                                            style: GoogleFonts.cairo(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w800)),
                                                         Container(
                                                           padding: EdgeInsets
                                                               .symmetric(
@@ -2477,7 +2488,7 @@ class AppSideDrawer extends StatelessWidget {
                                                                       .circular(
                                                                           8.r)),
                                                           child: Text('1 يوم',
-                                                              style: GoogleFonts.tajawal(
+                                                              style: GoogleFonts.cairo(
                                                                   fontWeight:
                                                                       FontWeight
                                                                           .w900,
@@ -2495,7 +2506,7 @@ class AppSideDrawer extends StatelessWidget {
                                                             .showSnackBar(SnackBar(
                                                                 content: Text(
                                                                     'التنبيه فقط قبل يوم واحد من العقد اليومي ولا يمكن تغييره',
-                                                                    style: GoogleFonts.tajawal(
+                                                                    style: GoogleFonts.cairo(
                                                                         fontWeight:
                                                                             FontWeight.w800))));
                                                       },
@@ -2506,7 +2517,7 @@ class AppSideDrawer extends StatelessWidget {
                                                             .showSnackBar(SnackBar(
                                                                 content: Text(
                                                                     'التنبيه فقط قبل يوم واحد من العقد اليومي ولا يمكن تغييره',
-                                                                    style: GoogleFonts.tajawal(
+                                                                    style: GoogleFonts.cairo(
                                                                         fontWeight:
                                                                             FontWeight.w800))));
                                                       },
@@ -2525,7 +2536,7 @@ class AppSideDrawer extends StatelessWidget {
                                                     SizedBox(height: 8.h),
                                                     Text(
                                                         'ملاحظة: العقد اليومي — التنبيه فقط قبل يوم واحد ولا يمكن تغييره.',
-                                                        style: GoogleFonts.tajawal(
+                                                        style: GoogleFonts.cairo(
                                                             fontWeight:
                                                                 FontWeight.w800,
                                                             color: const Color(
@@ -2633,7 +2644,7 @@ class AppSideDrawer extends StatelessWidget {
                                               Expanded(
                                                 child: Text(
                                                   'مدة العقد السنوي',
-                                                  style: GoogleFonts.tajawal(
+                                                  style: GoogleFonts.cairo(
                                                       fontWeight:
                                                           FontWeight.w800),
                                                 ),
@@ -2667,7 +2678,7 @@ class AppSideDrawer extends StatelessWidget {
                                                             ? 'سنة'
                                                             : '$y سنوات',
                                                         style:
-                                                            GoogleFonts.tajawal(
+                                                            GoogleFonts.cairo(
                                                                 fontWeight:
                                                                     FontWeight
                                                                         .w700),
@@ -2698,12 +2709,13 @@ class AppSideDrawer extends StatelessWidget {
                                             return;
                                           }
 
+                                          // ignore: use_build_context_synchronously
                                           await _confirmFactoryReset(sheetCtx);
                                         },
                                         icon: const Icon(
                                             Icons.delete_forever_rounded),
                                         label: Text('إعادة ضبط كامل',
-                                            style: GoogleFonts.tajawal(
+                                            style: GoogleFonts.cairo(
                                                 fontWeight: FontWeight.w900)),
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor:
@@ -2739,6 +2751,7 @@ class AppSideDrawer extends StatelessWidget {
                                           (dailyContractHour12 == null) !=
                                               (dailyContractPeriod == null);
                                       if (hasPartialDailyTime) {
+                                        // ignore: use_build_context_synchronously
                                         ScaffoldMessenger.of(sheetCtx)
                                             .showSnackBar(
                                           const SnackBar(
@@ -2811,6 +2824,7 @@ class AppSideDrawer extends StatelessWidget {
                                                       cAnnualYearsDays[1] ??
                                                       cAnnualDays)
                                                   .clamp(1, 45),
+                                        // ignore: use_build_context_synchronously
                                       }, sheetCtx);
                                     },
                                     style: ElevatedButton.styleFrom(
@@ -2822,7 +2836,7 @@ class AppSideDrawer extends StatelessWidget {
                                           EdgeInsets.symmetric(vertical: 12.h),
                                     ),
                                     child: Text('حفظ',
-                                        style: GoogleFonts.tajawal(
+                                        style: GoogleFonts.cairo(
                                             fontWeight: FontWeight.w900,
                                             color: Colors.white)),
                                   )),
@@ -2877,7 +2891,7 @@ class AppSideDrawer extends StatelessWidget {
                   child: Text(
                     'اتصل بنا',
                     textAlign: TextAlign.right,
-                    style: GoogleFonts.tajawal(
+                    style: GoogleFonts.cairo(
                       fontWeight: FontWeight.w900,
                       fontSize: 16.sp,
                       color: const Color(0xFF0D9488),
@@ -2908,7 +2922,7 @@ class AppSideDrawer extends StatelessWidget {
               children: [
                 Text(
                   'إذا واجهت مشكلة أو لديك استفسار، يسعد فريق الدعم بمساعدتك. راسلنا عبر البريد التالي:',
-                  style: GoogleFonts.tajawal(
+                  style: GoogleFonts.cairo(
                       fontSize: 14.sp,
                       height: 1.5,
                       fontWeight: FontWeight.w700,
@@ -2916,8 +2930,8 @@ class AppSideDrawer extends StatelessWidget {
                 ),
                 SizedBox(height: 8.h),
                 SelectableText(
-                  'support@darvoo.com',
-                  style: GoogleFonts.tajawal(
+                  'Info@ejarzpro.sa',
+                  style: GoogleFonts.cairo(
                       fontSize: 15.sp,
                       fontWeight: FontWeight.w900,
                       color: primary),
@@ -2943,7 +2957,7 @@ class AppSideDrawer extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12.r)),
                 ),
                 child: Text('إغلاق',
-                    style: GoogleFonts.tajawal(fontWeight: FontWeight.w900)),
+                    style: GoogleFonts.cairo(fontWeight: FontWeight.w900)),
               ),
             ),
           ],
@@ -2984,7 +2998,7 @@ class AppSideDrawer extends StatelessWidget {
                   child: Text(
                     'من نحن',
                     textAlign: TextAlign.right,
-                    style: GoogleFonts.tajawal(
+                    style: GoogleFonts.cairo(
                       fontWeight: FontWeight.w900,
                       fontSize: 16.sp,
                       color: const Color(0xFF7C3AED),
@@ -3010,8 +3024,8 @@ class AppSideDrawer extends StatelessWidget {
             ),
             padding: EdgeInsets.all(12.w),
             child: Text(
-              'دارفو تطبيق لإدارة العقارات والعقود بسهولة وكفاءة، مخصص للمالكين والمكاتب العقارية لمتابعة الأملاك والمستأجرين والدفعات والتقارير في مكان واحد.',
-              style: GoogleFonts.tajawal(
+              'Ejarz Pro تطبيق لإدارة العقارات والعقود بسهولة وكفاءة، مخصص للمالكين والمكاتب العقارية لمتابعة الأملاك والمستأجرين والدفعات والتقارير في مكان واحد.',
+              style: GoogleFonts.cairo(
                   fontSize: 14.sp,
                   height: 1.6,
                   fontWeight: FontWeight.w700,
@@ -3037,7 +3051,7 @@ class AppSideDrawer extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12.r)),
                 ),
                 child: Text('إغلاق',
-                    style: GoogleFonts.tajawal(fontWeight: FontWeight.w900)),
+                    style: GoogleFonts.cairo(fontWeight: FontWeight.w900)),
               ),
             ),
           ],
@@ -3060,6 +3074,7 @@ class AppSideDrawer extends StatelessWidget {
     // منطق ما بعد التأكيد (كما لديك)
 // منطق ما بعد التأكيد (كما لديك)
     if (ok == true) {
+      // ignore: use_build_context_synchronously
       Navigator.of(context).maybePop(); // أغلق الدرج إن كان مفتوحًا
 
       try {
@@ -3165,12 +3180,12 @@ class AppSideDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleStyle = GoogleFonts.tajawal(
+    final titleStyle = GoogleFonts.cairo(
       fontSize: 16.sp,
       fontWeight: FontWeight.w900,
       color: const Color(0xFF0F172A),
     );
-    final itemStyle = GoogleFonts.tajawal(
+    final itemStyle = GoogleFonts.cairo(
       fontSize: 14.sp,
       fontWeight: FontWeight.w900,
       color: const Color(0xFF0F172A),
@@ -3195,7 +3210,7 @@ class AppSideDrawer extends StatelessWidget {
                           fit: BoxFit.contain),
                     ),
                     SizedBox(width: 10.w),
-                    Text('Darvoo', style: titleStyle),
+                    Text('Ejarz Pro', style: titleStyle),
                   ],
                 ),
               ),
@@ -3300,7 +3315,7 @@ class AppSideDrawer extends StatelessWidget {
                   ),
                   title: Text(
                     'تسجيل الخروج',
-                    style: GoogleFonts.tajawal(
+                    style: GoogleFonts.cairo(
                       fontSize: 14.sp,
                       fontWeight: FontWeight.w900,
                       color: const Color(0xFFEF4444),
@@ -3314,9 +3329,9 @@ class AppSideDrawer extends StatelessWidget {
                 padding: EdgeInsets.only(bottom: 12.h),
                 child: Text(
                   'الإصدار 1.0.3',
-                  style: GoogleFonts.tajawal(
+                  style: GoogleFonts.cairo(
                     fontSize: 12.sp,
-                    color: Colors.black.withOpacity(0.45),
+                    color: Colors.black.withValues(alpha: 0.45),
                   ),
                 ),
               ),
@@ -3495,10 +3510,10 @@ class _CardSection extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14.r),
-        border: Border.all(color: Colors.black.withOpacity(0.08)),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 8,
               offset: const Offset(0, 2)),
         ],
@@ -3509,7 +3524,7 @@ class _CardSection extends StatelessWidget {
           Row(
             children: [
               Text(title,
-                  style: GoogleFonts.tajawal(
+                  style: GoogleFonts.cairo(
                       fontWeight: FontWeight.w900, fontSize: 15.5.sp)),
               const Spacer(),
             ],
@@ -3545,7 +3560,7 @@ class _RowItem extends StatelessWidget {
       softWrap: wrap,
       overflow: wrap ? TextOverflow.visible : TextOverflow.ellipsis,
       maxLines: wrap ? null : 1,
-      style: GoogleFonts.tajawal(
+      style: GoogleFonts.cairo(
         fontSize: 14.sp,
         fontWeight: FontWeight.w900,
         color: const Color(0xFF0F172A),
@@ -3561,10 +3576,10 @@ class _RowItem extends StatelessWidget {
           child: Text(
             label,
             textAlign: TextAlign.right,
-            style: GoogleFonts.tajawal(
+            style: GoogleFonts.cairo(
               fontSize: 14.sp,
               fontWeight: FontWeight.w800,
-              color: Colors.black.withOpacity(0.70),
+              color: Colors.black.withValues(alpha: 0.70),
             ),
           ),
         ),

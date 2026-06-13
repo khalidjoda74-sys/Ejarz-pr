@@ -1,5 +1,5 @@
 // lib/main.dart
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:async';
 import 'dart:ui' as ui;
 
@@ -35,17 +35,15 @@ import 'models/property.dart';
 import 'models/tenant.dart';
 
 // Ã˜Â§Ã™â€žÃ˜Â¹Ã™â€šÃ™Ë†Ã˜Â¯
-import 'ui/contracts_screen.dart'
-    show Contract, ContractAdapter, AddOrEditContractScreen;
+import 'ui/contracts_screen.dart' show ContractAdapter, AddOrEditContractScreen;
 import 'ui/contracts_screen.dart' as contracts_ui show ContractsScreen;
 
 // Ã˜Â§Ã™â€žÃ™ÂÃ™Ë†Ã˜Â§Ã˜ÂªÃ™Å Ã˜Â±
-import 'ui/invoices_screen.dart' show Invoice, InvoiceAdapter, InvoicesRoutes;
+import 'ui/invoices_screen.dart' show InvoiceAdapter, InvoicesRoutes;
 
 // Ã˜Â§Ã™â€žÃ˜ÂµÃ™Å Ã˜Â§Ã™â€ Ã˜Â©
 import 'ui/maintenance_screen.dart'
     show
-        MaintenanceRequest,
         MaintenanceRequestAdapter,
         MaintenancePriorityAdapter,
         MaintenanceStatusAdapter,
@@ -59,7 +57,9 @@ import 'ui/notifications_screen.dart' show NotificationsRoutes;
 // UI
 import 'ui/home_screen.dart';
 import 'ui/login_screen.dart';
+import 'ui/web_landing_page.dart';
 import 'widgets/disabled_account_guard.dart';
+import 'core/widgets/app_update_gate.dart';
 import 'ui/ai_chat/ai_chat_service.dart';
 
 //Ã™â€žÃ™Ë†Ã˜Â­Ã˜Â© Ã˜Â§Ã™â€žÃ™â€¦Ã™Æ’Ã˜ÂªÃ˜Â¨
@@ -168,6 +168,8 @@ Tenant __cloneTenantForRecovery(Tenant t) {
     companyTaxNumber: t.companyTaxNumber,
     companyRepresentativeName: t.companyRepresentativeName,
     companyRepresentativePhone: t.companyRepresentativePhone,
+    companyRepresentativeNationalId: t.companyRepresentativeNationalId,
+    companyRepresentativeDateOfBirth: t.companyRepresentativeDateOfBirth,
     companyBankAccountNumber: t.companyBankAccountNumber,
     companyBankName: t.companyBankName,
     serviceSpecialization: t.serviceSpecialization,
@@ -230,6 +232,7 @@ dynamic __deepCopyDynamic(dynamic v) {
   return v;
 }
 
+// ignore: unused_element
 Future<void> __migrateTenantsLocalBox({
   required String fromUid,
   required String toUid,
@@ -258,6 +261,7 @@ Future<void> __migrateTenantsLocalBox({
   }
 }
 
+// ignore: unused_element
 Future<void> __migratePropertiesLocalBox({
   required String fromUid,
   required String toUid,
@@ -295,6 +299,7 @@ Future<void> __migratePropertiesLocalBox({
   }
 }
 
+// ignore: unused_element
 Future<void> __migrateDynamicLocalBox({
   required String base,
   required String fromUid,
@@ -322,6 +327,7 @@ Future<void> __migrateDynamicLocalBox({
   }
 }
 
+// ignore: unused_element
 Future<Set<String>> __collectLegacyUidCandidates(
   User u,
   String targetUid,
@@ -955,6 +961,21 @@ class _AppRouteObserver extends NavigatorObserver {
 
 final _appRouteObserver = _AppRouteObserver();
 
+Widget _protectedRouteChild(Widget child) {
+  return AppUpdateGate(child: DisabledAccountGuard(child: child));
+}
+
+Map<String, WidgetBuilder> _protectedRoutes(
+  Map<String, WidgetBuilder> routes,
+) {
+  return routes.map(
+    (name, builder) => MapEntry(
+      name,
+      (context) => _protectedRouteChild(builder(context)),
+    ),
+  );
+}
+
 class _AppOnlineOnlyGuard extends StatefulWidget {
   const _AppOnlineOnlyGuard({required this.child});
 
@@ -968,6 +989,9 @@ class _AppOnlineOnlyGuardState extends State<_AppOnlineOnlyGuard> {
   bool _timeSyncInFlight = false;
   bool _syncFailed = false;
   Timer? _syncRetryTimer;
+
+  bool get _networkAvailableForRuntime =>
+      kIsWeb || ConnectivityService.instance.currentStatus == true;
 
   @override
   void initState() {
@@ -992,7 +1016,7 @@ class _AppOnlineOnlyGuardState extends State<_AppOnlineOnlyGuard> {
 
   void _handleGuardTick() {
     if (!mounted) return;
-    if (ConnectivityService.instance.currentStatus != true || KsaTime.isSynced) {
+    if (!_networkAvailableForRuntime || KsaTime.isSynced) {
       _syncRetryTimer?.cancel();
     }
     setState(() {});
@@ -1002,12 +1026,12 @@ class _AppOnlineOnlyGuardState extends State<_AppOnlineOnlyGuard> {
   void _scheduleServerTimeRetry() {
     _syncRetryTimer?.cancel();
     if (!mounted) return;
-    if (ConnectivityService.instance.currentStatus != true) return;
+    if (!_networkAvailableForRuntime) return;
     if (KsaTime.isSynced) return;
     _syncRetryTimer = Timer(const Duration(seconds: 5), () {
       if (!mounted) return;
       if (_timeSyncInFlight) return;
-      if (ConnectivityService.instance.currentStatus != true) return;
+      if (!_networkAvailableForRuntime) return;
       if (KsaTime.isSynced) return;
       unawaited(_ensureServerTimeIfPossible());
     });
@@ -1016,7 +1040,7 @@ class _AppOnlineOnlyGuardState extends State<_AppOnlineOnlyGuard> {
   Future<void> _ensureServerTimeIfPossible() async {
     if (_timeSyncInFlight) return;
     if (Firebase.apps.isEmpty) return;
-    if (ConnectivityService.instance.currentStatus != true) return;
+    if (!_networkAvailableForRuntime) return;
     if (KsaTime.isSynced) {
       _syncRetryTimer?.cancel();
       if (_syncFailed) {
@@ -1040,7 +1064,7 @@ class _AppOnlineOnlyGuardState extends State<_AppOnlineOnlyGuard> {
           break;
         }
         if (!mounted) break;
-        if (ConnectivityService.instance.currentStatus != true) break;
+        if (!_networkAvailableForRuntime) break;
         await Future.delayed(const Duration(seconds: 3));
       }
       if (!KsaTime.isSynced) {
@@ -1055,7 +1079,7 @@ class _AppOnlineOnlyGuardState extends State<_AppOnlineOnlyGuard> {
 
   @override
   Widget build(BuildContext context) {
-    final isOnline = ConnectivityService.instance.currentStatus;
+    final isOnline = kIsWeb ? true : ConnectivityService.instance.currentStatus;
     final showOfflineOverlay = isOnline == false;
     final isLoginRoute = _activeRouteName.value == '/login';
     final showSlowBanner = _splashDone &&
@@ -1116,7 +1140,7 @@ class _AppOnlineOnlyGuardState extends State<_AppOnlineOnlyGuard> {
               child: BackdropFilter(
                 filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                 child: Container(
-                  color: Colors.black.withOpacity(0.42),
+                  color: Colors.black.withValues(alpha: 0.42),
                   alignment: Alignment.center,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24,
@@ -1130,10 +1154,10 @@ class _AppOnlineOnlyGuardState extends State<_AppOnlineOnlyGuard> {
                         vertical: 24,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.64),
+                        color: Colors.black.withValues(alpha: 0.64),
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.16),
+                          color: Colors.white.withValues(alpha: 0.16),
                         ),
                       ),
                       child: Column(
@@ -1161,7 +1185,7 @@ class _AppOnlineOnlyGuardState extends State<_AppOnlineOnlyGuard> {
                             style: GoogleFonts.cairo(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
-                              color: Colors.white.withOpacity(0.84),
+                              color: Colors.white.withValues(alpha: 0.84),
                               height: 1.6,
                             ),
                           ),
@@ -1189,10 +1213,11 @@ class MyApp extends StatelessWidget {
       minTextAdapt: true,
       builder: (context, child) {
         return MaterialApp(
+          // ignore: deprecated_member_use
           useInheritedMediaQuery:
               true, // Ã™â€¦Ã™â€¡Ã™â€¦ Ã™â€žÃ˜ÂªÃ™â€ Ã˜Â§Ã˜Â³Ã™â€š Ã˜Â§Ã™â€žÃ™â€šÃ™Å Ã˜Â§Ã˜Â³Ã˜Â§Ã˜Âª
           debugShowCheckedModeBanner: false,
-          title: 'Darvoo',
+          title: 'Ejarz Pro',
           locale: const Locale('ar'),
           supportedLocales: const [Locale('ar'), Locale('en')],
           localizationsDelegates: const [
@@ -1214,7 +1239,7 @@ class MyApp extends StatelessWidget {
             final guardedChild = MediaQuery(
               data: mq.copyWith(
                 // Ã™Å Ã™â€¦Ã™â€ Ã˜Â¹ Ã˜ÂªÃ˜Â¶Ã˜Â®Ã™Å Ã™â€¦ Ã˜Â§Ã™â€žÃ™â€ Ã˜Âµ Ã˜Â¹Ã™â€žÃ™â€° Ã˜Â£Ã™â€ Ã˜Â¯Ã˜Â±Ã™Ë†Ã™Å Ã˜Â¯ 15
-                textScaler: const TextScaler.linear(1.0),
+                textScaler: mq.textScaler,
                 // Ã™â€žÃ™â€žÃ™â€ Ã˜Â³Ã˜Â® Ã˜Â§Ã™â€žÃ˜Â£Ã™â€šÃ˜Â¯Ã™â€¦ Ã™â€¦Ã™â€  Flutter Ã™Å Ã™â€¦Ã™Æ’Ã™â€  Ã˜Â§Ã˜Â³Ã˜ÂªÃ˜Â®Ã˜Â¯Ã˜Â§Ã™â€¦:
                 // textScaleFactor: 1.0,
               ),
@@ -1305,18 +1330,21 @@ class MyApp extends StatelessWidget {
           ),
 
           routes: {
-            ...InvoicesRoutes.routes(),
-            ...MaintenanceRoutes.routes(),
-            ...ReportsRoutes.routes(),
-            ...PropertyServicesRoutes.routes(),
-            ...NotificationsRoutes.routes(),
-            '/home': (_) => const DisabledAccountGuard(child: HomeScreen()),
-            '/login': (_) => const LoginScreen(),
-            '/office': (_) => const DisabledAccountGuard(child: OfficeHomePage()),
-            '/contracts': (_) => const contracts_ui.ContractsScreen(),
-            '/contracts/new': (_) => const AddOrEditContractScreen(),
+            ..._protectedRoutes(InvoicesRoutes.routes()),
+            ..._protectedRoutes(MaintenanceRoutes.routes()),
+            ..._protectedRoutes(ReportsRoutes.routes()),
+            ..._protectedRoutes(PropertyServicesRoutes.routes()),
+            ..._protectedRoutes(NotificationsRoutes.routes()),
+            '/home': (_) => _protectedRouteChild(const HomeScreen()),
+            '/app': (_) => const SplashRouter(),
+            '/login': (_) => const AppUpdateGate(child: LoginScreen()),
+            '/office': (_) => _protectedRouteChild(const OfficeHomePage()),
+            '/contracts': (_) =>
+                _protectedRouteChild(const contracts_ui.ContractsScreen()),
+            '/contracts/new': (_) =>
+                _protectedRouteChild(const AddOrEditContractScreen()),
           },
-          home: const SplashRouter(),
+          home: kIsWeb ? const WebLandingPage() : const SplashRouter(),
         );
       },
     );
@@ -1333,6 +1361,9 @@ class SplashRouter extends StatefulWidget {
 
 class _SplashRouterState extends State<SplashRouter> {
   StreamSubscription<User?>? _authSub;
+  String _lastHandledAuthUid = '';
+  String _lastHandledWorkspaceUid = '';
+  bool _authStateHandling = false;
 
   // Ã˜Â®Ã˜Â¯Ã™â€¦Ã˜Â© Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â²Ã˜Â§Ã™â€¦Ã™â€ Ã˜Â© Ã™â€žÃ™â€žÃ˜Â£Ã™Ë†Ã™ÂÃ™â€žÃ˜Â§Ã™Å Ã™â€  (Ã˜Â³Ã™â€ Ã˜Â¬Ã™â€žÃ˜ÂªÃ™Ë†Ã™â€ )
   final _offlineSync = OfflineSyncService.instance;
@@ -1400,6 +1431,8 @@ class _SplashRouterState extends State<SplashRouter> {
     } else {
       clearFixedUid();
     }
+    _lastHandledAuthUid = currUser?.uid ?? '';
+    _lastHandledWorkspaceUid = bootstrapWorkspaceUid ?? '';
 
     // Ã˜Â§Ã™ÂÃ˜ÂªÃ˜Â­ Ã˜ÂµÃ™â€ Ã˜Â§Ã˜Â¯Ã™Å Ã™â€š Ã™â€¡Ã˜Â°Ã˜Â§ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã˜ÂªÃ˜Â®Ã˜Â¯Ã™â€¦ (Ã˜Â£Ã™Ë† "guest")
     await HiveService.ensureReportsBoxesOpen();
@@ -1431,67 +1464,65 @@ class _SplashRouterState extends State<SplashRouter> {
 
     //Ã™â€¦Ã˜ÂªÃ˜Â§Ã˜Â¨Ã˜Â¹Ã˜Â© Ã˜ÂªÃ˜ÂºÃ™Å Ã™â€˜Ã˜Â± Ã˜ÂªÃ˜Â³Ã˜Â¬Ã™Å Ã™â€ž Ã˜Â§Ã™â€žÃ˜Â¯Ã˜Â®Ã™Ë†Ã™â€ž
     _authSub = FirebaseAuth.instance.authStateChanges().listen((user) async {
-      await SyncManager.instance.stopAll();
-      _offlineSync.dispose();
-
-      // Ã˜Â£Ã˜ÂºÃ™â€žÃ™â€š Ã˜ÂµÃ™â€ Ã˜Â§Ã˜Â¯Ã™Å Ã™â€š Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã˜ÂªÃ˜Â®Ã˜Â¯Ã™â€¦ Ã˜Â§Ã™â€žÃ˜Â³Ã˜Â§Ã˜Â¨Ã™â€š
-      final candidates = <String>{
-        boxName('sessionBox'),
-        boxName('contractsBox'),
-        boxName('propertiesBox'),
-        boxName('tenantsBox'),
-        boxName(kInvoicesBox),
-        boxName('maintenanceBox'),
-        boxName('reportsBox'),
-      };
-
-      for (final name in candidates) {
-        if (Hive.isBoxOpen(name)) {
-          try {
-            await Hive.box(name).close();
-          } catch (_) {}
-        }
-      }
-
+      if (_authStateHandling) return;
+      _authStateHandling = true;
+      final nextAuthUid = user?.uid ?? '';
       final workspaceUid = user == null
           ? null
           : ((await __sanitizeResolvedOfficeWorkspaceUid(
                   user, await __resolveOfficeWorkspaceUid(user))) ??
               user.uid);
-      __traceWorkspace(
-        'auth-state uid=${user?.uid ?? ''} resolvedWorkspace=${workspaceUid ?? ''}',
-      );
-      if (workspaceUid != null && workspaceUid.isNotEmpty && user != null) {
-        await __recoverLocalDataFromLegacyScopes(user, workspaceUid);
-        await __cleanupWorkspacePrefsForOwner(user, workspaceUid);
-        setFixedUid(workspaceUid);
-      } else {
-        clearFixedUid();
+      final nextWorkspaceUid = workspaceUid ?? '';
+      if (nextAuthUid == _lastHandledAuthUid &&
+          nextWorkspaceUid == _lastHandledWorkspaceUid) {
+        _authStateHandling = false;
+        if (mounted) setState(() {});
+        return;
       }
+      try {
+        await SyncManager.instance.stopAll();
+        _offlineSync.dispose();
 
-      // Ã˜Â§Ã™ÂÃ˜ÂªÃ˜Â­ Ã˜ÂµÃ™â€ Ã˜Â§Ã˜Â¯Ã™Å Ã™â€š Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã˜ÂªÃ˜Â®Ã˜Â¯Ã™â€¦ Ã˜Â§Ã™â€žÃ˜Â­Ã˜Â§Ã™â€žÃ™Å
-      await HiveService.ensureReportsBoxesOpen();
-
-      // Ã˜Â¬Ã˜Â³Ã™Ë†Ã˜Â± Ã™â€¡Ã˜Â°Ã˜Â§ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã˜ÂªÃ˜Â®Ã˜Â¯Ã™â€¦
-      await SyncManager.instance.startAll();
-      final syncScopeUid = effectiveUid().trim();
-      __traceWorkspace(
-        'auth-state normalizedScope=${syncScopeUid.isEmpty ? 'guest' : syncScopeUid}',
-      );
-
-      // Ã˜Â®Ã˜Â¯Ã™â€¦Ã˜Â© Ã˜Â§Ã™â€žÃ˜Â£Ã™Ë†Ã™ÂÃ™â€žÃ˜Â§Ã™Å Ã™â€  Ã™â€žÃ™â€¡Ã˜Â°Ã˜Â§ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã˜ÂªÃ˜Â®Ã˜Â¯Ã™â€¦
-      if (user != null) {
-        final ucUid = (syncScopeUid.isNotEmpty && syncScopeUid != 'guest')
-            ? syncScopeUid
-            : (workspaceUid ?? user.uid);
-        final uc = UserCollections(
-          ucUid,
+        // Ã˜Â£Ã˜ÂºÃ™â€žÃ™â€š Ã˜ÂµÃ™â€ Ã˜Â§Ã˜Â¯Ã™Å Ã™â€š Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã˜ÂªÃ˜Â®Ã˜Â¯Ã™â€¦ Ã˜Â§Ã™â€žÃ˜Â³Ã˜Â§Ã˜Â¨Ã™â€š
+        __traceWorkspace(
+          'auth-state uid=${user?.uid ?? ''} resolvedWorkspace=${workspaceUid ?? ''}',
         );
-        final repo = TenantsRepo(uc);
-        await _offlineSync.init(uc: uc, repo: repo);
-        unawaited(_loadAiChatApiKey());
-      }
+        if (workspaceUid != null && workspaceUid.isNotEmpty && user != null) {
+          await __recoverLocalDataFromLegacyScopes(user, workspaceUid);
+          await __cleanupWorkspacePrefsForOwner(user, workspaceUid);
+          setFixedUid(workspaceUid);
+        } else {
+          clearFixedUid();
+        }
 
+        // Ã˜Â§Ã™ÂÃ˜ÂªÃ˜Â­ Ã˜ÂµÃ™â€ Ã˜Â§Ã˜Â¯Ã™Å Ã™â€š Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã˜ÂªÃ˜Â®Ã˜Â¯Ã™â€¦ Ã˜Â§Ã™â€žÃ˜Â­Ã˜Â§Ã™â€žÃ™Å
+        await HiveService.ensureReportsBoxesOpen();
+
+        // Ã˜Â¬Ã˜Â³Ã™Ë†Ã˜Â± Ã™â€¡Ã˜Â°Ã˜Â§ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã˜ÂªÃ˜Â®Ã˜Â¯Ã™â€¦
+        await SyncManager.instance.startAll();
+        final syncScopeUid = effectiveUid().trim();
+        __traceWorkspace(
+          'auth-state normalizedScope=${syncScopeUid.isEmpty ? 'guest' : syncScopeUid}',
+        );
+
+        // Ã˜Â®Ã˜Â¯Ã™â€¦Ã˜Â© Ã˜Â§Ã™â€žÃ˜Â£Ã™Ë†Ã™ÂÃ™â€žÃ˜Â§Ã™Å Ã™â€  Ã™â€žÃ™â€¡Ã˜Â°Ã˜Â§ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã˜ÂªÃ˜Â®Ã˜Â¯Ã™â€¦
+        if (user != null) {
+          final ucUid = (syncScopeUid.isNotEmpty && syncScopeUid != 'guest')
+              ? syncScopeUid
+              : (workspaceUid ?? user.uid);
+          final uc = UserCollections(
+            ucUid,
+          );
+          final repo = TenantsRepo(uc);
+          await _offlineSync.init(uc: uc, repo: repo);
+          unawaited(_loadAiChatApiKey());
+        }
+
+        _lastHandledAuthUid = nextAuthUid;
+        _lastHandledWorkspaceUid = nextWorkspaceUid;
+      } finally {
+        _authStateHandling = false;
+      }
       if (mounted) setState(() {});
     });
   }
@@ -1501,7 +1532,7 @@ class _SplashRouterState extends State<SplashRouter> {
     await _ensureFirebaseCore();
 
     // 2) Ã˜Â§Ã˜Â¨Ã˜Â¯Ã˜Â£ Ã˜Â§Ã™â€žÃ˜ÂªÃ™â€¡Ã™Å Ã˜Â¦Ã˜Â© Ã˜Â§Ã™â€žÃ˜Â«Ã™â€šÃ™Å Ã™â€žÃ˜Â© Ã™ÂÃ™Å  Ã˜Â§Ã™â€žÃ˜Â®Ã™â€žÃ™ÂÃ™Å Ã˜Â© Ã˜Â£Ã˜Â«Ã™â€ Ã˜Â§Ã˜Â¡ Ã˜Â¹Ã˜Â±Ã˜Â¶ Ã˜Â´Ã˜Â§Ã˜Â´Ã˜Â© Ã˜Â§Ã™â€žÃ˜Â´Ã˜Â¹Ã˜Â§Ã˜Â±
-    _bootstrapAll(); // Ã™â€žÃ˜Â§ Ã™â€ Ã™â€ Ã˜ÂªÃ˜Â¸Ã˜Â± Ã™â€¡Ã˜Â°Ã™â€¡ Ã˜Â§Ã™â€žÃ™â‚¬ Future Ã™â€¡Ã™â€ Ã˜Â§
+    await _bootstrapAll();
 
     // 3) Ã™â€ Ã˜Â¶Ã™â€¦Ã™â€  Ã˜Â¨Ã™â€šÃ˜Â§Ã˜Â¡ Ã˜Â´Ã˜Â§Ã˜Â´Ã˜Â© Ã˜Â§Ã™â€žÃ˜Â´Ã˜Â¹Ã˜Â§Ã˜Â± Ã™â€žÃ™ÂÃ˜ÂªÃ˜Â±Ã˜Â© Ã™â€šÃ˜ÂµÃ™Å Ã˜Â±Ã˜Â© Ã™ÂÃ™â€šÃ˜Â·
     await const Duration(seconds: 2).delay();
@@ -1531,15 +1562,18 @@ class _SplashRouterState extends State<SplashRouter> {
     if (user == null) {
       clearFixedUid();
       _splashDone = true;
+      if (!mounted) return;
       Navigator.of(context).pushReplacementNamed('/login');
       return;
 
+      // ignore: dead_code
       final sp = await SharedPreferences.getInstance();
       final lastUid = sp.getString('last_login_uid');
       final lastRole = sp.getString('last_login_role');
 
       if (lastUid == null || lastRole == null) {
         // Ã™â€¦Ã˜Â§ Ã™ÂÃ™Å  Ã˜Â£Ã™Å  Ã˜Â¯Ã˜Â®Ã™Ë†Ã™â€ž Ã˜Â³Ã˜Â§Ã˜Â¨Ã™â€š Ã™â€¦Ã˜Â­Ã™ÂÃ™Ë†Ã˜Â¸ Ã¢â€ â€™ Ã™â€ Ã˜Â°Ã™â€¡Ã˜Â¨ Ã™â€žÃ˜ÂªÃ˜Â³Ã˜Â¬Ã™Å Ã™â€ž Ã˜Â§Ã™â€žÃ˜Â¯Ã˜Â®Ã™Ë†Ã™â€ž
+        // ignore: use_build_context_synchronously
         Navigator.of(context).pushReplacementNamed('/login');
         return;
       }
@@ -1579,12 +1613,14 @@ class _SplashRouterState extends State<SplashRouter> {
       );
       setFixedUid(officeWorkspaceUid);
       _splashDone = true;
+      if (!mounted) return;
       Navigator.of(context).pushReplacementNamed('/office');
       return;
     }
 
     final role = (await __resolveUserRole(user))?.toLowerCase() ?? 'client';
     _splashDone = true;
+    if (!mounted) return;
     if (role == 'office' || role == 'office_owner') {
       __traceWorkspace('kickoff-role-office uid=${user.uid}');
       setFixedUid(user.uid);
@@ -1595,6 +1631,7 @@ class _SplashRouterState extends State<SplashRouter> {
       try {
         await FirebaseAuth.instance.signOut();
       } catch (_) {}
+      if (!mounted) return;
       Navigator.of(context).pushReplacementNamed('/login');
     } else {
       __traceWorkspace('kickoff-route /home uid=${user.uid}');

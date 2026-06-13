@@ -41,18 +41,18 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyBznylrbAURL9k4Cfg76-9vFAH26ll4yqk',
-    appId: '1:142850470461:web:8bbc4f7a9c7f70ecb97054',
+    apiKey: 'AIzaSyANERl7MFhzHdD261ACY4RBbFXu-f_0LVw',
+    appId: '1:142850470461:web:f5f2012c8f0a618ab97054',
     messagingSenderId: '142850470461',
     projectId: 'darvoo',
     authDomain: 'darvoo.firebaseapp.com',
     storageBucket: 'darvoo.firebasestorage.app',
-    measurementId: 'G-J83MPQY91W',
+    measurementId: 'G-3L7QBQRMC6',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyC8cMGGXNhk9kS11amer1kI0nqax8mrXy0',
-    appId: '1:142850470461:android:713464ae047721fbb97054',
+    appId: '1:142850470461:android:6b32d6569d337ac2b97054',
     messagingSenderId: '142850470461',
     projectId: 'darvoo',
     storageBucket: 'darvoo.firebasestorage.app',
@@ -60,29 +60,29 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyBP36F_IZYChgjlWd3w_9klQwuOxZcRSrQ',
-    appId: '1:142850470461:ios:5e9fa1d0ad211d60b97054',
+    appId: '1:142850470461:ios:9b05f5ac2506e7ebb97054',
     messagingSenderId: '142850470461',
     projectId: 'darvoo',
     storageBucket: 'darvoo.firebasestorage.app',
-    iosBundleId: 'com.darvoo.owner',
+    iosBundleId: 'sa.ejarzpro.owner',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyBP36F_IZYChgjlWd3w_9klQwuOxZcRSrQ',
-    appId: '1:142850470461:ios:3b6ef9dfa73837b6b97054',
+    appId: '1:142850470461:ios:9b05f5ac2506e7ebb97054',
     messagingSenderId: '142850470461',
     projectId: 'darvoo',
     storageBucket: 'darvoo.firebasestorage.app',
-    iosBundleId: 'com.example.adminPanel',
+    iosBundleId: 'sa.ejarzpro.owner',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyBznylrbAURL9k4Cfg76-9vFAH26ll4yqk',
-    appId: '1:142850470461:web:87f73930fc491865b97054',
+    apiKey: 'AIzaSyANERl7MFhzHdD261ACY4RBbFXu-f_0LVw',
+    appId: '1:142850470461:web:f5f2012c8f0a618ab97054',
     messagingSenderId: '142850470461',
     projectId: 'darvoo',
     authDomain: 'darvoo.firebaseapp.com',
     storageBucket: 'darvoo.firebasestorage.app',
-    measurementId: 'G-HL61J7DHTB',
+    measurementId: 'G-3L7QBQRMC6',
   );
 }

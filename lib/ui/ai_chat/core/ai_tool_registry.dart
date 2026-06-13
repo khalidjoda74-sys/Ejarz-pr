@@ -16,7 +16,13 @@ class AiToolRegistry {
       inputSchema: _schema(<String, Map<String, dynamic>>{
         'question': _nullableString('سؤال المستخدم عن كيفية الاستخدام.'),
         'module': _nullableEnum(
-          <String>['properties', 'tenants', 'contracts', 'reports', 'maintenance'],
+          <String>[
+            'properties',
+            'tenants',
+            'contracts',
+            'reports',
+            'maintenance'
+          ],
           'الوحدة المطلوبة إن كانت معروفة.',
         ),
       }),
@@ -31,7 +37,8 @@ class AiToolRegistry {
         'كيف أضيف مستأجر؟',
         'اشرح لي طريقة إصدار عقد.',
       ],
-      disambiguationStrategy: 'إن كانت الوحدة غير واضحة فاسأل المستخدم هل يقصد العقارات أو العقود أو التقارير.',
+      disambiguationStrategy:
+          'إن كانت الوحدة غير واضحة فاسأل المستخدم هل يقصد العقارات أو العقود أو التقارير.',
       validationStrategy: 'سؤال حر آمن بلا تغيير بيانات.',
     ),
     _def(
@@ -45,7 +52,13 @@ class AiToolRegistry {
       requiredPermissions: const <String>['app.help'],
       inputSchema: _schema(<String, Map<String, dynamic>>{
         'module': _nullableEnum(
-          <String>['properties', 'tenants', 'contracts', 'reports', 'maintenance'],
+          <String>[
+            'properties',
+            'tenants',
+            'contracts',
+            'reports',
+            'maintenance'
+          ],
           'اسم الوحدة.',
         ),
       }),
@@ -91,13 +104,21 @@ class AiToolRegistry {
       businessRules: const <String>['لا يغير البيانات.'],
       handlerName: 'app.explain_workflow',
       readBackTool: null,
-      examplesAr: const <String>['اشرح لي سير إضافة عقد', 'كيف يتم تسجيل دفعة؟'],
-      disambiguationStrategy: 'إذا كان سير العمل عامًا فاسأل هل المقصود عقد أو دفعة أو صيانة.',
+      examplesAr: const <String>[
+        'اشرح لي سير إضافة عقد',
+        'كيف يتم تسجيل دفعة؟'
+      ],
+      disambiguationStrategy:
+          'إذا كان سير العمل عامًا فاسأل هل المقصود عقد أو دفعة أو صيانة.',
       validationStrategy: 'وصف سير عمل نصي.',
     ),
     _def(
       name: 'properties.search',
-      aliases: const <String>['get_properties_list', 'get_properties_summary', 'get_building_units'],
+      aliases: const <String>[
+        'get_properties_list',
+        'get_properties_summary',
+        'get_building_units'
+      ],
       description: 'البحث عن العقارات والوحدات وعرض النتائج المطابقة.',
       category: 'properties',
       operationType: AiToolOperationType.read,
@@ -107,22 +128,41 @@ class AiToolRegistry {
       inputSchema: _schema(<String, Map<String, dynamic>>{
         'query': _nullableString('الاسم أو جزء منه أو رقم الوحدة.'),
         'property_type': _nullableEnum(
-          <String>['apartment', 'villa', 'building', 'land', 'office', 'shop', 'warehouse'],
+          <String>[
+            'apartment',
+            'villa',
+            'building',
+            'land',
+            'office',
+            'shop',
+            'warehouse'
+          ],
           'نوع العقار إن وجد.',
         ),
         'include_archived': _nullableBoolean('هل يتم تضمين المؤرشف.'),
       }),
       resultSchema: _simpleResultSchema(),
-      businessRules: const <String>['يحترم نطاق الحساب الحالي.', 'لا يعرض بيانات خارج نطاق المكتب أو العميل الحالي.'],
+      businessRules: const <String>[
+        'يحترم نطاق الحساب الحالي.',
+        'لا يعرض بيانات خارج نطاق المكتب أو العميل الحالي.'
+      ],
       handlerName: 'properties.search',
       readBackTool: null,
-      examplesAr: const <String>['ابحث عن برج النخيل', 'أرني الوحدات الشاغرة في عمارة السلام'],
-      disambiguationStrategy: 'إذا تطابق أكثر من عقار أو وحدة تُعرض قائمة مرشحين.',
+      examplesAr: const <String>[
+        'ابحث عن برج النخيل',
+        'أرني الوحدات الشاغرة في عمارة السلام'
+      ],
+      disambiguationStrategy:
+          'إذا تطابق أكثر من عقار أو وحدة تُعرض قائمة مرشحين.',
       validationStrategy: 'يقبل الاستعلام النصي فقط لأدوات البحث.',
     ),
     _def(
       name: 'properties.get',
-      aliases: const <String>['get_property_details', 'get_property_service_details', 'get_property_services'],
+      aliases: const <String>[
+        'get_property_details',
+        'get_property_service_details',
+        'get_property_services'
+      ],
       description: 'عرض تفاصيل عقار محدد وخدماته وإعداداته.',
       category: 'properties',
       operationType: AiToolOperationType.read,
@@ -134,7 +174,9 @@ class AiToolRegistry {
         'query': _nullableString('اسم العقار أو الوحدة.'),
       }),
       resultSchema: _simpleResultSchema(),
-      businessRules: const <String>['إذا لم يحدد العقار بدقة فيجب طلب الاختيار من المرشحين.'],
+      businessRules: const <String>[
+        'إذا لم يحدد العقار بدقة فيجب طلب الاختيار من المرشحين.'
+      ],
       handlerName: 'properties.get',
       readBackTool: null,
       examplesAr: const <String>['اعرض تفاصيل عقار برج النخيل'],
@@ -153,11 +195,20 @@ class AiToolRegistry {
       inputSchema: _schema(<String, Map<String, dynamic>>{
         'name': _nullableString('اسم العقار.'),
         'type': _nullableEnum(
-          <String>['apartment', 'villa', 'building', 'land', 'office', 'shop', 'warehouse'],
+          <String>[
+            'apartment',
+            'villa',
+            'building',
+            'land',
+            'office',
+            'shop',
+            'warehouse'
+          ],
           'نوع العقار.',
         ),
         'address': _nullableString('العنوان.'),
-        'rentalMode': _nullableEnum(<String>['wholeBuilding', 'perUnit'], 'نمط التأجير.'),
+        'rentalMode':
+            _nullableEnum(<String>['wholeBuilding', 'perUnit'], 'نمط التأجير.'),
         'totalUnits': _nullableNumber('عدد الوحدات.'),
         'notes': _nullableString('ملاحظات إضافية.'),
       }),
@@ -170,8 +221,10 @@ class AiToolRegistry {
       handlerName: 'properties.create',
       readBackTool: 'properties.get',
       examplesAr: const <String>['أضف عقارًا باسم برج الياسمين'],
-      disambiguationStrategy: 'عند تعارض الاسم اطلب من المستخدم التأكيد أو التمييز.',
-      validationStrategy: 'التحقق من الحقول والحدود والقيم المقبولة قبل التنفيذ.',
+      disambiguationStrategy:
+          'عند تعارض الاسم اطلب من المستخدم التأكيد أو التمييز.',
+      validationStrategy:
+          'التحقق من الحقول والحدود والقيم المقبولة قبل التنفيذ.',
     ),
     _def(
       name: 'properties.update',
@@ -189,7 +242,9 @@ class AiToolRegistry {
         'notes': _nullableString('الوصف أو الملاحظات.'),
       }),
       resultSchema: _simpleResultSchema(),
-      businessRules: const <String>['يجب تحديد العقار المراد تعديله بدقة قبل التنفيذ.'],
+      businessRules: const <String>[
+        'يجب تحديد العقار المراد تعديله بدقة قبل التنفيذ.'
+      ],
       handlerName: 'properties.update',
       readBackTool: 'properties.get',
       examplesAr: const <String>['عدل عنوان برج النخيل'],
@@ -231,11 +286,14 @@ class AiToolRegistry {
         'property_query': _nullableString('اسم العقار الأعلى إن وجد.'),
       }),
       resultSchema: _simpleResultSchema(),
-      businessRules: const <String>['تعتمد الإتاحة على العقود الحالية غير المنتهية.'],
+      businessRules: const <String>[
+        'تعتمد الإتاحة على العقود الحالية غير المنتهية.'
+      ],
       handlerName: 'units.available',
       readBackTool: null,
       examplesAr: const <String>['ما الوحدات الشاغرة اليوم؟'],
-      disambiguationStrategy: 'إذا كان العقار غير محدد وكان هناك تكرار فاطلب التحديد.',
+      disambiguationStrategy:
+          'إذا كان العقار غير محدد وكان هناك تكرار فاطلب التحديد.',
       validationStrategy: 'فلترة قراءة فقط.',
     ),
     _def(
@@ -252,7 +310,9 @@ class AiToolRegistry {
         'clientType': _nullableString('نوع العميل إن وجد.'),
       }),
       resultSchema: _simpleResultSchema(),
-      businessRules: const <String>['إذا تطابق أكثر من أحمد مثلًا تعرض قائمة مرشحين.'],
+      businessRules: const <String>[
+        'إذا تطابق أكثر من أحمد مثلًا تعرض قائمة مرشحين.'
+      ],
       handlerName: 'tenants.search',
       readBackTool: null,
       examplesAr: const <String>['ابحث عن أحمد', 'أرني مقدمي الخدمة'],
@@ -350,12 +410,16 @@ class AiToolRegistry {
       handlerName: 'contracts.search',
       readBackTool: null,
       examplesAr: const <String>['ابحث عن عقد أحمد', 'أرني العقود النشطة'],
-      disambiguationStrategy: 'إذا كان الاسم عامًا اطلب الاختيار من قائمة العقود.',
+      disambiguationStrategy:
+          'إذا كان الاسم عامًا اطلب الاختيار من قائمة العقود.',
       validationStrategy: 'فلترة قراءة فقط.',
     ),
     _def(
       name: 'contracts.get',
-      aliases: const <String>['get_contract_details', 'get_contract_invoice_history'],
+      aliases: const <String>[
+        'get_contract_details',
+        'get_contract_invoice_history'
+      ],
       description: 'عرض تفاصيل عقد ودفعاته المرتبطة.',
       category: 'contracts',
       operationType: AiToolOperationType.read,
@@ -377,7 +441,8 @@ class AiToolRegistry {
     _def(
       name: 'contracts.create',
       aliases: const <String>['create_contract'],
-      description: 'تهيئة أو إنشاء عقد إيجار بعد التحقق من التوفر والتواريخ والمبالغ والصلاحيات.',
+      description:
+          'تهيئة أو إنشاء عقد إيجار بعد التحقق من التوفر والتواريخ والمبالغ والصلاحيات.',
       category: 'contracts',
       operationType: AiToolOperationType.write,
       riskLevel: AiToolRiskLevel.critical,
@@ -407,8 +472,11 @@ class AiToolRegistry {
       ],
       handlerName: 'contracts.create',
       readBackTool: 'contracts.get',
-      examplesAr: const <String>['أنشئ عقدًا لأحمد في الشقة 12 من 2026-05-01 إلى 2027-04-30'],
-      disambiguationStrategy: 'إذا تطابق اسم المستأجر أو الوحدة مع أكثر من سجل فاطلب الاختيار.',
+      examplesAr: const <String>[
+        'أنشئ عقدًا لأحمد في الشقة 12 من 2026-05-01 إلى 2027-04-30'
+      ],
+      disambiguationStrategy:
+          'إذا تطابق اسم المستأجر أو الوحدة مع أكثر من سجل فاطلب الاختيار.',
       validationStrategy: 'التحقق من الحقول والتوافر وعدم التداخل قبل التنفيذ.',
     ),
     _def(
@@ -427,7 +495,10 @@ class AiToolRegistry {
         'notes': _nullableString('ملاحظات التعديل.'),
       }),
       resultSchema: _simpleResultSchema(),
-      businessRules: const <String>['لا يجوز تعديل عقد غير محدد بدقة.', 'لا يجوز تعديل عقد منهي بطريقة غير مسموحة.'],
+      businessRules: const <String>[
+        'لا يجوز تعديل عقد غير محدد بدقة.',
+        'لا يجوز تعديل عقد منهي بطريقة غير مسموحة.'
+      ],
       handlerName: 'contracts.update',
       readBackTool: 'contracts.get',
       examplesAr: const <String>['مدد العقد 2025-1'],
@@ -448,7 +519,10 @@ class AiToolRegistry {
         'reason': _nullableString('سبب الإنهاء.'),
       }),
       resultSchema: _simpleResultSchema(),
-      businessRules: const <String>['يلزم تأكيد قوي من المستخدم.', 'لا ينفذ على عقد منهي أصلًا.'],
+      businessRules: const <String>[
+        'يلزم تأكيد قوي من المستخدم.',
+        'لا ينفذ على عقد منهي أصلًا.'
+      ],
       handlerName: 'contracts.terminate',
       readBackTool: 'contracts.get',
       examplesAr: const <String>['أنهِ العقد 2025-3'],
@@ -468,7 +542,9 @@ class AiToolRegistry {
         'days': _nullableNumber('عدد الأيام القادمة.'),
       }),
       resultSchema: _simpleResultSchema(),
-      businessRules: const <String>['يحسب من التواريخ الفعلية للعقود داخل النظام.'],
+      businessRules: const <String>[
+        'يحسب من التواريخ الفعلية للعقود داخل النظام.'
+      ],
       handlerName: 'contracts.expiring',
       readBackTool: null,
       examplesAr: const <String>['أرني العقود التي ستنتهي خلال 30 يومًا'],
@@ -477,7 +553,11 @@ class AiToolRegistry {
     ),
     _def(
       name: 'invoices.search',
-      aliases: const <String>['get_invoices_list', 'get_unpaid_invoices', 'get_invoices_by_type'],
+      aliases: const <String>[
+        'get_invoices_list',
+        'get_unpaid_invoices',
+        'get_invoices_by_type'
+      ],
       description: 'البحث عن الفواتير والسندات والمتأخرات.',
       category: 'invoices',
       operationType: AiToolOperationType.read,
@@ -489,7 +569,9 @@ class AiToolRegistry {
         'status': _nullableString('paid أو unpaid أو overdue.'),
       }),
       resultSchema: _simpleResultSchema(),
-      businessRules: const <String>['النتائج يجب أن تأتي من سجلات الفواتير الفعلية فقط.'],
+      businessRules: const <String>[
+        'النتائج يجب أن تأتي من سجلات الفواتير الفعلية فقط.'
+      ],
       handlerName: 'invoices.search',
       readBackTool: null,
       examplesAr: const <String>['اعرض الفواتير المتأخرة'],
@@ -534,7 +616,9 @@ class AiToolRegistry {
         'notes': _nullableString('وصف الفاتورة.'),
       }),
       resultSchema: _simpleResultSchema(),
-      businessRules: const <String>['يجب ربط الفاتورة بعقد صالح داخل النطاق الحالي.'],
+      businessRules: const <String>[
+        'يجب ربط الفاتورة بعقد صالح داخل النطاق الحالي.'
+      ],
       handlerName: 'invoices.create',
       readBackTool: 'invoices.get',
       examplesAr: const <String>['أنشئ فاتورة بقيمة 3000 على عقد أحمد'],
@@ -554,7 +638,9 @@ class AiToolRegistry {
         'query': _nullableString('مرجع العقد أو الفاتورة أو المستأجر.'),
       }),
       resultSchema: _simpleResultSchema(),
-      businessRules: const <String>['إذا لم تكن هناك سجلات سداد مستقلة، يعاد توضيح أن القراءة تتم من الفواتير المرتبطة فقط.'],
+      businessRules: const <String>[
+        'إذا لم تكن هناك سجلات سداد مستقلة، يعاد توضيح أن القراءة تتم من الفواتير المرتبطة فقط.'
+      ],
       handlerName: 'payments.search',
       readBackTool: null,
       examplesAr: const <String>['أرني سداد أحمد'],
@@ -575,7 +661,9 @@ class AiToolRegistry {
         'invoice_id': _nullableString('معرف الفاتورة المرتبطة إن وجد.'),
       }),
       resultSchema: _simpleResultSchema(),
-      businessRules: const <String>['إذا لم يدعم التطبيق سجل سداد مستقل يعاد رد غير مدعوم بوضوح.'],
+      businessRules: const <String>[
+        'إذا لم يدعم التطبيق سجل سداد مستقل يعاد رد غير مدعوم بوضوح.'
+      ],
       handlerName: 'payments.get',
       readBackTool: null,
       examplesAr: const <String>['اعرض دفعة الفاتورة الحالية'],
@@ -608,7 +696,8 @@ class AiToolRegistry {
       readBackTool: 'invoices.get',
       examplesAr: const <String>['سجل دفعة 3000 على فاتورة أحمد'],
       disambiguationStrategy: 'إذا تعددت الفواتير اطلب الاختيار.',
-      validationStrategy: 'التحقق من الفاتورة والمبلغ وطريقة الدفع قبل التنفيذ.',
+      validationStrategy:
+          'التحقق من الفاتورة والمبلغ وطريقة الدفع قبل التنفيذ.',
     ),
     _def(
       name: 'maintenance.search',
@@ -666,7 +755,8 @@ class AiToolRegistry {
         'property_query': _nullableString('اسم العقار أو الوحدة.'),
         'title': _nullableString('العنوان.'),
         'description': _nullableString('الوصف.'),
-        'priority': _nullableEnum(<String>['low', 'medium', 'high', 'urgent'], 'الأولوية.'),
+        'priority': _nullableEnum(
+            <String>['low', 'medium', 'high', 'urgent'], 'الأولوية.'),
         'provider': _nullableString('مقدم الخدمة إن وجد.'),
         'attachmentPaths': _nullableArrayOfStrings('المرفقات.'),
       }),
@@ -678,7 +768,8 @@ class AiToolRegistry {
       handlerName: 'maintenance.create_ticket',
       readBackTool: 'maintenance.get',
       examplesAr: const <String>['أنشئ طلب صيانة لمكيف الشقة 12'],
-      disambiguationStrategy: 'إذا كان العقار أو مقدم الخدمة غامضًا اطلب الاختيار.',
+      disambiguationStrategy:
+          'إذا كان العقار أو مقدم الخدمة غامضًا اطلب الاختيار.',
       validationStrategy: 'التحقق من الحقول الإلزامية ثم طلب التأكيد.',
     ),
     _def(
@@ -718,7 +809,9 @@ class AiToolRegistry {
         'property_query': _nullableString('العقار إن وجد.'),
       }),
       resultSchema: _reportSchema('arrears_summary'),
-      businessRules: const <String>['يحسب من الفواتير والعقود الفعلية، وليس من توقعات لغوية.'],
+      businessRules: const <String>[
+        'يحسب من الفواتير والعقود الفعلية، وليس من توقعات لغوية.'
+      ],
       handlerName: 'reports.arrears_summary',
       readBackTool: null,
       examplesAr: const <String>['طلع لي تقرير المتأخرات لهذا الشهر'],
@@ -744,7 +837,8 @@ class AiToolRegistry {
       handlerName: 'reports.owner_statement',
       readBackTool: null,
       examplesAr: const <String>['أعطني كشف المالك لهذا الشهر'],
-      disambiguationStrategy: 'إذا لم يوجد مالك مطابق يعاد غير مدعوم أو يطلب التحديد.',
+      disambiguationStrategy:
+          'إذا لم يوجد مالك مطابق يعاد غير مدعوم أو يطلب التحديد.',
       validationStrategy: 'فلترة تقرير.',
       supported: false,
     ),
@@ -763,7 +857,9 @@ class AiToolRegistry {
         'to_date': _nullableString('نهاية الفترة.'),
       }),
       resultSchema: _reportSchema('tenant_statement'),
-      businessRules: const <String>['يحصل من الفواتير والعقود الفعلية للمستأجر.'],
+      businessRules: const <String>[
+        'يحصل من الفواتير والعقود الفعلية للمستأجر.'
+      ],
       handlerName: 'reports.tenant_statement',
       readBackTool: null,
       examplesAr: const <String>['أعطني كشف أحمد'],
@@ -827,7 +923,9 @@ class AiToolRegistry {
         'property_query': _nullableString('العقار إن وجد.'),
       }),
       resultSchema: _reportSchema('income_expense'),
-      businessRules: const <String>['تجمع الإيرادات والمصروفات من السجلات الفعلية فقط.'],
+      businessRules: const <String>[
+        'تجمع الإيرادات والمصروفات من السجلات الفعلية فقط.'
+      ],
       handlerName: 'reports.income_expense',
       readBackTool: null,
       examplesAr: const <String>['أعطني تقرير الإيرادات والمصروفات'],
@@ -889,7 +987,9 @@ class AiToolRegistry {
         'status': _nullableString('حالة الطلب.'),
       }),
       resultSchema: _reportSchema('maintenance_summary'),
-      businessRules: const <String>['يعتمد على طلبات الصيانة وسجلاتها الفعلية.'],
+      businessRules: const <String>[
+        'يعتمد على طلبات الصيانة وسجلاتها الفعلية.'
+      ],
       handlerName: 'reports.maintenance_summary',
       readBackTool: null,
       examplesAr: const <String>['أعطني ملخص الصيانة لهذا الشهر'],
@@ -898,8 +998,13 @@ class AiToolRegistry {
     ),
     _def(
       name: 'periodic_services.search',
-      aliases: const <String>['get_property_services', 'get_property_service_details', 'get_periodic_service_history'],
-      description: 'قراءة إعدادات وسجل الخدمات الدورية لعقار محدد مثل النظافة والمصعد والإنترنت والمياه والكهرباء.',
+      aliases: const <String>[
+        'get_property_services',
+        'get_property_service_details',
+        'get_periodic_service_history'
+      ],
+      description:
+          'قراءة إعدادات وسجل الخدمات الدورية لعقار محدد مثل النظافة والمصعد والإنترنت والمياه والكهرباء.',
       category: 'periodic_services',
       operationType: AiToolOperationType.read,
       riskLevel: AiToolRiskLevel.low,
@@ -911,7 +1016,8 @@ class AiToolRegistry {
           <String>['cleaning', 'elevator', 'internet', 'water', 'electricity'],
           'نوع الخدمة إن كان المطلوب خدمة محددة.',
         ),
-        'includeHistory': _nullableBoolean('هل يتم إرجاع سجل الخدمة المحددة إن وجد.'),
+        'includeHistory':
+            _nullableBoolean('هل يتم إرجاع سجل الخدمة المحددة إن وجد.'),
       }),
       resultSchema: _simpleResultSchema(),
       businessRules: const <String>[
@@ -920,8 +1026,12 @@ class AiToolRegistry {
       ],
       handlerName: 'periodic_services.search',
       readBackTool: null,
-      examplesAr: const <String>['اعرض خدمات عقار برج النخيل', 'ما سجل خدمة المياه في الشقة 12؟'],
-      disambiguationStrategy: 'إذا تعدد العقار أو الوحدة اطلب اختيار السجل الصحيح.',
+      examplesAr: const <String>[
+        'اعرض خدمات عقار برج النخيل',
+        'ما سجل خدمة المياه في الشقة 12؟'
+      ],
+      disambiguationStrategy:
+          'إذا تعدد العقار أو الوحدة اطلب اختيار السجل الصحيح.',
       validationStrategy: 'فلترة قراءة آمنة.',
     ),
     _def(
@@ -941,8 +1051,10 @@ class AiToolRegistry {
         ),
         'provider': _nullableString('مقدم الخدمة إن وجد.'),
         'cost': _nullableNumber('تكلفة الخدمة أو المبلغ الافتراضي.'),
-        'billingMode': _nullableEnum(<String>['owner', 'separate', 'shared'], 'طريقة التحميل أو الفوترة.'),
-        'sharedMethod': _nullableEnum(<String>['percent', 'fixed'], 'طريقة التوزيع للمياه/الكهرباء المشتركة.'),
+        'billingMode': _nullableEnum(<String>['owner', 'separate', 'shared'],
+            'طريقة التحميل أو الفوترة.'),
+        'sharedMethod': _nullableEnum(<String>['percent', 'fixed'],
+            'طريقة التوزيع للمياه/الكهرباء المشتركة.'),
         'meterNumber': _nullableString('رقم العداد للخدمة المنفصلة.'),
         'sharePercent': _nullableNumber('نسبة التحميل إن وجدت.'),
         'totalAmount': _nullableNumber('المبلغ الإجمالي إن وجد.'),
@@ -959,7 +1071,8 @@ class AiToolRegistry {
       handlerName: 'periodic_services.create',
       readBackTool: 'periodic_services.search',
       examplesAr: const <String>['أضف خدمة تنظيف شهرية لبرج النخيل'],
-      disambiguationStrategy: 'إذا تعدد العقار اطلب الاختيار. إذا كانت المياه/الكهرباء المشتركة ناقصة فاطلب التفاصيل أو افتح الشاشة.',
+      disambiguationStrategy:
+          'إذا تعدد العقار اطلب الاختيار. إذا كانت المياه/الكهرباء المشتركة ناقصة فاطلب التفاصيل أو افتح الشاشة.',
       validationStrategy: 'تحقق من العقار ونوع الخدمة والجدولة قبل التأكيد.',
     ),
     _def(
@@ -979,8 +1092,10 @@ class AiToolRegistry {
         ),
         'provider': _nullableString('مقدم الخدمة الجديد إن وجد.'),
         'cost': _nullableNumber('التكلفة الجديدة.'),
-        'billingMode': _nullableEnum(<String>['owner', 'separate', 'shared'], 'طريقة التحميل أو الفوترة.'),
-        'sharedMethod': _nullableEnum(<String>['percent', 'fixed'], 'طريقة التوزيع للمياه/الكهرباء المشتركة.'),
+        'billingMode': _nullableEnum(<String>['owner', 'separate', 'shared'],
+            'طريقة التحميل أو الفوترة.'),
+        'sharedMethod': _nullableEnum(<String>['percent', 'fixed'],
+            'طريقة التوزيع للمياه/الكهرباء المشتركة.'),
         'meterNumber': _nullableString('رقم العداد.'),
         'sharePercent': _nullableNumber('نسبة التحميل.'),
         'totalAmount': _nullableNumber('المبلغ الإجمالي.'),
@@ -1019,11 +1134,15 @@ class AiToolRegistry {
         'screen': _nullableString('اسم الشاشة أو هدف الفتح.'),
       }),
       resultSchema: _simpleResultSchema(),
-      businessRules: const <String>['لا يفتح شاشة غير متاحة لهذا الحساب.', 'لا يعتبر فتح الشاشة تنفيذًا لعملية كتابة.'],
+      businessRules: const <String>[
+        'لا يفتح شاشة غير متاحة لهذا الحساب.',
+        'لا يعتبر فتح الشاشة تنفيذًا لعملية كتابة.'
+      ],
       handlerName: 'app.open_screen',
       readBackTool: null,
       examplesAr: const <String>['افتح شاشة إضافة عقد'],
-      disambiguationStrategy: 'إذا كانت الشاشة غير واضحة اقترح أكثر الخيارات قربًا.',
+      disambiguationStrategy:
+          'إذا كانت الشاشة غير واضحة اقترح أكثر الخيارات قربًا.',
       validationStrategy: 'يتحقق من المسار المسموح فقط.',
     ),
     _def(
@@ -1080,7 +1199,9 @@ class AiToolRegistry {
         'notificationRef': _nullableString('مرجع التنبيه.'),
       }),
       resultSchema: _simpleResultSchema(),
-      businessRules: const <String>['يجب أن يكون مرجع التنبيه صالحًا وفي نطاق الحساب.'],
+      businessRules: const <String>[
+        'يجب أن يكون مرجع التنبيه صالحًا وفي نطاق الحساب.'
+      ],
       handlerName: 'notifications.mark_read',
       readBackTool: 'notifications.get',
       examplesAr: const <String>['علّم هذا التنبيه كمقروء'],
@@ -1136,7 +1257,8 @@ class AiToolRegistry {
       if (!canWrite && _isMutatingOperation(definition.operationType)) {
         return false;
       }
-      if (!canReadAll && definition.requiredPermissions.contains('reports.financial')) {
+      if (!canReadAll &&
+          definition.requiredPermissions.contains('reports.financial')) {
         return definition.category != 'reports' || !isOfficeMode;
       }
       return true;
@@ -1161,10 +1283,10 @@ class AiToolRegistry {
   static Map<String, dynamic> _enforceStrictFunctionTool(
     Map<String, dynamic> tool,
   ) {
-    final function =
-        Map<String, dynamic>.from(tool['function'] as Map? ?? const <String, dynamic>{});
-    final parameters =
-        Map<String, dynamic>.from(function['parameters'] as Map? ?? const <String, dynamic>{});
+    final function = Map<String, dynamic>.from(
+        tool['function'] as Map? ?? const <String, dynamic>{});
+    final parameters = Map<String, dynamic>.from(
+        function['parameters'] as Map? ?? const <String, dynamic>{});
     parameters['type'] = 'object';
     parameters['additionalProperties'] = false;
     final properties = Map<String, dynamic>.from(
@@ -1194,12 +1316,6 @@ class AiToolRegistry {
         'parameters': inputSchema,
       },
     };
-  }
-
-  static String _toolName(Map<String, dynamic> tool) {
-    final function = tool['function'];
-    if (function is! Map) return '';
-    return (function['name'] ?? '').toString();
   }
 
   static AiToolDefinition _def({
@@ -1300,8 +1416,12 @@ class AiToolRegistry {
       'type': 'object',
       'additionalProperties': false,
       'properties': <String, dynamic>{
-        'success': <String, dynamic>{'type': <String>['boolean', 'null']},
-        'message': <String, dynamic>{'type': <String>['string', 'null']},
+        'success': <String, dynamic>{
+          'type': <String>['boolean', 'null']
+        },
+        'message': <String, dynamic>{
+          'type': <String>['string', 'null']
+        },
       },
       'required': const <String>['success', 'message'],
     };
@@ -1316,12 +1436,24 @@ class AiToolRegistry {
           'type': 'string',
           'enum': <String>[reportType],
         },
-        'period': <String, dynamic>{'type': <String>['object', 'null']},
-        'currency': <String, dynamic>{'type': <String>['string', 'null']},
-        'filters': <String, dynamic>{'type': <String>['object', 'null']},
-        'totals': <String, dynamic>{'type': <String>['object', 'null']},
-        'rows': <String, dynamic>{'type': <String>['array', 'null']},
-        'generated_at': <String, dynamic>{'type': <String>['string', 'null']},
+        'period': <String, dynamic>{
+          'type': <String>['object', 'null']
+        },
+        'currency': <String, dynamic>{
+          'type': <String>['string', 'null']
+        },
+        'filters': <String, dynamic>{
+          'type': <String>['object', 'null']
+        },
+        'totals': <String, dynamic>{
+          'type': <String>['object', 'null']
+        },
+        'rows': <String, dynamic>{
+          'type': <String>['array', 'null']
+        },
+        'generated_at': <String, dynamic>{
+          'type': <String>['string', 'null']
+        },
       },
       'required': const <String>[
         'report_type',

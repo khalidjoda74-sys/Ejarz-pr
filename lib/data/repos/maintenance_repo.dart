@@ -1,5 +1,5 @@
 // lib/data/repos/maintenance_repo.dart
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_user_collections.dart';
@@ -34,9 +34,9 @@ class MaintenanceRepo {
       isCreate: !before.exists,
     );
     await ref.set(
-          payload,
-          SetOptions(merge: true),
-        );
+      payload,
+      SetOptions(merge: true),
+    );
     unawaited(ActivityLogService.instance.logEntityAction(
       actionType: before.exists ? 'update' : 'create',
       entityType: 'maintenance',
@@ -149,9 +149,11 @@ class MaintenanceRepo {
     // تواريخ كـ Timestamp (توافق Firestore)
     final DateTime? createdAt = get(() => d.createdAt) as DateTime?;
     final DateTime? scheduledAt = get(() => d.scheduledDate) as DateTime?;
-    final DateTime? executionDeadline = get(() => d.executionDeadline) as DateTime?;
+    final DateTime? executionDeadline =
+        get(() => d.executionDeadline) as DateTime?;
     final DateTime? completedAt = get(() => d.completedDate) as DateTime?;
-    final DateTime? periodicCycleDate = get(() => d.periodicCycleDate) as DateTime?;
+    final DateTime? periodicCycleDate =
+        get(() => d.periodicCycleDate) as DateTime?;
 
     String? enumName(dynamic v) {
       if (v == null) return null;
@@ -379,7 +381,9 @@ class MaintenanceRepo {
       'priority': (m['priority'] ?? '').toString(),
       'status': (m['status'] ?? '').toString(),
       'cost': m['cost'],
-      'attachmentPaths': (m['attachmentPaths'] as List?)?.whereType<String>().toList() ?? const <String>[],
+      'attachmentPaths':
+          (m['attachmentPaths'] as List?)?.whereType<String>().toList() ??
+              const <String>[],
       'executionDeadline': m['executionDeadline']?.toString(),
       'isArchived': m['isArchived'] == true,
       'invoiceId': (m['invoiceId'] ?? '').toString(),
@@ -390,6 +394,3 @@ class MaintenanceRepo {
     };
   }
 }
-
-
-

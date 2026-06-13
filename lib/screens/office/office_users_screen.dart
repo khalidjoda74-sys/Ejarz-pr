@@ -4,12 +4,13 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:darvoo/data/services/activity_log_service.dart';
-import 'package:darvoo/data/services/package_limit_service.dart';
-import 'package:darvoo/data/services/user_scope.dart' as scope;
+import 'package:ejarz_pro/data/services/activity_log_service.dart';
+import 'package:ejarz_pro/data/services/package_limit_service.dart';
+import 'package:ejarz_pro/data/services/user_scope.dart' as scope;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class OfficeUsersScreen extends StatefulWidget {
@@ -90,6 +91,8 @@ class _OfficeUsersScreenState extends State<OfficeUsersScreen> {
 
   Future<bool> _hasInternetConnection() async {
     try {
+      if (kIsWeb) return true;
+
       final r = await InternetAddress.lookup('example.com')
           .timeout(const Duration(seconds: 2));
       return r.isNotEmpty && r.first.rawAddress.isNotEmpty;
@@ -125,7 +128,8 @@ class _OfficeUsersScreenState extends State<OfficeUsersScreen> {
               backgroundColor: Colors.transparent,
               elevation: 0,
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 20),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 22, horizontal: 20),
                 decoration: BoxDecoration(
                   color: const Color(0xEE0F172A),
                   borderRadius: BorderRadius.circular(16),
@@ -472,27 +476,11 @@ class _OfficeUsersScreenState extends State<OfficeUsersScreen> {
                     }
 
                     if (createdUid == null || createdUid.isEmpty) {
-                      await ref.doc(email).set({
-                        'uid': '',
-                        'name': name,
-                        'email': email,
-                        'role': 'office_staff',
-                        'entityType': 'office_user',
-                        'targetRole': 'office',
-                        'permission': permission,
-                        'officePermission': permission,
-                        'officeId': officeUid,
-                        'office_id': officeUid,
-                        'accountType': 'office_staff',
-                        'blocked': false,
-                        'createdAt': FieldValue.serverTimestamp(),
-                        'updatedAt': FieldValue.serverTimestamp(),
-                      }, SetOptions(merge: true));
+                      throw StateError(
+                        'تعذر إنشاء حساب المستخدم. لم يرجع الخادم رقم المستخدم.',
+                      );
                     }
-                    final entityId =
-                        (createdUid != null && createdUid.isNotEmpty)
-                            ? createdUid
-                            : email;
+                    final entityId = createdUid;
                     _logOfficeUserAction(
                       actionType: 'create',
                       entityId: entityId,
@@ -505,9 +493,7 @@ class _OfficeUsersScreenState extends State<OfficeUsersScreen> {
                         'blocked': false,
                       },
                       metadata: <String, dynamic>{
-                        'docId': createdUid != null && createdUid.isNotEmpty
-                            ? createdUid
-                            : email,
+                        'docId': createdUid,
                       },
                     );
 
@@ -515,17 +501,15 @@ class _OfficeUsersScreenState extends State<OfficeUsersScreen> {
                       final sp = await SharedPreferences.getInstance();
                       await sp.setString(
                           'office_workspace_email_$email', officeUid);
-                      if (createdUid != null && createdUid.isNotEmpty) {
-                        await sp.setString(
-                          'office_workspace_uid_$createdUid',
-                          officeUid,
-                        );
-                      }
+                      await sp.setString(
+                        'office_workspace_uid_$createdUid',
+                        officeUid,
+                      );
                     } catch (_) {}
                   }
                 }
 
-                if (!mounted) return;
+                if (!mounted || !dctx.mounted) return;
                 Navigator.of(dctx).pop();
                 _showSnack(
                   isEdit
@@ -663,6 +647,7 @@ class _OfficeUsersScreenState extends State<OfficeUsersScreen> {
                             RadioListTile<String>(
                               contentPadding: EdgeInsets.zero,
                               value: 'full',
+                              // ignore: deprecated_member_use
                               groupValue: permission,
                               activeColor: _primary,
                               title: Text(
@@ -674,12 +659,14 @@ class _OfficeUsersScreenState extends State<OfficeUsersScreen> {
                                 'إضافة، تعديل، حذف وإدارة كاملة.',
                                 style: GoogleFonts.cairo(fontSize: 12),
                               ),
+                              // ignore: deprecated_member_use
                               onChanged: (v) =>
                                   setLocal(() => permission = v ?? 'full'),
                             ),
                             RadioListTile<String>(
                               contentPadding: EdgeInsets.zero,
                               value: 'view',
+                              // ignore: deprecated_member_use
                               groupValue: permission,
                               activeColor: _primary,
                               title: Text(
@@ -691,6 +678,7 @@ class _OfficeUsersScreenState extends State<OfficeUsersScreen> {
                                 'عرض البيانات بدون أي تعديل.',
                                 style: GoogleFonts.cairo(fontSize: 12),
                               ),
+                              // ignore: deprecated_member_use
                               onChanged: (v) =>
                                   setLocal(() => permission = v ?? 'view'),
                             ),
@@ -1072,349 +1060,353 @@ class _OfficeUsersScreenState extends State<OfficeUsersScreen> {
       child: PopScope(
         canPop: !_isBlockingProcessing,
         child: Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
-        appBar: AppBar(
-          backgroundColor: _primary,
-          foregroundColor: Colors.white,
-          centerTitle: true,
-          leading: IconButton(
-            onPressed: _isBlockingProcessing
-                ? null
-                : () => Navigator.maybePop(context),
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          backgroundColor: const Color(0xFFF8FAFC),
+          appBar: AppBar(
+            backgroundColor: _primary,
+            foregroundColor: Colors.white,
+            centerTitle: true,
+            leading: IconButton(
+              onPressed: _isBlockingProcessing
+                  ? null
+                  : () => Navigator.maybePop(context),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            ),
+            title: Text(
+              'مستخدمو المكتب',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.w800),
+            ),
           ),
-          title: Text(
-            'مستخدمو المكتب',
-            style: GoogleFonts.cairo(fontWeight: FontWeight.w800),
+          floatingActionButton: FloatingActionButton.extended(
+            backgroundColor: _primary,
+            foregroundColor: Colors.white,
+            onPressed: _isBlockingProcessing ? null : _showAddUserDialog,
+            icon: const Icon(Icons.person_add_alt_1_rounded),
+            label: Text('إضافة مستخدم',
+                style: GoogleFonts.cairo(fontWeight: FontWeight.w700)),
           ),
-        ),
-        floatingActionButton: FloatingActionButton.extended(
-          backgroundColor: _primary,
-          foregroundColor: Colors.white,
-          onPressed: _isBlockingProcessing ? null : _showAddUserDialog,
-          icon: const Icon(Icons.person_add_alt_1_rounded),
-          label: Text('إضافة مستخدم',
-              style: GoogleFonts.cairo(fontWeight: FontWeight.w700)),
-        ),
-        body: ref == null
-            ? Center(
-                child: Text(
-                  'تعذر تحديد حساب المكتب.',
-                  style: GoogleFonts.cairo(fontWeight: FontWeight.w700),
-                ),
-              )
-            : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: usersStream,
-                builder: (context, snap) {
-                  if (!_loggedMissingRef && usersStream == null) {
-                    _loggedMissingRef = true;
-                    _traceUsers(
-                        'builder abort usersStream-null despite ref-available');
-                  }
-                  if (snap.hasError) {
-                    _traceUsers(
-                      'builder error connectionState=${snap.connectionState} err=${snap.error}',
-                    );
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text(
-                          'تعذر تحميل مستخدمي المكتب. تحقق من القواعد أو الاتصال ثم أعد المحاولة.',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.cairo(
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFFB91C1C),
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-
-                  if (!snap.hasData &&
-                      snap.connectionState == ConnectionState.waiting) {
-                    if (!_loggedInitialWaiting) {
-                      _loggedInitialWaiting = true;
+          body: ref == null
+              ? Center(
+                  child: Text(
+                    'تعذر تحديد حساب المكتب.',
+                    style: GoogleFonts.cairo(fontWeight: FontWeight.w700),
+                  ),
+                )
+              : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: usersStream,
+                  builder: (context, snap) {
+                    if (!_loggedMissingRef && usersStream == null) {
+                      _loggedMissingRef = true;
                       _traceUsers(
-                        'builder waiting hasData=false officeUid=${_officeUid ?? ''}',
-                      );
+                          'builder abort usersStream-null despite ref-available');
                     }
-                    if (_showInitialLoadWarning) {
+                    if (snap.hasError) {
+                      _traceUsers(
+                        'builder error connectionState=${snap.connectionState} err=${snap.error}',
+                      );
                       return Center(
                         child: Padding(
                           padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const CircularProgressIndicator(),
-                              const SizedBox(height: 16),
-                              Text(
-                                'تحميل مستخدمي المكتب يستغرق أطول من المتوقع. غالبًا السبب اتصال بطيء أو قراءة Firestore متأخرة.',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.cairo(
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF475569),
-                                ),
-                              ),
-                            ],
+                          child: Text(
+                            'تعذر تحميل مستخدمي المكتب. تحقق من القواعد أو الاتصال ثم أعد المحاولة.',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.cairo(
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFFB91C1C),
+                            ),
                           ),
                         ),
                       );
                     }
-                    return const Center(child: CircularProgressIndicator());
-                  }
 
-                  final docs = (snap.data?.docs ?? const [])
-                      .where((d) => _isOfficeUserDoc(d.data()))
-                      .toList(growable: false);
-                  if (!_loggedFirstData) {
-                    _loggedFirstData = true;
-                    _initialLoadTimer?.cancel();
-                    _traceUsers(
-                      'builder first-data rawDocs=${snap.data?.docs.length ?? 0} filteredDocs=${docs.length} fromCache=${snap.data?.metadata.isFromCache ?? false}',
-                    );
-                  }
-                  _cacheOfficeUserLookups(docs);
-                  if (docs.isEmpty) {
-                    _traceUsers(
-                      'builder empty filteredDocs=0 rawDocs=${snap.data?.docs.length ?? 0}',
-                    );
-                    return Center(
-                      child: Text(
-                        'لا يوجد مستخدمون إضافيون حتى الآن.',
-                        style: GoogleFonts.cairo(
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF475569),
-                        ),
-                      ),
-                    );
-                  }
-
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-                    itemCount: docs.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (ctx, i) {
-                      final d = docs[i];
-                      final m = d.data();
-                      final name = (m['name'] ?? '').toString();
-                      final email = (m['email'] ?? '').toString();
-                      final permission = (m['permission'] ?? 'view').toString();
-                      final blocked = (m['blocked'] == true);
-                      final uid = (m['uid'] ?? '').toString();
-                      final canManageAuth = uid.isNotEmpty;
-
-                      return Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x11000000),
-                              blurRadius: 10,
-                              offset: Offset(0, 4),
+                    if (!snap.hasData &&
+                        snap.connectionState == ConnectionState.waiting) {
+                      if (!_loggedInitialWaiting) {
+                        _loggedInitialWaiting = true;
+                        _traceUsers(
+                          'builder waiting hasData=false officeUid=${_officeUid ?? ''}',
+                        );
+                      }
+                      if (_showInitialLoadWarning) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const CircularProgressIndicator(),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'تحميل مستخدمي المكتب يستغرق أطول من المتوقع. غالبًا السبب اتصال بطيء أو قراءة Firestore متأخرة.',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.cairo(
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF475569),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
+                        );
+                      }
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    final docs = (snap.data?.docs ?? const [])
+                        .where((d) => _isOfficeUserDoc(d.data()))
+                        .toList(growable: false);
+                    if (!_loggedFirstData) {
+                      _loggedFirstData = true;
+                      _initialLoadTimer?.cancel();
+                      _traceUsers(
+                        'builder first-data rawDocs=${snap.data?.docs.length ?? 0} filteredDocs=${docs.length} fromCache=${snap.data?.metadata.isFromCache ?? false}',
+                      );
+                    }
+                    _cacheOfficeUserLookups(docs);
+                    if (docs.isEmpty) {
+                      _traceUsers(
+                        'builder empty filteredDocs=0 rawDocs=${snap.data?.docs.length ?? 0}',
+                      );
+                      return Center(
+                        child: Text(
+                          'لا يوجد مستخدمون إضافيون حتى الآن.',
+                          style: GoogleFonts.cairo(
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF475569),
+                          ),
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 20,
-                                    backgroundColor: const Color(0xFFEFF4FF),
-                                    child: Text(
-                                      (name.isEmpty
-                                              ? '?'
-                                              : name.characters.first)
-                                          .toUpperCase(),
-                                      style: GoogleFonts.cairo(
-                                        color: _primary,
-                                        fontWeight: FontWeight.w800,
+                      );
+                    }
+
+                    return ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+                      itemCount: docs.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (ctx, i) {
+                        final d = docs[i];
+                        final m = d.data();
+                        final name = (m['name'] ?? '').toString();
+                        final email = (m['email'] ?? '').toString();
+                        final permission =
+                            (m['permission'] ?? 'view').toString();
+                        final blocked = (m['blocked'] == true);
+                        final uid = (m['uid'] ?? '').toString();
+                        final canManageAuth = uid.isNotEmpty;
+
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x11000000),
+                                blurRadius: 10,
+                                offset: Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 20,
+                                      backgroundColor: const Color(0xFFEFF4FF),
+                                      child: Text(
+                                        (name.isEmpty
+                                                ? '?'
+                                                : name.characters.first)
+                                            .toUpperCase(),
+                                        style: GoogleFonts.cairo(
+                                          color: _primary,
+                                          fontWeight: FontWeight.w800,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          name.isEmpty ? 'بدون اسم' : name,
-                                          style: GoogleFonts.cairo(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 15,
-                                            color: const Color(0xFF0F172A),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            name.isEmpty ? 'بدون اسم' : name,
+                                            style: GoogleFonts.cairo(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 15,
+                                              color: const Color(0xFF0F172A),
+                                            ),
                                           ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          email,
-                                          style: GoogleFonts.cairo(
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 12,
-                                            color: const Color(0xFF64748B),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            email,
+                                            style: GoogleFonts.cairo(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 12,
+                                              color: const Color(0xFF64748B),
+                                            ),
                                           ),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: permission == 'full'
-                                          ? const Color(0xFFDCFCE7)
-                                          : const Color(0xFFE2E8F0),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text(
-                                      permission == 'full'
-                                          ? 'تحكم كامل'
-                                          : 'مشاهدة فقط',
-                                      style: GoogleFonts.cairo(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 11,
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
                                         color: permission == 'full'
-                                            ? const Color(0xFF166534)
-                                            : const Color(0xFF334155),
+                                            ? const Color(0xFFDCFCE7)
+                                            : const Color(0xFFE2E8F0),
+                                        borderRadius: BorderRadius.circular(20),
                                       ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      onPressed: () => _updatePermission(
-                                        docId: d.id,
-                                        uid: uid,
-                                        name: name,
-                                        email: email,
-                                        permission: permission,
-                                      ),
-                                      icon: const Icon(
-                                          Icons.admin_panel_settings_outlined,
-                                          size: 18),
-                                      label: Text(
+                                      child: Text(
                                         permission == 'full'
-                                            ? 'تحويل لمشاهدة'
-                                            : 'منح تحكم كامل',
+                                            ? 'تحكم كامل'
+                                            : 'مشاهدة فقط',
                                         style: GoogleFonts.cairo(
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 12),
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 11,
+                                          color: permission == 'full'
+                                              ? const Color(0xFF166534)
+                                              : const Color(0xFF334155),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      onPressed: () => _generateResetLink(
-                                        email: email,
-                                        docId: d.id,
-                                        uid: uid,
-                                      ),
-                                      icon: const Icon(Icons.link_rounded,
-                                          size: 18),
-                                      label: Text(
-                                        'رابط كلمة المرور',
-                                        style: GoogleFonts.cairo(
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 12),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: () => _updatePermission(
+                                          docId: d.id,
+                                          uid: uid,
+                                          name: name,
+                                          email: email,
+                                          permission: permission,
+                                        ),
+                                        icon: const Icon(
+                                            Icons.admin_panel_settings_outlined,
+                                            size: 18),
+                                        label: Text(
+                                          permission == 'full'
+                                              ? 'تحويل لمشاهدة'
+                                              : 'منح تحكم كامل',
+                                          style: GoogleFonts.cairo(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 12),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                blocked
-                                                    ? 'الدخول: موقوف'
-                                                    : 'الدخول: مسموح',
-                                                style: GoogleFonts.cairo(
-                                                  fontWeight: FontWeight.w700,
-                                                  color: blocked
-                                                      ? const Color(0xFFB91C1C)
-                                                      : const Color(0xFF166534),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: () => _generateResetLink(
+                                          email: email,
+                                          docId: d.id,
+                                          uid: uid,
+                                        ),
+                                        icon: const Icon(Icons.link_rounded,
+                                            size: 18),
+                                        label: Text(
+                                          'رابط كلمة المرور',
+                                          style: GoogleFonts.cairo(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 12),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  blocked
+                                                      ? 'الدخول: موقوف'
+                                                      : 'الدخول: مسموح',
+                                                  style: GoogleFonts.cairo(
+                                                    fontWeight: FontWeight.w700,
+                                                    color: blocked
+                                                        ? const Color(
+                                                            0xFFB91C1C)
+                                                        : const Color(
+                                                            0xFF166534),
+                                                  ),
                                                 ),
                                               ),
-                                            ),
-                                            IconButton(
-                                              tooltip: 'تعديل',
-                                              onPressed: () => _showUserDialog(
-                                                docId: d.id,
-                                                initialUid: uid,
-                                                initialName: name,
-                                                initialEmail: email,
-                                                initialPermission: permission,
-                                                isEdit: true,
+                                              IconButton(
+                                                tooltip: 'تعديل',
+                                                onPressed: () =>
+                                                    _showUserDialog(
+                                                  docId: d.id,
+                                                  initialUid: uid,
+                                                  initialName: name,
+                                                  initialEmail: email,
+                                                  initialPermission: permission,
+                                                  isEdit: true,
+                                                ),
+                                                icon: const Icon(
+                                                  Icons.edit_rounded,
+                                                  color: Color(0xFF0F766E),
+                                                ),
                                               ),
-                                              icon: const Icon(
-                                                Icons.edit_rounded,
-                                                color: Color(0xFF0F766E),
+                                              IconButton(
+                                                tooltip: 'حذف',
+                                                onPressed: () =>
+                                                    _showDeleteUserDialog(
+                                                  docId: d.id,
+                                                  uid: uid,
+                                                  name: name,
+                                                  email: email,
+                                                  permission: permission,
+                                                  blocked: blocked,
+                                                ),
+                                                icon: const Icon(
+                                                  Icons.delete_outline_rounded,
+                                                  color: Color(0xFFB91C1C),
+                                                ),
                                               ),
-                                            ),
-                                            IconButton(
-                                              tooltip: 'حذف',
-                                              onPressed: () =>
-                                                  _showDeleteUserDialog(
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Switch(
+                                      value: !blocked,
+                                      onChanged: canManageAuth
+                                          ? (_) => _toggleBlocked(
                                                 docId: d.id,
                                                 uid: uid,
                                                 name: name,
                                                 email: email,
-                                                permission: permission,
-                                                blocked: blocked,
-                                              ),
-                                              icon: const Icon(
-                                                Icons.delete_outline_rounded,
-                                                color: Color(0xFFB91C1C),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
+                                                currentlyBlocked: blocked,
+                                              )
+                                          : null,
+                                      activeThumbColor: const Color(0xFF16A34A),
                                     ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Switch(
-                                    value: !blocked,
-                                    onChanged: canManageAuth
-                                        ? (_) => _toggleBlocked(
-                                              docId: d.id,
-                                              uid: uid,
-                                              name: name,
-                                              email: email,
-                                              currentlyBlocked: blocked,
-                                            )
-                                        : null,
-                                    activeColor: const Color(0xFF16A34A),
-                                  ),
-                                ],
-                              ),
-                            ],
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
+                        );
+                      },
+                    );
+                  },
+                ),
         ),
       ),
     );

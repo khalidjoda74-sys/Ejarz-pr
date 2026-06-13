@@ -13,7 +13,7 @@
 // - مرن في قراءة الحقول (يدعم أسماء مختلفة/قديمة).
 // - استخدم ReportsFilters لتحديد الفترة + خيار includeArchived.
 // - إن كانت لديك حقول/أسماء مختلفة جذريًا، عدّل دوال _read/_try* ومواضع القراءة المشار لها بـ TODO.
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -396,7 +396,8 @@ class ReportsRepo {
           _tryDate(inv['paymentDate']) ??
           _tryDate(inv['paidDate']);
       final dueOn = _tryDate(inv['dueOn']) ?? _tryDate(inv['dueDate']);
-      final issueDate = _tryDate(inv['issueDate']) ?? _tryDate(inv['createdAt']);
+      final issueDate =
+          _tryDate(inv['issueDate']) ?? _tryDate(inv['createdAt']);
       final paidAmount = (_tryNum(inv['paidAmount']) ?? 0).toDouble();
       final isCanceled = inv['isCanceled'] == true || inv['canceled'] == true;
       final isPaid = !isCanceled &&
@@ -430,7 +431,8 @@ class ReportsRepo {
           recv += remaining > 0 ? remaining : amount.abs();
         } else {
           final anchor = dueOn ?? todayEnd;
-          if (f.inRange(anchor)) recv += remaining > 0 ? remaining : amount.abs();
+          if (f.inRange(anchor))
+            recv += remaining > 0 ? remaining : amount.abs();
         }
       }
     }
@@ -635,6 +637,3 @@ class ReportsRepo {
     return null;
   }
 }
-
-
-

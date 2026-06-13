@@ -272,7 +272,8 @@ class _AiChatFloatingIconState extends State<AiChatFloatingIcon>
                                       spreadRadius: 4,
                                     ),
                                     BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.18),
+                                      color:
+                                          Colors.black.withValues(alpha: 0.18),
                                       blurRadius: 14,
                                       offset: const Offset(0, 8),
                                     ),
@@ -286,13 +287,17 @@ class _AiChatFloatingIconState extends State<AiChatFloatingIcon>
                                       child: Container(
                                         width: size * 0.68,
                                         height: size * 0.26,
-                                        margin: EdgeInsets.only(top: size * 0.12),
+                                        margin:
+                                            EdgeInsets.only(top: size * 0.12),
                                         decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(100),
+                                          borderRadius:
+                                              BorderRadius.circular(100),
                                           gradient: LinearGradient(
                                             colors: [
-                                              Colors.white.withValues(alpha: 0.26),
-                                              Colors.white.withValues(alpha: 0.02),
+                                              Colors.white
+                                                  .withValues(alpha: 0.26),
+                                              Colors.white
+                                                  .withValues(alpha: 0.02),
                                             ],
                                           ),
                                         ),
@@ -301,7 +306,7 @@ class _AiChatFloatingIconState extends State<AiChatFloatingIcon>
                                     Padding(
                                       padding: EdgeInsets.all(iconPadding),
                                       child: Image.asset(
-                                        'assets/images/darfo_ai_bot_icon.png',
+                                        'assets/images/ejarz_pro_ai_bot_icon.png',
                                         fit: BoxFit.contain,
                                       ),
                                     ),

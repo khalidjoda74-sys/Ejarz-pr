@@ -16,7 +16,7 @@ lib/ui/ai_chat/core/ai_openai_config.dart
 
 أصبح الشات يدعم:
 
-- خادم وسيط آمن عبر `DARFO_AI_PROXY_URL`.
+- خادم وسيط آمن عبر `EJARZ_PRO_AI_PROXY_URL`.
 - مفتاح مباشر للتجربة فقط عبر `OPENAI_API_KEY`.
 - الاستمرار بدعم الطريقة القديمة `_meta/openai.api_key` للتوافق مع مشروعك الحالي.
 - مهلة اتصال موحدة.
@@ -81,7 +81,7 @@ docs/ai-chat/01-openai-config.md
 استخدم خادم وسيط:
 
 ```bash
-flutter run --dart-define=DARFO_AI_PROXY_URL=https://your-domain.example.com/ai/chat
+flutter run --dart-define=EJARZ_PRO_AI_PROXY_URL=https://your-domain.example.com/ai/chat
 ```
 
 ### التجربة المحلية فقط

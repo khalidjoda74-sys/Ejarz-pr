@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../../data/services/office_client_guard.dart';
 import '../ai_chat_permissions.dart';
 import '../ai_chat_service.dart';
 import 'ai_audit_logger.dart';
@@ -14,6 +15,9 @@ import 'ai_tool_registry.dart';
 import 'ai_chat_types.dart';
 
 class AiChatGateway {
+  static const String _alreadyExecutedText =
+      '\u062a\u0645 \u062a\u0646\u0641\u064a\u0630 \u0647\u0630\u0627 \u0627\u0644\u0637\u0644\u0628 \u0645\u0633\u0628\u0642\u064b\u0627 \u0648\u0644\u0646 \u0623\u0639\u064a\u062f\u0647 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649.';
+
   final String userId;
   final ChatUserRole role;
   final AiChatScope chatScope;
@@ -83,7 +87,7 @@ class AiChatGateway {
         model: model,
       );
       return formatter.executionFailed(
-        'هذه العملية غير مسجلة ضمن أدوات دارفو الآمنة، لذلك لن يتم تنفيذها.',
+        'هذه العملية غير مسجلة ضمن أدوات Ejarz pro الآمنة، لذلك لن يتم تنفيذها.',
       );
     }
 
@@ -100,7 +104,8 @@ class AiChatGateway {
         arguments: invocation.arguments,
         model: model,
       );
-      return formatter.permissionDenied(permissionGuard.denyMessage(definition));
+      return formatter
+          .permissionDenied(permissionGuard.denyMessage(definition));
     }
 
     final validation = schemaValidator.validateObjectSchema(
@@ -128,10 +133,39 @@ class AiChatGateway {
     }
 
     final normalizedArguments = validation.normalizedArguments;
+    final officeStaffGuard = await _guardOfficeStaffMutation(
+      definition: definition,
+      normalizedArguments: normalizedArguments,
+      requestId: requestId,
+      model: model,
+      pendingActionId: null,
+    );
+    if (officeStaffGuard != null) return officeStaffGuard;
+
+    final idempotencyKey =
+        _buildIdempotencyKey(definition, normalizedArguments);
 
     if (definition.requiresConfirmation ||
         definition.operationType == AiToolOperationType.deleteAction ||
         definition.operationType == AiToolOperationType.export) {
+      final executedRecord =
+          await AiConfirmationService.findExecutedByIdempotencyKey(
+        userId: userId,
+        scopeId: chatScope.normalizedScopeId,
+        toolName: definition.name,
+        idempotencyKey: idempotencyKey,
+      );
+      if (executedRecord != null) {
+        return formatter.toolResult(
+          _alreadyExecutedText,
+          payload: <String, dynamic>{
+            'result_reference':
+                executedRecord.resultReference ?? const <String, dynamic>{},
+            'idempotent_reuse': true,
+          },
+        );
+      }
+
       final preflight = await toolExecutor.preflight(
         definition: definition,
         requestedToolName: invocation.name,
@@ -157,7 +191,7 @@ class AiChatGateway {
         preview: preview,
         riskLevel: definition.riskLevel,
         requiredPermissions: definition.requiredPermissions,
-        idempotencyKey: _buildIdempotencyKey(definition, normalizedArguments),
+        idempotencyKey: idempotencyKey,
       );
       await AiAuditLogger.log(
         userId: userId,
@@ -170,7 +204,9 @@ class AiChatGateway {
         status: 'confirmation_created',
         arguments: normalizedArguments,
         pendingActionId: pendingAction.id,
-        resultReference: <String, dynamic>{'pending_action_id': pendingAction.id},
+        resultReference: <String, dynamic>{
+          'pending_action_id': pendingAction.id
+        },
         model: model,
       );
       return formatter.confirmation(
@@ -209,7 +245,7 @@ class AiChatGateway {
       return formatter.permissionDenied('هذا التأكيد لا يخص هذه المحادثة.');
     }
     if (pending.status == 'executed') {
-      return formatter.toolResult('تم تنفيذ هذا الطلب مسبقًا ولن أعيده مرة أخرى.');
+      return formatter.toolResult(_alreadyExecutedText);
     }
     if (pending.status == 'expired' ||
         DateTime.now().isAfter(pending.expiresAt)) {
@@ -242,7 +278,7 @@ class AiChatGateway {
         ),
       );
       return formatter.toolResult(
-        'تم تنفيذ هذا الطلب مسبقًا ولن أعيده مرة أخرى.',
+        _alreadyExecutedText,
         payload: <String, dynamic>{
           'result_reference':
               executedRecord.resultReference ?? const <String, dynamic>{},
@@ -251,7 +287,8 @@ class AiChatGateway {
       );
     }
 
-    final claim = await AiConfirmationService.claimForExecution(pendingActionId);
+    final claim =
+        await AiConfirmationService.claimForExecution(pendingActionId);
     if (claim.status == AiPendingActionClaimStatus.alreadyExecuted) {
       await AiConfirmationService.markExecuted(
         pendingActionId,
@@ -260,7 +297,7 @@ class AiChatGateway {
         ),
       );
       return formatter.toolResult(
-        'تم تنفيذ هذا الطلب مسبقًا ولن أعيده مرة أخرى.',
+        _alreadyExecutedText,
         payload: <String, dynamic>{
           'result_reference': claim.resultReference,
           'idempotent_reuse': true,
@@ -319,7 +356,8 @@ class AiChatGateway {
         model: model,
       );
     }
-    if (!AiConfirmationService.confirmTextMatchesRisk(text, pending.riskLevel)) {
+    if (!AiConfirmationService.confirmTextMatchesRisk(
+        text, pending.riskLevel)) {
       final hint = AiConfirmationService.requiresStrongConfirmation(
         pending.riskLevel,
       )
@@ -379,7 +417,8 @@ class AiChatGateway {
     if (status == 'missing_fields') {
       return formatter.clarification(
         message,
-        missingFields: preflight['missing_fields'] as List? ?? const <dynamic>[],
+        missingFields:
+            preflight['missing_fields'] as List? ?? const <dynamic>[],
       );
     }
     if (status == 'disambiguation') {
@@ -406,6 +445,17 @@ class AiChatGateway {
     required String model,
     required String? pendingActionId,
   }) async {
+    final officeStaffGuard = await _guardOfficeStaffMutation(
+      definition: definition,
+      normalizedArguments: normalizedArguments,
+      requestId: requestId,
+      model: model,
+      pendingActionId: pendingActionId,
+    );
+    if (officeStaffGuard != null) {
+      return officeStaffGuard;
+    }
+
     final startedAt = DateTime.now();
     final result = await toolExecutor.execute(
       definition: definition,
@@ -416,9 +466,10 @@ class AiChatGateway {
 
     final latencyMs = DateTime.now().difference(startedAt).inMilliseconds;
     final status = (result['status'] ?? 'error').toString();
-    final message = errorMapper.mapToolError((result['message'] ?? '').toString());
-    final payload =
-        Map<String, dynamic>.from(result['payload'] as Map? ?? const <String, dynamic>{});
+    final message =
+        errorMapper.mapToolError((result['message'] ?? '').toString());
+    final payload = Map<String, dynamic>.from(
+        result['payload'] as Map? ?? const <String, dynamic>{});
 
     await AiAuditLogger.log(
       userId: userId,
@@ -496,7 +547,8 @@ class AiChatGateway {
           await AiConfirmationService.markExecuted(
             pendingActionId,
             resultReference: Map<String, dynamic>.from(
-              verification['result_reference'] as Map? ?? const <String, dynamic>{},
+              verification['result_reference'] as Map? ??
+                  const <String, dynamic>{},
             ),
           );
         }
@@ -522,7 +574,8 @@ class AiChatGateway {
         pendingActionId: pendingActionId,
         resultReference: payload,
         verificationStatus: 'failed',
-        error: (verification['message'] ?? 'تعذر التحقق بعد التنفيذ.').toString(),
+        error:
+            (verification['message'] ?? 'تعذر التحقق بعد التنفيذ.').toString(),
         model: model,
         latencyMs: latencyMs,
       );
@@ -554,6 +607,43 @@ class AiChatGateway {
       payload: payload,
       toolHistoryResult: historyResult,
     );
+  }
+
+  Future<AiGatewayResponse?> _guardOfficeStaffMutation({
+    required AiToolDefinition definition,
+    required Map<String, dynamic> normalizedArguments,
+    required String requestId,
+    required String model,
+    required String? pendingActionId,
+  }) async {
+    if (!_isOwnerDataMutation(definition.operationType)) return null;
+    if (await OfficeClientGuard.canWriteCurrentWorkspace()) return null;
+    final message = await OfficeClientGuard.isOfficeClient()
+        ? OfficeClientGuard.officeClientWriteMessage
+        : OfficeClientGuard.readOnlyOfficeStaffMessage;
+    await AiAuditLogger.log(
+      userId: userId,
+      scopeId: chatScope.normalizedScopeId,
+      conversationId: conversationId,
+      requestId: requestId,
+      toolName: definition.name,
+      operationType: definition.operationType,
+      riskLevel: definition.riskLevel,
+      status: 'workspace_write_denied',
+      arguments: normalizedArguments,
+      pendingActionId: pendingActionId,
+      error: message,
+      model: model,
+    );
+    if (pendingActionId != null) {
+      await AiConfirmationService.markFailed(pendingActionId, message);
+    }
+    return formatter.permissionDenied(message);
+  }
+
+  bool _isOwnerDataMutation(AiToolOperationType type) {
+    return type == AiToolOperationType.write ||
+        type == AiToolOperationType.deleteAction;
   }
 
   AiToolInvocation? _parseInvocation(Map<String, dynamic> rawCall) {
@@ -596,8 +686,8 @@ class AiChatGateway {
       'تأكيد قبل التنفيذ:',
       preview['headline']?.toString() ?? definition.description,
     ];
-    final details =
-        (preview['details'] as List? ?? const <dynamic>[]).map((item) => item.toString());
+    final details = (preview['details'] as List? ?? const <dynamic>[])
+        .map((item) => item.toString());
     for (final detail in details) {
       if (detail.trim().isEmpty) continue;
       lines.add('- $detail');
@@ -651,6 +741,7 @@ class AiChatGateway {
     AiToolDefinition definition,
     Map<String, dynamic> arguments,
   ) {
-    return aiStableHash('${definition.name}|${chatScope.normalizedScopeId}|$arguments');
+    return aiStableHash(
+        '${definition.name}|${chatScope.normalizedScopeId}|$arguments');
   }
 }

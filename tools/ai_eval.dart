@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:darvoo/ui/ai_chat/core/ai_tool_registry.dart';
+import 'package:ejarz_pro/ui/ai_chat/core/ai_tool_registry.dart';
 
 void main() {
-  final file = File('evals/darfo-ai-ar.jsonl');
+  final file = File('evals/ejarz-pro-ai-ar.jsonl');
   if (!file.existsSync()) {
     stderr.writeln('Missing eval file: ${file.path}');
     exitCode = 1;
@@ -53,8 +53,7 @@ void main() {
     final missingFields = _detectMissingFields(selectedTool, userMessage);
 
     final toolOk = selectedTool == expectedTool;
-    final confirmationOk =
-        requiresConfirmation == expectedRequiresConfirmation;
+    final confirmationOk = requiresConfirmation == expectedRequiresConfirmation;
     final missingFieldsOk = expectedMissingFields.every(
       (field) => missingFields.contains(field),
     );

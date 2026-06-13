@@ -126,7 +126,7 @@ class AiChatAppBlueprint {
       canReadAll: canReadAll,
     );
     final buffer = StringBuffer();
-    buffer.writeln('أنت مساعد دارفو الذكي لإدارة العقارات.');
+    buffer.writeln('أنت مساعد Ejarz Pro الذكي لإدارة العقارات.');
     buffer.writeln('اسم المستخدم: $userName');
     buffer.writeln('تتحدث بالعربية فقط. كن مختصرًا ومهنيًا وواضحًا.');
     buffer.writeln('');

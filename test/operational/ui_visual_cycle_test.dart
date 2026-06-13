@@ -1,11 +1,11 @@
-import 'package:darvoo/ui/contracts_screen.dart';
-import 'package:darvoo/ui/invoices_screen.dart';
-import 'package:darvoo/ui/maintenance_screen.dart';
-import 'package:darvoo/ui/notifications_screen.dart';
-import 'package:darvoo/ui/property_services_screen.dart';
-import 'package:darvoo/ui/properties_screen.dart';
-import 'package:darvoo/ui/reports_screen.dart';
-import 'package:darvoo/ui/tenants_screen.dart';
+import 'package:ejarz_pro/ui/contracts_screen.dart';
+import 'package:ejarz_pro/ui/invoices_screen.dart';
+import 'package:ejarz_pro/ui/maintenance_screen.dart';
+import 'package:ejarz_pro/ui/notifications_screen.dart';
+import 'package:ejarz_pro/ui/property_services_screen.dart';
+import 'package:ejarz_pro/ui/properties_screen.dart';
+import 'package:ejarz_pro/ui/reports_screen.dart';
+import 'package:ejarz_pro/ui/tenants_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -198,7 +198,8 @@ void main() {
       );
     });
 
-    testWidgets('property services screen renders', (WidgetTester tester) async {
+    testWidgets('property services screen renders',
+        (WidgetTester tester) async {
       await runScenario(
         tester,
         _VisualScenario(

@@ -1,9 +1,10 @@
 // lib/ui/home_screen.dart
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../data/services/user_scope.dart';
@@ -11,7 +12,6 @@ import '../data/constants/boxes.dart'; // تأكد من الدالة boxName
 import '../utils/contract_utils.dart'; // لحساب إجمالي المستحقات من العقود
 import 'notifications_screen.dart'
     show NotificationsScreen, NotificationsCounter;
-import 'widgets/notifications_bell.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../data/services/office_client_guard.dart';
@@ -39,15 +39,24 @@ import 'properties_screen.dart';
 import 'tenants_screen.dart';
 import 'invoices_screen.dart';
 import 'reports_screen.dart';
-import 'widgets/app_bottom_nav.dart';
-import 'widgets/app_menu_button.dart';
 import 'widgets/app_side_drawer.dart';
 
 // جلسة المكتب (للعودة عند الانتحال)
 import '../screens/office/office.dart' show OfficeSession;
 import '../widgets/custom_confirm_dialog.dart';
-import 'ai_chat/ai_chat_icon.dart';
 
+const String _homeAssetPath = 'assets/images/home';
+const String _aiBotAsset = 'assets/images/ejarz_pro_ai_bot_icon.png';
+
+const Color _homeTop = Color(0xFF061A2D);
+const Color _homeMiddle = Color(0xFF08243A);
+const Color _homeBottom = Color(0xFF041522);
+const Color _homeCard = Color(0xFF102D44);
+const Color _homeTurquoise = Color(0xFF2FE0C0);
+const Color _homeWhite = Color(0xFFF5F7FA);
+const Color _homeMuted = Color(0xFF8FA6B8);
+const Color _homeRed = Color(0xFFFF5D72);
+const Color _homeYellow = Color(0xFFFFD95C);
 const Color kCreamBg = Color(0xFFFFFBEB);
 
 class HomeScreen extends StatefulWidget {
@@ -78,6 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // لفتح الصناديق قبل استخدامها
   bool _hiveReady = false;
+  // ignore: unused_field
   Future<void>? _openHiveFuture;
 
   // إظهار زر رجوع للمكتب عند الانتحال
@@ -103,17 +113,14 @@ class _HomeScreenState extends State<HomeScreen> {
       final tenantBoxName = boxName('tenantsBox');
       final invoiceBoxName = boxName(kInvoicesBox);
       final contractBoxName = boxName(kContractsBox);
-      final propertyBox = Hive.isBoxOpen(propertyBoxName)
-          ? Hive.box(propertyBoxName)
-          : null;
+      final propertyBox =
+          Hive.isBoxOpen(propertyBoxName) ? Hive.box(propertyBoxName) : null;
       final tenantBox =
           Hive.isBoxOpen(tenantBoxName) ? Hive.box(tenantBoxName) : null;
-      final invoiceBox = Hive.isBoxOpen(invoiceBoxName)
-          ? Hive.box(invoiceBoxName)
-          : null;
-      final contractBox = Hive.isBoxOpen(contractBoxName)
-          ? Hive.box(contractBoxName)
-          : null;
+      final invoiceBox =
+          Hive.isBoxOpen(invoiceBoxName) ? Hive.box(invoiceBoxName) : null;
+      final contractBox =
+          Hive.isBoxOpen(contractBoxName) ? Hive.box(contractBoxName) : null;
 
       final propertyPreview = propertyBox == null
           ? const <String>[]
@@ -317,6 +324,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (!mounted) return;
     await Future.delayed(const Duration(milliseconds: 150));
+    // ignore: use_build_context_synchronously
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
   }
 
@@ -613,7 +621,7 @@ class _HomeScreenState extends State<HomeScreen> {
           await _userSub?.cancel();
           _userSub = null;
           if (!mounted) return;
-          final msg = '?? ????? ????? ?? ??????. ????? ?? ???????.';
+          const msg = '?? ????? ????? ?? ??????. ????? ?? ???????.';
           if (resolvedOfficeClient && !_isOfficeImpersonationSession) {
             await _forceOfficeClientBlockedFlow(
               reason: 'user-sub-blocked',
@@ -679,6 +687,8 @@ class _HomeScreenState extends State<HomeScreen> {
       // صندوق العقود مستخدم في الصفحة + شاشة العقود
       await _ensureContractsBoxOpen();
       _traceHome('contracts box ready +${sw.elapsedMilliseconds}ms');
+      await _ensureInvoicesBoxOpen();
+      _traceHome('invoices box ready +${sw.elapsedMilliseconds}ms');
 
       // إن كانت هناك صناديق أخرى تُعرض على الرئيسية، افتحها هنا بنفس النمط.
       // مثال (حسب مشروعك):
@@ -705,6 +715,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // ignore: unused_element
   Future<void> _ensureBoxOpen(String name) async {
     if (!Hive.isBoxOpen(name)) {
       await Hive.openBox(name);
@@ -720,6 +731,17 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     _traceHome('contracts box already open name=$name');
+  }
+
+  Future<void> _ensureInvoicesBoxOpen() async {
+    final name = boxName(kInvoicesBox);
+    if (!Hive.isBoxOpen(name)) {
+      _traceHome('opening invoices box name=$name');
+      await Hive.openBox<Invoice>(name);
+      _traceHome('opened invoices box name=$name');
+      return;
+    }
+    _traceHome('invoices box already open name=$name');
   }
 
   // ====== فحص إمكانية العودة للمكتب (في حال الانتحال) ======
@@ -753,6 +775,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // مزوّد تاريخ انتهاء الاشتراك ليستخدمه NotificationsBell
+  // ignore: unused_element
   Future<DateTime?> _subscriptionEndProvider() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -899,7 +922,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: IgnorePointer(
         ignoring: false,
         child: Container(
-          color: Colors.black.withOpacity(0.75),
+          color: Colors.black.withValues(alpha: 0.75),
           alignment: Alignment.center,
           padding: EdgeInsets.all(24.w),
           child: Column(
@@ -984,6 +1007,7 @@ class _HomeScreenState extends State<HomeScreen> {
       confirmLabel: 'تأكيد الخروج',
       cancelLabel: 'إلغاء',
     );
+    // ignore: dead_null_aware_expression
     return shouldExit ?? false;
   }
 
@@ -1008,18 +1032,35 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _refreshDashboard() async {
+    if (_hasOfficeReturn) {
+      await _onBackToOffice();
+      return;
+    }
+
+    setState(() => _hiveReady = false);
+    _openHiveFuture = _openHiveBoxesForCurrentUser();
+    await _openHiveFuture;
+    await _checkCurrentConnection();
+    if (!mounted) return;
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
+    // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Directionality(
         textDirection: TextDirection.rtl,
         child: Scaffold(
           key: _scaffoldKey,
+          backgroundColor: _homeBottom,
+          extendBody: true,
           drawer: Builder(
             builder: (ctx) {
               final media = MediaQuery.of(ctx);
-              final double topInset = kToolbarHeight + media.padding.top;
+              final double topInset = media.padding.top;
               final double bottomInset =
                   _bottomBarHeight + media.padding.bottom;
               return Padding(
@@ -1033,76 +1074,23 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
           ),
-          appBar: AppBar(
-            elevation: 0,
-            automaticallyImplyLeading: false,
-            centerTitle: true,
-            // 👇 دائمًا زر القائمة الجانبية
-            leading: const AppMenuButton(iconColor: Colors.white),
-            title: Text(
-              _currentTitle,
-              style: GoogleFonts.cairo(
-                fontSize: 22.sp,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
-            ),
-            actions: [
-              if (_hasOfficeReturn)
-                IconButton(
-                  tooltip: 'الرجوع إلى لوحة المكتب',
-                  onPressed: _onBackToOffice,
-                  icon: const Icon(
-                    Icons.autorenew_rounded,
-                    color: Colors.white,
-                  ),
-                ),
-              if (!_hasOfficeReturn)
-                NotificationsBell(
-                  subscriptionEndProvider: _subscriptionEndProvider,
-                  iconColor: Colors.white,
-                  iconSize: 25,
-                ),
-            ],
-          ),
           body: Stack(
             children: [
               // الخلفية
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topRight,
-                    end: Alignment.bottomLeft,
-                    colors: [
-                      Color(0xFF0F172A),
-                      Color(0xFF0F766E),
-                      Color(0xFF14B8A6)
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                  top: -120,
-                  right: -80,
-                  child: _softCircle(220.r, const Color(0x33FFFFFF))),
-              Positioned(
-                  bottom: -140,
-                  left: -100,
-                  child: _softCircle(260.r, const Color(0x22FFFFFF))),
-
+              const HomeBackground(),
               // لا تبني ما يعتمد على Hive قبل أن يكون جاهزًا
               if (!_hiveReady)
-                const Center(child: CircularProgressIndicator())
+                const Center(
+                  child: CircularProgressIndicator(color: _homeTurquoise),
+                )
               else
                 _buildHomeBody(),
 
               // ✅ طبقة حارس الإنترنت لعملاء المكتب / جلسة المكتب
               _buildOnlineGuardOverlay(),
-
-              const AiChatFloatingIcon(),
             ],
           ),
-          bottomNavigationBar: AppBottomNav(
+          bottomNavigationBar: HomeBottomNavBar(
             key: _bottomNavKey,
             currentIndex: 0,
             onTap: _handleBottomTap,
@@ -1113,6 +1101,165 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildHomeBody() {
+    final media = MediaQuery.of(context);
+    final bottomPadding = _bottomBarHeight + media.padding.bottom + 22.h;
+
+    return SafeArea(
+      bottom: false,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(16.w, 18.h, 16.w, bottomPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            HomeHeader(
+              title: _currentTitle,
+              onMenuTap: () => _scaffoldKey.currentState?.openDrawer(),
+              onRefreshTap: _refreshDashboard,
+            ),
+            SizedBox(height: 18.h),
+            AnimatedBuilder(
+              animation: Listenable.merge([
+                Hive.box<Contract>(boxName(kContractsBox)).listenable(),
+                Hive.box<Invoice>(boxName(kInvoicesBox)).listenable(),
+              ]),
+              builder: (context, _) {
+                double receivables = 0;
+                try {
+                  receivables = sumReceivablesFromContractsExact(
+                    includeArchived: false,
+                  );
+                } catch (_) {
+                  receivables = 0;
+                }
+
+                return TotalDueCard(amount: receivables.toStringAsFixed(2));
+              },
+            ),
+            SizedBox(height: 14.h),
+            Row(
+              children: [
+                Expanded(
+                  child: ValueListenableBuilder(
+                    valueListenable: Hive.box<Contract>(boxName('contractsBox'))
+                        .listenable(),
+                    builder: (context, Box<Contract> box, _) {
+                      int overdueCount = 0;
+
+                      try {
+                        for (final c in box.values) {
+                          if (c.isArchived == true) continue;
+                          if (isContractOverdueForHome(c)) overdueCount++;
+                        }
+                      } catch (_) {
+                        overdueCount = 0;
+                      }
+
+                      return StatCard(
+                        title: 'المدفوعات المتأخرة',
+                        value: overdueCount.toString(),
+                        iconAsset: '$_homeAssetPath/ic_late_payment.png',
+                        valueColor: _homeRed,
+                        onTap: () => _openContracts(
+                          filter: ContractQuickFilter.overdue,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                SizedBox(width: 12.w),
+                Expanded(
+                  child: NotificationsCounter(
+                    builder: (notificationCount) => StatCard(
+                      title: 'التنبيهات',
+                      value: notificationCount.toString(),
+                      iconAsset: '$_homeAssetPath/ic_notification.png',
+                      valueColor: _homeYellow,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const NotificationsScreen(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 16.h),
+            Row(
+              children: [
+                Expanded(
+                  child: DashboardActionCard(
+                    label: 'العقارات',
+                    iconAsset: '$_homeAssetPath/ic_properties.png',
+                    onTap: () => _handleBottomTap(1),
+                  ),
+                ),
+                SizedBox(width: 12.w),
+                Expanded(
+                  child: DashboardActionCard(
+                    label: 'العملاء',
+                    iconAsset: '$_homeAssetPath/ic_clients.png',
+                    onTap: () => _handleBottomTap(2),
+                  ),
+                ),
+                SizedBox(width: 12.w),
+                Expanded(
+                  child: DashboardActionCard(
+                    label: 'العقود',
+                    iconAsset: '$_homeAssetPath/ic_contracts.png',
+                    onTap: () => _handleBottomTap(3),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 12.h),
+            Row(
+              children: [
+                Expanded(
+                  child: DashboardActionCard(
+                    label: 'الخدمات',
+                    iconAsset: '$_homeAssetPath/ic_services.png',
+                    onTap: () => Navigator.pushNamed(context, '/maintenance'),
+                  ),
+                ),
+                SizedBox(width: 12.w),
+                Expanded(
+                  child: DashboardActionCard(
+                    label: 'السندات',
+                    iconAsset: '$_homeAssetPath/ic_receipts.png',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const InvoicesScreen()),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 12.w),
+                Expanded(
+                  child: DashboardActionCard(
+                    label: 'التقارير',
+                    iconAsset: '$_homeAssetPath/ic_reports.png',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ReportsScreen()),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 16.h),
+            RentDueAssistantCard(
+              onTap: () =>
+                  _openContracts(filter: ContractQuickFilter.nearExpiry),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ignore: unused_element
+  Widget _buildLegacyHomeBody() {
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 100.h),
       child: Column(
@@ -1139,6 +1286,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     receivables = 0;
                   }
 
+                  // ignore: unused_local_variable
                   final display = _moneyTrunc(receivables);
 
                   return _FancyCard(
@@ -1245,6 +1393,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: _FancyCard(
                     background: kCreamBg,
                     child: NotificationsCounter(
+                      // ignore: avoid_types_as_parameter_names
                       builder: (count) => _StatTile(
                         title: 'التنبيهات',
                         value: count.toString(),
@@ -1341,12 +1490,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildOfficeClientOfflineOverlay() {
     return Positioned.fill(
       child: IgnorePointer(
         ignoring: false,
         child: Container(
-          color: Colors.black.withOpacity(0.75),
+          color: Colors.black.withValues(alpha: 0.75),
           alignment: Alignment.center,
           padding: EdgeInsets.all(24.w),
           child: Column(
@@ -1461,6 +1611,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return start;
   }
 
+  // ignore: unused_element
   bool _isOverdueHome(Contract c) {
     if (c.isTerminated) return false;
 
@@ -1520,6 +1671,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return false;
   }
 
+  // ignore: unused_element
   bool _isOverdueForHome(Contract c) {
     final today = _dateOnly(KsaTime.now());
 
@@ -1548,12 +1700,1334 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ---------------------------------------------------------------
+}
 
-  static Widget _softCircle(double size, Color color) {
-    return Container(
+class HomeBackground extends StatelessWidget {
+  const HomeBackground({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [_homeTop, _homeMiddle, _homeBottom],
+                stops: [0.0, 0.48, 1.0],
+              ),
+            ),
+            child: SizedBox.expand(),
+          ),
+          Positioned(
+            left: -115.w,
+            top: 130.h,
+            child: _BlurredGlow(
+              size: 250.w,
+              color: _homeTurquoise.withValues(alpha: 0.22),
+              blur: 72,
+            ),
+          ),
+          Positioned(
+            right: -90.w,
+            top: 290.h,
+            child: _BlurredGlow(
+              size: 180.w,
+              color: const Color(0xFF1A5E78).withValues(alpha: 0.12),
+              blur: 68,
+            ),
+          ),
+          Positioned(
+            left: 28.w,
+            right: 28.w,
+            bottom: -55.h,
+            child: _BlurredGlow(
+              height: 110.h,
+              color: _homeTurquoise.withValues(alpha: 0.16),
+              blur: 62,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BlurredGlow extends StatelessWidget {
+  final double? size;
+  final double? height;
+  final Color color;
+  final double blur;
+
+  const _BlurredGlow({
+    this.size,
+    this.height,
+    required this.color,
+    required this.blur,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ImageFiltered(
+      imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+      child: Container(
         width: size,
-        height: size,
-        decoration: BoxDecoration(shape: BoxShape.circle, color: color));
+        height: height ?? size,
+        decoration: BoxDecoration(
+          shape: height == null ? BoxShape.circle : BoxShape.rectangle,
+          borderRadius: height == null ? null : BorderRadius.circular(999),
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+class HomeHeader extends StatelessWidget {
+  final String title;
+  final VoidCallback onMenuTap;
+  final VoidCallback onRefreshTap;
+
+  const HomeHeader({
+    super.key,
+    required this.title,
+    required this.onMenuTap,
+    required this.onRefreshTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _HeaderCircleButton(
+          icon: Icons.menu_rounded,
+          tooltip: 'القائمة',
+          onTap: onMenuTap,
+        ),
+        Expanded(
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.cairo(
+              color: _homeWhite,
+              fontSize: 25.sp,
+              fontWeight: FontWeight.w900,
+              height: 1.1,
+            ),
+          ),
+        ),
+        _HeaderCircleButton(
+          icon: Icons.refresh_rounded,
+          tooltip: 'تحديث',
+          onTap: onRefreshTap,
+        ),
+      ],
+    );
+  }
+}
+
+class _HeaderCircleButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _HeaderCircleButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: ClipOval(
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Material(
+            color: Colors.white.withValues(alpha: 0.06),
+            shape: CircleBorder(
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+            ),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: onTap,
+              child: SizedBox.square(
+                dimension: 38.w,
+                child: Icon(icon, color: _homeWhite, size: 21.sp),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class TotalDueCard extends StatelessWidget {
+  final String amount;
+
+  const TotalDueCard({super.key, required this.amount});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 122.h,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(27.r),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        gradient: const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            Color(0xFF0B7F75),
+            Color(0xFF0D4A5A),
+            Color(0xFF0B2237),
+          ],
+          stops: [0.0, 0.42, 1.0],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: _homeTurquoise.withValues(alpha: 0.15),
+            blurRadius: 28,
+            offset: const Offset(0, 12),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.24),
+            blurRadius: 24,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            left: -36.w,
+            top: -28.h,
+            bottom: -18.h,
+            child: _BlurredGlow(
+              size: 168.w,
+              color: _homeTurquoise.withValues(alpha: 0.34),
+              blur: 52,
+            ),
+          ),
+          Positioned(
+            right: -8.w,
+            top: 12.h,
+            child: _BlurredGlow(
+              size: 112.w,
+              color: _homeTurquoise.withValues(alpha: 0.10),
+              blur: 38,
+            ),
+          ),
+          Positioned(
+            right: 48.w,
+            top: 26.h,
+            child: _GlowParticle(size: 3.2.w, opacity: 0.42),
+          ),
+          Positioned(
+            right: 86.w,
+            bottom: 24.h,
+            child: _GlowParticle(size: 2.4.w, opacity: 0.24),
+          ),
+          Positioned(
+            right: 22.w,
+            top: 26.h,
+            child: IgnorePointer(
+              child: DuesGrowthChart(
+                width: 118.w,
+                height: 86.h,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 18.w,
+            top: 26.h,
+            child: _DueWalletBadge(size: 66.w),
+          ),
+          Positioned(
+            left: 100.w,
+            right: 30.w,
+            top: 21.h,
+            bottom: 17.h,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SizedBox(
+                width: 136.w,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'إجمالي المستحقات',
+                          maxLines: 1,
+                          textAlign: TextAlign.right,
+                          style: GoogleFonts.cairo(
+                            color: _homeWhite.withValues(alpha: 0.86),
+                            fontSize: 14.sp,
+                            fontWeight: FontWeight.w700,
+                            height: 1.15,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 4.h),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          amount,
+                          textDirection: TextDirection.ltr,
+                          style: GoogleFonts.cairo(
+                            color: Colors.white,
+                            fontSize: 31.sp,
+                            fontWeight: FontWeight.w900,
+                            height: 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 4.h),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: SizedBox(
+                        width: 22.w,
+                        height: 20.h,
+                        child: Image.asset(
+                          '$_homeAssetPath/ic_saudi_riyal_symbol.png',
+                          color: _homeWhite,
+                          colorBlendMode: BlendMode.srcIn,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DueWalletBadge extends StatelessWidget {
+  final double size;
+
+  const _DueWalletBadge({required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          _BlurredGlow(
+            size: size * 1.04,
+            color: _homeTurquoise.withValues(alpha: 0.24),
+            blur: 16,
+          ),
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(size * 0.24),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFFFFFFFF),
+                  Color(0xFFF2FBFA),
+                  Color(0xFFE6F1F1),
+                ],
+              ),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.74),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  blurRadius: 18,
+                  offset: const Offset(-3, -4),
+                ),
+                BoxShadow(
+                  color: _homeTurquoise.withValues(alpha: 0.20),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 14,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+          ),
+          CustomPaint(
+            size: Size.square(size * 0.72),
+            painter: const _PremiumWalletPainter(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PremiumWalletPainter extends CustomPainter {
+  const _PremiumWalletPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final walletRect = Rect.fromLTWH(
+      size.width * 0.12,
+      size.height * 0.36,
+      size.width * 0.72,
+      size.height * 0.42,
+    );
+    final wallet = RRect.fromRectAndRadius(
+      walletRect,
+      Radius.circular(size.width * 0.12),
+    );
+
+    canvas.drawRRect(
+      wallet.shift(Offset(0, size.height * 0.045)),
+      Paint()
+        ..color = const Color(0xFF063B48).withValues(alpha: 0.24)
+        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 5),
+    );
+
+    canvas.drawRRect(
+      wallet,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          walletRect.topLeft,
+          walletRect.bottomRight,
+          [
+            const Color(0xFF35E6C1),
+            const Color(0xFF11A895),
+            const Color(0xFF07536A),
+          ],
+          const [0.0, 0.54, 1.0],
+        ),
+    );
+
+    final topSlotRect = Rect.fromLTWH(
+      size.width * 0.21,
+      size.height * 0.25,
+      size.width * 0.53,
+      size.height * 0.17,
+    );
+    final topSlot = RRect.fromRectAndRadius(
+      topSlotRect,
+      Radius.circular(size.width * 0.075),
+    );
+    canvas.drawRRect(
+      topSlot,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          topSlotRect.topLeft,
+          topSlotRect.bottomRight,
+          [
+            const Color(0xFF61F7DE),
+            const Color(0xFF0E8C7C),
+          ],
+        ),
+    );
+    canvas.drawRRect(
+      topSlot.deflate(size.width * 0.018),
+      Paint()..color = const Color(0xFF0A5B63).withValues(alpha: 0.55),
+    );
+
+    final pocketRect = Rect.fromLTWH(
+      size.width * 0.63,
+      size.height * 0.43,
+      size.width * 0.31,
+      size.height * 0.25,
+    );
+    final pocket = RRect.fromRectAndRadius(
+      pocketRect,
+      Radius.circular(size.width * 0.09),
+    );
+    canvas.drawRRect(
+      pocket,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          pocketRect.topLeft,
+          pocketRect.bottomRight,
+          [
+            const Color(0xFF43F0D1),
+            const Color(0xFF075164),
+          ],
+        ),
+    );
+
+    canvas.drawCircle(
+      Offset(size.width * 0.75, size.height * 0.55),
+      size.width * 0.045,
+      Paint()..color = const Color(0xFFB7FFF4).withValues(alpha: 0.88),
+    );
+
+    canvas.drawCircle(
+      Offset(size.width * 0.41, size.height * 0.55),
+      size.width * 0.105,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          Offset(size.width * 0.40, size.height * 0.50),
+          size.width * 0.14,
+          [
+            const Color(0xFF8FFFF0).withValues(alpha: 0.72),
+            const Color(0xFF1DBFA8).withValues(alpha: 0.20),
+          ],
+        ),
+    );
+
+    canvas.drawRRect(
+      wallet,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2
+        ..color = Colors.white.withValues(alpha: 0.22),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _PremiumWalletPainter oldDelegate) => false;
+}
+
+class DuesGrowthChart extends StatelessWidget {
+  final double width;
+  final double height;
+
+  const DuesGrowthChart({
+    super.key,
+    required this.width,
+    required this.height,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: height,
+      child: const CustomPaint(painter: _DuesGrowthChartPainter()),
+    );
+  }
+}
+
+class _DuesGrowthChartPainter extends CustomPainter {
+  const _DuesGrowthChartPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    final baseY = h * 0.86;
+    final barWidth = w * 0.16;
+    final gap = w * 0.09;
+    final firstX = w * 0.36;
+    final barHeights = <double>[h * 0.35, h * 0.52, h * 0.72];
+    final barRects = <RRect>[];
+
+    for (var i = 0; i < 3; i += 1) {
+      final left = firstX + i * (barWidth + gap);
+      final top = baseY - barHeights[i];
+      final rect = Rect.fromLTWH(left, top, barWidth, barHeights[i]);
+      final radius = Radius.circular(w * 0.035);
+      barRects.add(RRect.fromRectAndRadius(rect, radius));
+    }
+
+    final groundLine = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.round
+      ..color = const Color(0xFF35E6C1).withValues(alpha: 0.20);
+    canvas.drawLine(
+      Offset(firstX - w * 0.08, baseY + h * 0.012),
+      Offset(w * 0.96, baseY + h * 0.012),
+      groundLine,
+    );
+
+    for (final bar in barRects) {
+      canvas.drawRRect(
+        bar.shift(Offset(0, h * 0.012)),
+        Paint()
+          ..style = PaintingStyle.fill
+          ..color = const Color(0xFF2FE6C8).withValues(alpha: 0.20)
+          ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.normal, w * 0.045),
+      );
+    }
+
+    for (var i = 0; i < barRects.length; i += 1) {
+      final bar = barRects[i];
+      canvas.drawRRect(
+        bar,
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(bar.left, bar.top),
+            Offset(bar.left, bar.bottom),
+            [
+              const Color(0xFF69FFE6).withValues(alpha: 0.95),
+              const Color(0xFF35E6C1).withValues(alpha: 0.72),
+              const Color(0xFF0A756E).withValues(alpha: 0.54),
+            ],
+            const [0.0, 0.48, 1.0],
+          ),
+      );
+      canvas.drawRRect(
+        bar.deflate(1),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.3
+          ..shader = ui.Gradient.linear(
+            Offset(bar.left, bar.top),
+            Offset(bar.right, bar.bottom),
+            [
+              Colors.white.withValues(alpha: 0.34),
+              const Color(0xFF2FE6C8).withValues(alpha: 0.18),
+            ],
+          ),
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(
+            bar.left + barWidth * 0.16,
+            bar.top + h * 0.05,
+            barWidth * 0.18,
+            bar.height * 0.70,
+          ),
+          Radius.circular(w * 0.02),
+        ),
+        Paint()..color = Colors.white.withValues(alpha: 0.16 - (i * 0.025)),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DuesGrowthChartPainter oldDelegate) => false;
+}
+
+class _GlowParticle extends StatelessWidget {
+  final double size;
+  final double opacity;
+
+  const _GlowParticle({
+    required this.size,
+    required this.opacity,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: _homeTurquoise.withValues(alpha: opacity),
+        boxShadow: [
+          BoxShadow(
+            color: _homeTurquoise.withValues(alpha: opacity),
+            blurRadius: size * 3.2,
+            spreadRadius: size * 0.35,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class StatCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final String iconAsset;
+  final Color valueColor;
+  final VoidCallback onTap;
+
+  const StatCard({
+    super.key,
+    required this.title,
+    required this.value,
+    required this.iconAsset,
+    required this.valueColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final titleTop = title.length > 10 ? 19.5.h : 18.h;
+
+    return _DarkCardShell(
+      height: 92.h,
+      borderRadius: 22.r,
+      onTap: onTap,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 16.w,
+            top: 16.h,
+            child: SizedBox(
+              width: 38.w,
+              height: 38.w,
+              child: Center(
+                child: Image.asset(
+                  iconAsset,
+                  width: 32.w,
+                  height: 32.w,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 16.w,
+            top: titleTop,
+            left: 58.w,
+            height: 20.h,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Text(
+                  title,
+                  textAlign: TextAlign.right,
+                  maxLines: 1,
+                  style: GoogleFonts.cairo(
+                    color: _homeWhite.withValues(alpha: 0.92),
+                    fontSize: 13.sp,
+                    fontWeight: FontWeight.w700,
+                    height: 1.15,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 22.w,
+            bottom: 12.h,
+            child: Text(
+              value,
+              style: GoogleFonts.cairo(
+                color: valueColor,
+                fontSize: 26.sp,
+                fontWeight: FontWeight.w900,
+                height: 1,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class DashboardActionCard extends StatelessWidget {
+  final String label;
+  final String iconAsset;
+  final VoidCallback onTap;
+
+  const DashboardActionCard({
+    super.key,
+    required this.label,
+    required this.iconAsset,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      widthFactor: 0.90,
+      child: _DarkCardShell(
+        height: 102.h,
+        borderRadius: 23.r,
+        onTap: onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(
+              iconAsset,
+              width: 31.w,
+              height: 31.w,
+            ),
+            SizedBox(height: 8.h),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.cairo(
+                color: _homeWhite,
+                fontSize: 13.sp,
+                fontWeight: FontWeight.w800,
+                height: 1.05,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class RentDueAssistantCard extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const RentDueAssistantCard({super.key, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return _DarkCardShell(
+      height: 104.h,
+      borderRadius: 22.r,
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            right: 22.w,
+            top: 25.h,
+            bottom: 23.h,
+            child: Opacity(
+              opacity: 0.26,
+              child: Transform.rotate(
+                angle: -0.05,
+                child: Image.asset(
+                  '$_homeAssetPath/ic_calendar_due.png',
+                  width: 52.w,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 13.w,
+            top: 13.h,
+            child: _HomeAssistantChatIcon(size: 74.w),
+          ),
+          Positioned(
+            left: 96.w,
+            right: 84.w,
+            top: 21.h,
+            bottom: 17.h,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'مرحبا بك!',
+                  textAlign: TextAlign.right,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.cairo(
+                    color: _homeTurquoise,
+                    fontSize: 13.sp,
+                    fontWeight: FontWeight.w800,
+                    height: 1.1,
+                  ),
+                ),
+                SizedBox(height: 5.h),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    'أقرب استحقاقات الإيجار',
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    style: GoogleFonts.cairo(
+                      color: _homeWhite,
+                      fontSize: 15.sp,
+                      fontWeight: FontWeight.w900,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+                SizedBox(height: 7.h),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    'لا يوجد استحقاقات قريبة',
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    style: GoogleFonts.cairo(
+                      color: _homeMuted,
+                      fontSize: 13.sp,
+                      fontWeight: FontWeight.w600,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeAssistantChatIcon extends StatefulWidget {
+  final double size;
+
+  const _HomeAssistantChatIcon({required this.size});
+
+  @override
+  State<_HomeAssistantChatIcon> createState() => _HomeAssistantChatIconState();
+}
+
+class _HomeAssistantChatIconState extends State<_HomeAssistantChatIcon>
+    with TickerProviderStateMixin {
+  late final AnimationController _floatController;
+  late final AnimationController _pulseController;
+  late final AnimationController _ringController;
+  late final AnimationController _orbitController;
+
+  late final Animation<double> _floatAnim;
+  late final Animation<double> _pulseAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _floatController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2300),
+    )..repeat(reverse: true);
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat(reverse: true);
+    _ringController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2600),
+    )..repeat();
+    _orbitController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 5000),
+    )..repeat();
+
+    _floatAnim = Tween<double>(begin: 0, end: -4).animate(
+      CurvedAnimation(parent: _floatController, curve: Curves.easeInOut),
+    );
+    _pulseAnim = Tween<double>(begin: 1.0, end: 1.045).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _floatController.dispose();
+    _pulseController.dispose();
+    _ringController.dispose();
+    _orbitController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = widget.size;
+    final auraSize = size * 0.95;
+    final orbitSize = size * 0.83;
+    final iconPadding = size * 0.09;
+
+    return SizedBox.square(
+      dimension: size,
+      child: AnimatedBuilder(
+        animation: Listenable.merge([
+          _floatController,
+          _pulseController,
+          _ringController,
+          _orbitController,
+        ]),
+        builder: (context, child) {
+          final ringValue = _ringController.value;
+          final delayedRing = (ringValue + 0.5) % 1.0;
+          final orbitAngle = _orbitController.value * 2 * math.pi;
+
+          return Transform.translate(
+            offset: Offset(0, _floatAnim.value),
+            child: Transform.scale(
+              scale: _pulseAnim.value,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: auraSize,
+                    height: auraSize,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          const Color(0xFF5BC0FF).withValues(alpha: 0.20),
+                          const Color(0xFF2E67FF).withValues(alpha: 0.075),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                  Opacity(
+                    opacity: (1 - ringValue) * 0.30,
+                    child: Container(
+                      width: size * 0.74 + (ringValue * size * 0.12),
+                      height: size * 0.74 + (ringValue * size * 0.12),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFF7DD3FF),
+                          width: 1.8,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Opacity(
+                    opacity: (1 - delayedRing) * 0.20,
+                    child: Container(
+                      width: size * 0.70 + (delayedRing * size * 0.10),
+                      height: size * 0.70 + (delayedRing * size * 0.10),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFFA9E7FF),
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Transform.rotate(
+                    angle: orbitAngle,
+                    child: SizedBox.square(
+                      dimension: orbitSize,
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: Container(
+                          width: size * 0.075,
+                          height: size * 0.075,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFFB9F3FF),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Color(0xFF9FE8FF),
+                                blurRadius: 9,
+                                spreadRadius: 1.5,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: size * 0.73,
+                    height: size * 0.73,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color(0xFF54B8FF),
+                          Color(0xFF347DFF),
+                        ],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color:
+                              const Color(0xFF3F91FF).withValues(alpha: 0.42),
+                          blurRadius: 20,
+                          spreadRadius: 3,
+                        ),
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.16),
+                          blurRadius: 12,
+                          offset: const Offset(0, 7),
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Align(
+                          alignment: Alignment.topCenter,
+                          child: Container(
+                            width: size * 0.50,
+                            height: size * 0.19,
+                            margin: EdgeInsets.only(top: size * 0.09),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(100),
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.white.withValues(alpha: 0.25),
+                                  Colors.white.withValues(alpha: 0.02),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: EdgeInsets.all(iconPadding),
+                          child: Image.asset(
+                            _aiBotAsset,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        Positioned(
+                          right: size * 0.065,
+                          bottom: size * 0.065,
+                          child: Container(
+                            width: size * 0.15,
+                            height: size * 0.15,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: const Color(0xFF10B981),
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 1.6,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF10B981)
+                                      .withValues(alpha: 0.48),
+                                  blurRadius: 8,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class HomeBottomNavBar extends StatelessWidget {
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+
+  const HomeBottomNavBar({
+    super.key,
+    required this.currentIndex,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.transparent,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 12.h),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(21.r),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: Container(
+                height: 70.h,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(21.r),
+                  color: const Color(0xFF0A1C2D).withValues(alpha: 0.88),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _homeTurquoise.withValues(alpha: 0.11),
+                      blurRadius: 18,
+                      offset: const Offset(0, -4),
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.30),
+                      blurRadius: 18,
+                      offset: const Offset(0, 9),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    _HomeNavItem(
+                      label: 'الرئيسية',
+                      index: 0,
+                      currentIndex: currentIndex,
+                      onTap: onTap,
+                      icon: Icons.home_rounded,
+                    ),
+                    _HomeNavItem(
+                      label: 'العقارات',
+                      index: 1,
+                      currentIndex: currentIndex,
+                      onTap: onTap,
+                      asset: '$_homeAssetPath/ic_properties.png',
+                    ),
+                    _HomeNavItem(
+                      label: 'العملاء',
+                      index: 2,
+                      currentIndex: currentIndex,
+                      onTap: onTap,
+                      asset: '$_homeAssetPath/ic_clients.png',
+                    ),
+                    _HomeNavItem(
+                      label: 'العقود',
+                      index: 3,
+                      currentIndex: currentIndex,
+                      onTap: onTap,
+                      asset: '$_homeAssetPath/ic_contracts.png',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeNavItem extends StatelessWidget {
+  final String label;
+  final int index;
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+  final IconData? icon;
+  final String? asset;
+
+  const _HomeNavItem({
+    required this.label,
+    required this.index,
+    required this.currentIndex,
+    required this.onTap,
+    this.icon,
+    this.asset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = currentIndex == index;
+    final color =
+        isActive ? _homeTurquoise : _homeMuted.withValues(alpha: 0.88);
+
+    return Expanded(
+      child: InkWell(
+        onTap: () => onTap(index),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (asset != null)
+                  Image.asset(
+                    asset!,
+                    width: 23.w,
+                    height: 23.w,
+                    color: color,
+                  )
+                else
+                  Icon(icon, color: color, size: 26.sp),
+                SizedBox(height: 3.h),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.cairo(
+                    color: color,
+                    fontSize: 11.5.sp,
+                    fontWeight: isActive ? FontWeight.w900 : FontWeight.w700,
+                    height: 1.1,
+                  ),
+                ),
+              ],
+            ),
+            if (isActive)
+              Positioned(
+                bottom: 0,
+                child: Container(
+                  width: 58.w,
+                  height: 3.h,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(99),
+                    color: _homeTurquoise,
+                    boxShadow: [
+                      BoxShadow(
+                        color: _homeTurquoise.withValues(alpha: 0.72),
+                        blurRadius: 12,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DarkCardShell extends StatelessWidget {
+  final Widget child;
+  final double height;
+  final double borderRadius;
+  final VoidCallback? onTap;
+
+  const _DarkCardShell({
+    required this.child,
+    required this.height,
+    required this.borderRadius,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(borderRadius);
+    final content = Container(
+      height: height,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        color: _homeCard.withValues(alpha: 0.78),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.11)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: child,
+    );
+
+    if (onTap == null) return content;
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: radius,
+      child: InkWell(
+        borderRadius: radius,
+        onTap: onTap,
+        child: content,
+      ),
+    );
   }
 }
 
@@ -1589,7 +3063,7 @@ class _FancyCard extends StatelessWidget {
         border: Border.all(color: const Color(0x1A0F172A)),
         boxShadow: [
           BoxShadow(
-              color: const Color(0x66000000).withOpacity(0.06),
+              color: const Color(0x66000000).withValues(alpha: 0.06),
               blurRadius: 18,
               offset: const Offset(0, 10)),
         ],
@@ -1661,7 +3135,7 @@ class _QuickButton extends StatelessWidget {
             ),
             boxShadow: [
               BoxShadow(
-                  color: const Color(0x66000000).withOpacity(0.10),
+                  color: const Color(0x66000000).withValues(alpha: 0.10),
                   blurRadius: 14,
                   offset: const Offset(0, 8)),
             ],

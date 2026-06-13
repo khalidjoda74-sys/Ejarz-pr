@@ -22,7 +22,7 @@ class AiOpenAiConfig {
   /// The Flutter client must not contain or download the OpenAI API key in production.
   /// The proxy should accept the same Chat Completions JSON body and return OpenAI-compatible JSON/SSE.
   static const String serverProxyUrl = String.fromEnvironment(
-    'DARFO_AI_PROXY_URL',
+    'EJARZ_PRO_AI_PROXY_URL',
     defaultValue: '',
   );
 
@@ -41,7 +41,7 @@ class AiOpenAiConfig {
   );
 
   /// Legacy compatibility for older installs that stored the key in Firestore _meta/openai.
-  /// It remains supported, but the recommended production setup is DARFO_AI_PROXY_URL.
+  /// It remains supported, but the recommended production setup is EJARZ_PRO_AI_PROXY_URL.
   static const bool allowFirestoreOpenAiKeyFallback = bool.fromEnvironment(
     'ALLOW_FIRESTORE_OPENAI_KEY_FALLBACK',
     defaultValue: true,
@@ -57,11 +57,12 @@ class AiOpenAiConfig {
   static bool get hasDirectApiKey => openAiDirectApiKey.trim().isNotEmpty;
 
   static bool get canUseDirectOpenAi =>
-      allowClientOpenAiDirect || allowFirestoreOpenAiKeyFallback || hasDirectApiKey;
+      allowClientOpenAiDirect ||
+      allowFirestoreOpenAiKeyFallback ||
+      hasDirectApiKey;
 
-  static String get apiUrl => usesServerProxy
-      ? serverProxyUrl.trim()
-      : openAiDirectApiUrl.trim();
+  static String get apiUrl =>
+      usesServerProxy ? serverProxyUrl.trim() : openAiDirectApiUrl.trim();
 
   static const String temperatureRaw = String.fromEnvironment(
     'OPENAI_TEMPERATURE',

@@ -1,6 +1,6 @@
 // lib/ui/widgets/subscription_sheet.dart
 import 'dart:ui' as ui;
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -89,7 +89,7 @@ Future<void> showSubscriptionSheet(
                 Expanded(
                   child: Text(
                     'اشتراكي',
-                    style: GoogleFonts.tajawal(
+                    style: GoogleFonts.cairo(
                         fontSize: 18.sp,
                         fontWeight: FontWeight.w900,
                         color: const Color(0xFF0F172A)),
@@ -110,7 +110,7 @@ Future<void> showSubscriptionSheet(
                   ),
                   child: Text(
                     active ? 'فعّال' : 'منتهي',
-                    style: GoogleFonts.tajawal(
+                    style: GoogleFonts.cairo(
                       fontSize: 12.sp,
                       fontWeight: FontWeight.w800,
                       color: active
@@ -142,7 +142,7 @@ Future<void> showSubscriptionSheet(
                 child: Text(
                   'انتهى اشتراكك — يرجى التجديد لمتابعة إدارة عقاراتك.',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.tajawal(
+                  style: GoogleFonts.cairo(
                       fontSize: 13.sp,
                       fontWeight: FontWeight.w800,
                       color: const Color(0xFFB91C1C)),
@@ -164,7 +164,7 @@ Future<void> showSubscriptionSheet(
                       padding: EdgeInsets.symmetric(vertical: 12.h),
                     ),
                     child: Text('إغلاق',
-                        style: GoogleFonts.tajawal(
+                        style: GoogleFonts.cairo(
                             fontWeight: FontWeight.w900, color: primary)),
                   ),
                 ),
@@ -183,7 +183,7 @@ Future<void> showSubscriptionSheet(
                         padding: EdgeInsets.symmetric(vertical: 12.h),
                       ),
                       child: Text('تجديد الاشتراك',
-                          style: GoogleFonts.tajawal(
+                          style: GoogleFonts.cairo(
                               fontWeight: FontWeight.w900,
                               color: Colors.white)),
                     ),
@@ -207,7 +207,7 @@ class _RowItem extends StatelessWidget {
     return Row(
       children: [
         Text(label,
-            style: GoogleFonts.tajawal(
+            style: GoogleFonts.cairo(
                 fontSize: 14.sp,
                 fontWeight: FontWeight.w800,
                 color: Colors.black.withOpacity(0.70))),
@@ -217,7 +217,7 @@ class _RowItem extends StatelessWidget {
             value,
             textAlign: TextAlign.left,
             overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.tajawal(
+            style: GoogleFonts.cairo(
                 fontSize: 14.sp,
                 fontWeight: FontWeight.w900,
                 color: const Color(0xFF0F172A)),

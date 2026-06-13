@@ -22,7 +22,11 @@ import 'ai_chat_service.dart';
 import 'ai_chat_executor.dart';
 import 'ai_chat_permissions.dart';
 import 'ai_chat_tools.dart';
+import 'core/ai_chat_gateway.dart';
+import 'core/ai_chat_types.dart';
 import 'core/ai_openai_config.dart';
+import 'core/ai_tool_executor.dart';
+import 'core/ai_tool_registry.dart';
 
 class AiChatScreen extends StatefulWidget {
   final bool isOfficeMode;
@@ -36,6 +40,7 @@ class _AiChatScreenState extends State<AiChatScreen>
     with TickerProviderStateMixin {
   AiChatService? _service;
   AiChatExecutor? _executor;
+  AiChatGateway? _gateway;
   AiChatScope? _chatScope;
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
@@ -67,8 +72,7 @@ class _AiChatScreenState extends State<AiChatScreen>
 
   final List<_UiMessage> _messages = [];
 
-  bool get _showTypingIndicator =>
-      _sending && _streamingAssistantIndex == null;
+  bool get _showTypingIndicator => _sending && _streamingAssistantIndex == null;
 
   static const Map<String, String> _toolArgLabels = {
     'query': 'البحث',
@@ -79,10 +83,12 @@ class _AiChatScreenState extends State<AiChatScreen>
     'email': 'البريد الإلكتروني',
     'nationality': 'الجنسية',
     'companyName': 'اسم الشركة',
-    'companyCommercialRegister': 'السجل التجاري',
+    'companyCommercialRegister': 'رقم السجل الموحد',
     'companyTaxNumber': 'الرقم الضريبي',
     'companyRepresentativeName': 'ممثل الشركة',
     'companyRepresentativePhone': 'جوال ممثل الشركة',
+    'companyRepresentativeNationalId': 'هوية ممثل الشركة',
+    'companyRepresentativeDateOfBirth': 'تاريخ ميلاد ممثل الشركة',
     'serviceSpecialization': 'التخصص',
     'attachmentPaths': 'المرفقات',
     'propertyName': 'العقار',
@@ -324,19 +330,29 @@ class _AiChatScreenState extends State<AiChatScreen>
     ]);
     _role = resolved[0] as ChatUserRole;
     _chatScope = resolved[1] as AiChatScope;
-    _executor = AiChatExecutor(
+    final userId = _resolveUserId();
+    final executor = AiChatExecutor(
       userRole: _role,
       chatScope: _effectiveScope,
       onNavigate: (route) async {
         return _openRouteFromChat(route);
       },
     );
-    _service = AiChatService(
+    final service = AiChatService(
       userRole: _role,
       userName: _userName,
-      userId: _resolveUserId(),
+      userId: userId,
       isOfficeMode: _isOfficeSession,
       chatScope: _effectiveScope,
+    );
+    _executor = executor;
+    _service = service;
+    _gateway = AiChatGateway(
+      userId: userId,
+      role: _role,
+      chatScope: _effectiveScope,
+      conversationId: service.conversationId,
+      toolExecutor: AiToolExecutor(legacyExecutor: executor),
     );
     if (!mounted) return;
 
@@ -352,7 +368,7 @@ class _AiChatScreenState extends State<AiChatScreen>
     /*
       setState(() => _loading = false);
       // رسالة ترحيب
-      _addAssistantMessage('مرحباً $_userName! أنا مساعد دارفو الذكي. كيف أقدر أساعدك اليوم؟');
+      _addAssistantMessage('مرحباً $_userName! أنا مساعد Ejarz Pro الذكي. كيف أقدر أساعدك اليوم؟');
     */
   }
 
@@ -437,16 +453,11 @@ class _AiChatScreenState extends State<AiChatScreen>
   }
 
   String _buildScopedWelcomeMessage() {
-    return 'مرحبًا $_userName! أنا مساعد دارفو الذكي. ${_effectiveScope.welcomeLabel}. كيف أقدر أساعدك اليوم؟';
-  }
-
-  String _buildWelcomeMessage() {
-    return 'مرحبًا $_userName! أنا مساعد دارفو الذكي. كيف أقدر أساعدك اليوم؟';
+    return 'مرحبًا $_userName! أنا مساعد Ejarz Pro الذكي. ${_effectiveScope.welcomeLabel}. كيف أقدر أساعدك اليوم؟';
   }
 
   Route<void>? _buildNavigationRoute(String target) {
-    final normalizedTarget =
-        AppArchitectureRegistry.normalizeScreenKey(target);
+    final normalizedTarget = AppArchitectureRegistry.normalizeScreenKey(target);
     Widget? screen;
     switch (normalizedTarget) {
       case 'home':
@@ -521,11 +532,6 @@ class _AiChatScreenState extends State<AiChatScreen>
     _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
-  }
-
-  void _addAssistantMessage(String text) {
-    _messages.add(_UiMessage(role: 'assistant', text: text));
-    _scrollToBottom();
   }
 
   void _clearStreamingAssistantDraft() {
@@ -649,7 +655,8 @@ class _AiChatScreenState extends State<AiChatScreen>
       );
       if (picked == null || picked.files.isEmpty) return;
 
-      final selected = picked.files.take(remainingSlots).toList(growable: false);
+      final selected =
+          picked.files.take(remainingSlots).toList(growable: false);
       final savedAttachments = <_ChatAttachment>[];
       for (final file in selected) {
         final saved = await _saveChatAttachmentLocally(file);
@@ -669,9 +676,11 @@ class _AiChatScreenState extends State<AiChatScreen>
       });
 
       if (picked.files.length > remainingSlots) {
-        _showChatSnack('تمت إضافة أول $remainingSlots ملفات فقط لأن الحد الأقصى 3.');
+        _showChatSnack(
+            'تمت إضافة أول $remainingSlots ملفات فقط لأن الحد الأقصى 3.');
       } else if (savedAttachments.isNotEmpty) {
-        _showChatSnack('تمت إضافة ${savedAttachments.length} مرفق/مرفقات إلى الرسالة.');
+        _showChatSnack(
+            'تمت إضافة ${savedAttachments.length} مرفق/مرفقات إلى الرسالة.');
       }
     } catch (_) {
       _showChatSnack('تعذر رفع المرفقات من هذه الشاشة حاليًا.');
@@ -684,7 +693,8 @@ class _AiChatScreenState extends State<AiChatScreen>
 
   void _removeChatAttachment(String path) {
     setState(() {
-      _pendingChatAttachments.removeWhere((attachment) => attachment.path == path);
+      _pendingChatAttachments
+          .removeWhere((attachment) => attachment.path == path);
     });
   }
 
@@ -701,11 +711,17 @@ class _AiChatScreenState extends State<AiChatScreen>
     switch (toolName) {
       case 'add_tenant':
       case 'add_client_record':
+      case 'tenants.create':
       case 'add_property':
+      case 'properties.create':
       case 'edit_property':
+      case 'properties.update':
       case 'create_contract':
+      case 'contracts.create':
       case 'create_manual_voucher':
+      case 'payments.create':
       case 'create_maintenance_request':
+      case 'maintenance.create_ticket':
         return true;
       default:
         return false;
@@ -727,7 +743,10 @@ class _AiChatScreenState extends State<AiChatScreen>
     if (!_hasNonEmptyPathList(args['attachmentPaths'])) {
       return true;
     }
-    if ((toolName == 'add_property' || toolName == 'edit_property') &&
+    if ((toolName == 'add_property' ||
+            toolName == 'edit_property' ||
+            toolName == 'properties.create' ||
+            toolName == 'properties.update') &&
         !_hasNonEmptyPathList(args['documentAttachmentPaths'])) {
       return true;
     }
@@ -750,7 +769,10 @@ class _AiChatScreenState extends State<AiChatScreen>
     if (!_hasNonEmptyPathList(mergedArgs['attachmentPaths'])) {
       mergedArgs['attachmentPaths'] = paths;
     }
-    if ((toolName == 'add_property' || toolName == 'edit_property') &&
+    if ((toolName == 'add_property' ||
+            toolName == 'edit_property' ||
+            toolName == 'properties.create' ||
+            toolName == 'properties.update') &&
         !_hasNonEmptyPathList(mergedArgs['documentAttachmentPaths'])) {
       mergedArgs['documentAttachmentPaths'] = paths;
     }
@@ -852,9 +874,12 @@ class _AiChatScreenState extends State<AiChatScreen>
     if (value.isEmpty) return value;
 
     final hiddenPatterns = <RegExp>[
-      RegExp(r'"(?:contractId|invoiceId|propertyId|tenantId|id)"\s*:\s*"[^"]*"\s*,?'),
-      RegExp(r'"(?:contractId|invoiceId|propertyId|tenantId|id)"\s*:\s*[^,\n}\]]+\s*,?'),
-      RegExp(r'\b(?:contractId|invoiceId|propertyId|tenantId|id)\s*[:=]\s*[\w-]+\b'),
+      RegExp(
+          r'"(?:contractId|invoiceId|propertyId|tenantId|id)"\s*:\s*"[^"]*"\s*,?'),
+      RegExp(
+          r'"(?:contractId|invoiceId|propertyId|tenantId|id)"\s*:\s*[^,\n}\]]+\s*,?'),
+      RegExp(
+          r'\b(?:contractId|invoiceId|propertyId|tenantId|id)\s*[:=]\s*[\w-]+\b'),
       RegExp(r'"route"\s*:\s*"[^"]*"\s*,?'),
       RegExp(r'"arguments"\s*:\s*\{[^}]*\}\s*,?'),
       RegExp(r'"navigationAction"\s*:\s*\{[\s\S]*?\}\s*,?'),
@@ -998,6 +1023,99 @@ class _AiChatScreenState extends State<AiChatScreen>
     );
   }
 
+  bool _isGatewayToolCall(Map<String, dynamic> call) {
+    final fn = (call['function'] as Map?)?.cast<String, dynamic>() ??
+        const <String, dynamic>{};
+    final name = (fn['name'] ?? '').toString();
+    if (!name.contains('__') && !name.contains('.')) return false;
+    return AiToolRegistry.tryResolve(name) != null;
+  }
+
+  Map<String, dynamic> _toolCallWithArguments(
+    Map<String, dynamic> call,
+    Map<String, dynamic> args,
+  ) {
+    final fn = (call['function'] as Map?)?.cast<String, dynamic>() ??
+        const <String, dynamic>{};
+    return <String, dynamic>{
+      ...call,
+      'function': <String, dynamic>{
+        ...fn,
+        'arguments': jsonEncode(args),
+      },
+    };
+  }
+
+  Future<AiGatewayResponse> _confirmGatewayResponse(
+    AiGatewayResponse response,
+  ) async {
+    if (response.type != AiAssistantResponseType.confirmationRequired) {
+      return response;
+    }
+
+    final pendingActionId = (response.pendingActionId ?? '').trim();
+    if (pendingActionId.isEmpty || _gateway == null) return response;
+
+    final confirmed = await CustomConfirmDialog.show(
+      context: context,
+      title: 'تأكيد التنفيذ',
+      message: response.text,
+      confirmLabel: 'تنفيذ',
+      cancelLabel: 'إلغاء',
+      confirmColor: const Color(0xFF0F766E),
+    );
+    return _gateway!.confirmPendingAction(
+      pendingActionId,
+      confirmed: confirmed,
+    );
+  }
+
+  String _gatewayResponsePayload(AiGatewayResponse response) {
+    if (response.payload.isNotEmpty) {
+      return jsonEncode(response.payload);
+    }
+    return jsonEncode(<String, dynamic>{
+      'success': response.type == AiAssistantResponseType.toolResult ||
+          response.type == AiAssistantResponseType.reportSummary ||
+          response.type == AiAssistantResponseType.plainAnswer,
+      'message': response.text,
+      'responseType': response.type.name,
+    });
+  }
+
+  String _gatewayResponseForModel(
+    AiGatewayResponse response,
+    String handledPayload,
+  ) {
+    final historyResult = response.toolHistoryResult?.trim();
+    if (historyResult != null && historyResult.isNotEmpty) {
+      return historyResult;
+    }
+    final payload = _decodeExecutorPayload(handledPayload) ?? response.payload;
+    return jsonEncode(<String, dynamic>{
+      'status': response.type.name,
+      'message': response.text,
+      'payload': payload,
+    });
+  }
+
+  Future<String> _handleGatewayResponseSideEffects(
+    AiGatewayResponse response,
+  ) {
+    return _handleExecutorSideEffects(_gatewayResponsePayload(response));
+  }
+
+  bool _gatewayResponseSucceeded(
+    AiGatewayResponse response,
+    String handledPayload,
+  ) {
+    final payload = _decodeExecutorPayload(handledPayload);
+    final success = payload?['success'];
+    if (success is bool) return success;
+    return response.type == AiAssistantResponseType.toolResult ||
+        response.type == AiAssistantResponseType.reportSummary;
+  }
+
   static const Map<String, String> _guidedEntityLabels = <String, String>{
     'add_client_record': 'عميل',
     'add_property': 'عقار',
@@ -1050,7 +1168,8 @@ class _AiChatScreenState extends State<AiChatScreen>
         _messages.add(
           const _UiMessage(
             role: 'assistant',
-            text: 'تم إلغاء معالج الإضافة. إذا رغبت نبدأ من جديد أو أفتح لك الشاشة مباشرة.',
+            text:
+                'تم إلغاء معالج الإضافة. إذا رغبت نبدأ من جديد أو أفتح لك الشاشة مباشرة.',
           ),
         );
       });
@@ -1092,10 +1211,31 @@ class _AiChatScreenState extends State<AiChatScreen>
     if (_containsAny(value, <String>['عقد', 'عقد إيجار', 'عقد ايجار'])) {
       return 'create_contract';
     }
-    if (_containsAny(value, <String>['عقار', 'شقة', 'شقه', 'فيلا', 'عمارة', 'عماره', 'مكتب', 'محل', 'مستودع', 'أرض', 'ارض'])) {
+    if (_containsAny(value, <String>[
+      'عقار',
+      'شقة',
+      'شقه',
+      'فيلا',
+      'عمارة',
+      'عماره',
+      'مكتب',
+      'محل',
+      'مستودع',
+      'أرض',
+      'ارض'
+    ])) {
       return 'add_property';
     }
-    if (_containsAny(value, <String>['عميل', 'مستأجر', 'مستاجر', 'شركة', 'شركه', 'مقدم خدمة', 'مزود خدمة', 'فني'])) {
+    if (_containsAny(value, <String>[
+      'عميل',
+      'مستأجر',
+      'مستاجر',
+      'شركة',
+      'شركه',
+      'مقدم خدمة',
+      'مزود خدمة',
+      'فني'
+    ])) {
       return 'add_client_record';
     }
     return null;
@@ -1278,7 +1418,7 @@ class _AiChatScreenState extends State<AiChatScreen>
     if (!mounted) return true;
     setState(() {
       _messages.add(
-        _UiMessage(
+        const _UiMessage(
           role: 'assistant',
           text: 'اختر أحد الخيارين فقط:\nافتح الشاشة\nأو من الدردشة',
         ),
@@ -1352,7 +1492,8 @@ class _AiChatScreenState extends State<AiChatScreen>
         _messages.add(
           const _UiMessage(
             role: 'assistant',
-            text: 'لم أنفذ العملية بعد. يمكنك تعديل إجابة سابقة، أو قول: افتح الشاشة.',
+            text:
+                'لم أنفذ العملية بعد. يمكنك تعديل إجابة سابقة، أو قول: افتح الشاشة.',
           ),
         );
       });
@@ -1366,16 +1507,14 @@ class _AiChatScreenState extends State<AiChatScreen>
     });
 
     try {
-      final usedPendingAttachments =
-          _pendingChatAttachments.isNotEmpty &&
+      final usedPendingAttachments = _pendingChatAttachments.isNotEmpty &&
           _toolAcceptsAttachments(session.operation);
       final result = await _executor!.executeCached(session.operation, args);
       final handledResult = await _handleExecutorSideEffects(result);
       final payload = _decodeExecutorPayload(handledResult);
       final success = _toolResultSucceeded(handledResult);
-      final nextField = success
-          ? null
-          : _firstCollectionFieldFromPayload(session, payload);
+      final nextField =
+          success ? null : _firstCollectionFieldFromPayload(session, payload);
 
       if (!mounted) return true;
       setState(() {
@@ -1425,7 +1564,8 @@ class _AiChatScreenState extends State<AiChatScreen>
         _messages.add(
           const _UiMessage(
             role: 'assistant',
-            text: 'حدث خطأ أثناء تنفيذ العملية. يمكنك المحاولة مرة أخرى أو اختيار فتح الشاشة.',
+            text:
+                'حدث خطأ أثناء تنفيذ العملية. يمكنك المحاولة مرة أخرى أو اختيار فتح الشاشة.',
           ),
         );
       });
@@ -1459,7 +1599,8 @@ class _AiChatScreenState extends State<AiChatScreen>
   String _extractLocalExecutionMessage(String rawResult) {
     final payload = _decodeExecutorPayload(rawResult);
     if (payload == null) return _normalizeAssistantText(rawResult);
-    final message = (payload['message'] ?? payload['error'] ?? '').toString().trim();
+    final message =
+        (payload['message'] ?? payload['error'] ?? '').toString().trim();
     if (message.isNotEmpty) return _normalizeAssistantText(message);
     return _normalizeAssistantText(rawResult);
   }
@@ -1476,8 +1617,7 @@ class _AiChatScreenState extends State<AiChatScreen>
     if (base.isEmpty) {
       return _normalizeAssistantText(rawResult);
     }
-    final needsScreenHint =
-        payload?['requiresScreenCompletion'] == true ||
+    final needsScreenHint = payload?['requiresScreenCompletion'] == true ||
         (payload?['suggestedScreen'] ?? '').toString().trim().isNotEmpty ||
         payload?['entryOptions'] is Iterable;
     if (!needsScreenHint) {
@@ -1511,7 +1651,8 @@ class _AiChatScreenState extends State<AiChatScreen>
         return const _ChatFieldDescriptor(
           field: 'documentAttachmentPaths',
           label: 'مرفقات الوثيقة',
-          prompt: 'ارفع مرفقات الوثيقة هنا في الدردشة الآن. الحد الأقصى 3 ملفات.',
+          prompt:
+              'ارفع مرفقات الوثيقة هنا في الدردشة الآن. الحد الأقصى 3 ملفات.',
           inputType: 'attachments',
           required: true,
         );
@@ -1584,15 +1725,15 @@ class _AiChatScreenState extends State<AiChatScreen>
           ),
           _ChatFieldDescriptor(
             field: 'companyCommercialRegister',
-            label: 'رقم السجل التجاري',
-            prompt: 'اكتب رقم السجل التجاري.',
+            label: 'رقم السجل الموحد',
+            prompt: 'اكتب رقم السجل الموحد.',
             inputType: 'text',
             required: true,
           ),
           _ChatFieldDescriptor(
             field: 'companyTaxNumber',
             label: 'الرقم الضريبي',
-            prompt: 'اكتب الرقم الضريبي.',
+            prompt: 'اكتب الرقم الضريبي من 15 رقمًا.',
             inputType: 'text',
             required: true,
           ),
@@ -1608,6 +1749,20 @@ class _AiChatScreenState extends State<AiChatScreen>
             label: 'رقم جوال ممثل الشركة',
             prompt: 'اكتب رقم الجوال.',
             inputType: 'text',
+            required: true,
+          ),
+          _ChatFieldDescriptor(
+            field: 'companyRepresentativeNationalId',
+            label: 'رقم هوية ممثل الشركة',
+            prompt: 'اكتب رقم هوية ممثل الشركة.',
+            inputType: 'text',
+            required: true,
+          ),
+          _ChatFieldDescriptor(
+            field: 'companyRepresentativeDateOfBirth',
+            label: 'تاريخ ميلاد ممثل الشركة',
+            prompt: 'اكتب تاريخ ميلاد ممثل الشركة بصيغة YYYY-MM-DD.',
+            inputType: 'date',
             required: true,
           ),
           _ChatFieldDescriptor(
@@ -1719,7 +1874,8 @@ class _AiChatScreenState extends State<AiChatScreen>
       const _ChatFieldDescriptor(
         field: 'type',
         label: 'نوع العقار',
-        prompt: 'اكتب نوع العقار: شقة أو فيلا أو عمارة أو أرض أو مكتب أو محل أو مستودع.',
+        prompt:
+            'اكتب نوع العقار: شقة أو فيلا أو عمارة أو أرض أو مكتب أو محل أو مستودع.',
         inputType: 'propertyType',
         required: true,
       ),
@@ -2005,14 +2161,14 @@ class _AiChatScreenState extends State<AiChatScreen>
   ) {
     final value = _normalizeArabicDigits(text.trim());
     if (value.isEmpty) {
-      return _FieldParseResult.invalid('الرجاء كتابة الإجابة المطلوبة.');
+      return const _FieldParseResult.invalid('الرجاء كتابة الإجابة المطلوبة.');
     }
 
     switch (field.inputType) {
       case 'clientType':
         final clientType = _normalizeClientType(value);
         if (clientType == null) {
-          return _FieldParseResult.invalid(
+          return const _FieldParseResult.invalid(
             'اكتب نوع العميل بهذه الصيغة: مستأجر أو شركة أو مقدم خدمة.',
           );
         }
@@ -2020,7 +2176,7 @@ class _AiChatScreenState extends State<AiChatScreen>
       case 'propertyType':
         final propertyType = _normalizePropertyType(value);
         if (propertyType == null) {
-          return _FieldParseResult.invalid(
+          return const _FieldParseResult.invalid(
             'اكتب نوع العقار بهذه الصيغة: شقة أو فيلا أو عمارة أو أرض أو مكتب أو محل أو مستودع.',
           );
         }
@@ -2028,7 +2184,7 @@ class _AiChatScreenState extends State<AiChatScreen>
       case 'rentalMode':
         final rentalMode = _normalizeRentalMode(value);
         if (rentalMode == null) {
-          return _FieldParseResult.invalid(
+          return const _FieldParseResult.invalid(
             'اكتب: كامل المبنى أو لكل وحدة.',
           );
         }
@@ -2036,13 +2192,13 @@ class _AiChatScreenState extends State<AiChatScreen>
       case 'bool':
         final boolValue = _normalizeBooleanValue(value);
         if (boolValue == null) {
-          return _FieldParseResult.invalid('اكتب: نعم أو لا.');
+          return const _FieldParseResult.invalid('اكتب: نعم أو لا.');
         }
         return _FieldParseResult.valid(boolValue);
       case 'date':
         final dateValue = _normalizeDateValue(value);
         if (dateValue == null) {
-          return _FieldParseResult.invalid(
+          return const _FieldParseResult.invalid(
             'اكتب التاريخ بصيغة YYYY-MM-DD فقط.',
           );
         }
@@ -2050,13 +2206,13 @@ class _AiChatScreenState extends State<AiChatScreen>
       case 'number':
         final numberValue = _normalizeNumberValue(value);
         if (numberValue == null) {
-          return _FieldParseResult.invalid('اكتب الرقم فقط بصيغة صحيحة.');
+          return const _FieldParseResult.invalid('اكتب الرقم فقط بصيغة صحيحة.');
         }
         return _FieldParseResult.valid(numberValue);
       case 'contractTerm':
         final termValue = _normalizeContractTerm(value);
         if (termValue == null) {
-          return _FieldParseResult.invalid(
+          return const _FieldParseResult.invalid(
             'اكتب: يومي أو شهري أو ربع سنوي أو نصف سنوي أو سنوي.',
           );
         }
@@ -2064,7 +2220,7 @@ class _AiChatScreenState extends State<AiChatScreen>
       case 'paymentCycle':
         final cycleValue = _normalizePaymentCycle(value);
         if (cycleValue == null) {
-          return _FieldParseResult.invalid(
+          return const _FieldParseResult.invalid(
             'اكتب: شهري أو ربع سنوي أو نصف سنوي أو سنوي.',
           );
         }
@@ -2072,7 +2228,7 @@ class _AiChatScreenState extends State<AiChatScreen>
       case 'priority':
         final priorityValue = _normalizePriorityValue(value);
         if (priorityValue == null) {
-          return _FieldParseResult.invalid(
+          return const _FieldParseResult.invalid(
             'اكتب: منخفضة أو متوسطة أو عالية أو عاجلة.',
           );
         }
@@ -2110,7 +2266,13 @@ class _AiChatScreenState extends State<AiChatScreen>
     if (_containsAny(value, <String>['شركة', 'شركه', 'company'])) {
       return 'company';
     }
-    if (_containsAny(value, <String>['مقدم خدمة', 'مزود خدمة', 'فني', 'serviceprovider', 'service provider'])) {
+    if (_containsAny(value, <String>[
+      'مقدم خدمة',
+      'مزود خدمة',
+      'فني',
+      'serviceprovider',
+      'service provider'
+    ])) {
       return 'serviceProvider';
     }
     return null;
@@ -2118,22 +2280,30 @@ class _AiChatScreenState extends State<AiChatScreen>
 
   String? _normalizePropertyType(String text) {
     final value = text.toLowerCase();
-    if (_containsAny(value, <String>['شقة', 'شقه', 'apartment'])) return 'apartment';
+    if (_containsAny(value, <String>['شقة', 'شقه', 'apartment'])) {
+      return 'apartment';
+    }
     if (_containsAny(value, <String>['فيلا', 'villa'])) return 'villa';
-    if (_containsAny(value, <String>['عمارة', 'عماره', 'building'])) return 'building';
+    if (_containsAny(value, <String>['عمارة', 'عماره', 'building'])) {
+      return 'building';
+    }
     if (_containsAny(value, <String>['أرض', 'ارض', 'land'])) return 'land';
     if (_containsAny(value, <String>['مكتب', 'office'])) return 'office';
     if (_containsAny(value, <String>['محل', 'shop', 'متجر'])) return 'shop';
-    if (_containsAny(value, <String>['مستودع', 'warehouse'])) return 'warehouse';
+    if (_containsAny(value, <String>['مستودع', 'warehouse'])) {
+      return 'warehouse';
+    }
     return null;
   }
 
   String? _normalizeRentalMode(String text) {
     final value = text.toLowerCase();
-    if (_containsAny(value, <String>['كامل', 'كامل المبنى', 'كامل العقار', 'whole'])) {
+    if (_containsAny(
+        value, <String>['كامل', 'كامل المبنى', 'كامل العقار', 'whole'])) {
       return 'wholeBuilding';
     }
-    if (_containsAny(value, <String>['لكل وحدة', 'وحدات', 'وحدة وحدة', 'perunit', 'per unit'])) {
+    if (_containsAny(value,
+        <String>['لكل وحدة', 'وحدات', 'وحدة وحدة', 'perunit', 'per unit'])) {
       return 'perUnit';
     }
     return null;
@@ -2171,8 +2341,11 @@ class _AiChatScreenState extends State<AiChatScreen>
   String? _normalizeContractTerm(String text) {
     final value = text.toLowerCase();
     if (_containsAny(value, <String>['يومي', 'daily'])) return 'daily';
-    if (_containsAny(value, <String>['ربع سنوي', 'quarterly'])) return 'quarterly';
-    if (_containsAny(value, <String>['نصف سنوي', 'semiannual', 'semi annual'])) {
+    if (_containsAny(value, <String>['ربع سنوي', 'quarterly'])) {
+      return 'quarterly';
+    }
+    if (_containsAny(
+        value, <String>['نصف سنوي', 'semiannual', 'semi annual'])) {
       return 'semiAnnual';
     }
     if (_containsAny(value, <String>['سنوي', 'annual'])) return 'annual';
@@ -2182,8 +2355,11 @@ class _AiChatScreenState extends State<AiChatScreen>
 
   String? _normalizePaymentCycle(String text) {
     final value = text.toLowerCase();
-    if (_containsAny(value, <String>['ربع سنوي', 'quarterly'])) return 'quarterly';
-    if (_containsAny(value, <String>['نصف سنوي', 'semiannual', 'semi annual'])) {
+    if (_containsAny(value, <String>['ربع سنوي', 'quarterly'])) {
+      return 'quarterly';
+    }
+    if (_containsAny(
+        value, <String>['نصف سنوي', 'semiannual', 'semi annual'])) {
       return 'semiAnnual';
     }
     if (_containsAny(value, <String>['سنوي', 'annual'])) return 'annual';
@@ -2194,9 +2370,13 @@ class _AiChatScreenState extends State<AiChatScreen>
   String? _normalizePriorityValue(String text) {
     final value = text.toLowerCase();
     if (_containsAny(value, <String>['منخفض', 'منخفضة', 'low'])) return 'low';
-    if (_containsAny(value, <String>['متوسط', 'متوسطة', 'medium'])) return 'medium';
+    if (_containsAny(value, <String>['متوسط', 'متوسطة', 'medium'])) {
+      return 'medium';
+    }
     if (_containsAny(value, <String>['عالي', 'عالية', 'high'])) return 'high';
-    if (_containsAny(value, <String>['عاجل', 'عاجلة', 'urgent'])) return 'urgent';
+    if (_containsAny(value, <String>['عاجل', 'عاجلة', 'urgent'])) {
+      return 'urgent';
+    }
     return null;
   }
 
@@ -2241,8 +2421,7 @@ class _AiChatScreenState extends State<AiChatScreen>
     ]);
     final asksPropertyCount = asksCount && mentionsProperties;
     final asksContractCount = asksCount && mentionsContracts;
-    final asksContractInstallments =
-        mentionsContracts &&
+    final asksContractInstallments = mentionsContracts &&
         _containsAny(value, <String>[
           'دفعة',
           'دفعات',
@@ -2264,8 +2443,7 @@ class _AiChatScreenState extends State<AiChatScreen>
           'سداد',
           'استحقاق',
         ]);
-    final asksSpecificOfficeClientPortfolio =
-        _isOfficeSession &&
+    final asksSpecificOfficeClientPortfolio = _isOfficeSession &&
         _containsAny(value, <String>['عميل', 'العميل']) &&
         _containsAny(value, <String>[
           'تقرير',
@@ -2418,7 +2596,8 @@ class _AiChatScreenState extends State<AiChatScreen>
 
     if (_isOfficeSession &&
         wantsReport &&
-        _containsAny(value, <String>['عقار', 'عقارات', 'عقد', 'عقود', 'عميل', 'عملاء'])) {
+        _containsAny(value,
+            <String>['عقار', 'عقارات', 'عقد', 'عقود', 'عميل', 'عملاء'])) {
       return const _LocalToolIntent(
         toolName: 'get_office_dashboard',
         args: <String, dynamic>{},
@@ -2426,65 +2605,87 @@ class _AiChatScreenState extends State<AiChatScreen>
       );
     }
 
-    if (wantsReport && _containsAny(value, <String>['مالك', 'ملاك', 'المالك', 'الملاك'])) {
+    if (wantsReport &&
+        _containsAny(value, <String>['مالك', 'ملاك', 'المالك', 'الملاك'])) {
       return const _LocalToolIntent(
         toolName: 'get_owners_report',
-        args: const <String, dynamic>{},
+        args: <String, dynamic>{},
         title: 'تقرير الملاك',
       );
     }
-    if (wantsReport && _containsAny(value, <String>['عقار', 'عقارات', 'عمارة', 'وحدة'])) {
+    if (wantsReport &&
+        _containsAny(value, <String>['عقار', 'عقارات', 'عمارة', 'وحدة'])) {
       return const _LocalToolIntent(
         toolName: 'get_properties_report',
-        args: const <String, dynamic>{},
+        args: <String, dynamic>{},
         title: 'تقرير العقارات',
       );
     }
-    if (wantsReport && _containsAny(value, <String>['عميل', 'عملاء', 'مستأجر', 'مستاجر', 'مستأجرين', 'مستاجرين'])) {
+    if (wantsReport &&
+        _containsAny(value, <String>[
+          'عميل',
+          'عملاء',
+          'مستأجر',
+          'مستاجر',
+          'مستأجرين',
+          'مستاجرين'
+        ])) {
       return const _LocalToolIntent(
         toolName: 'get_clients_report',
-        args: const <String, dynamic>{},
+        args: <String, dynamic>{},
         title: 'تقرير العملاء',
       );
     }
     if (wantsReport && _containsAny(value, <String>['عقد', 'عقود'])) {
       return const _LocalToolIntent(
         toolName: 'get_contracts_report',
-        args: const <String, dynamic>{},
+        args: <String, dynamic>{},
         title: 'تقرير العقود',
       );
     }
-    if (wantsReport && _containsAny(value, <String>['صيانة', 'صيانه', 'خدمة', 'خدمات'])) {
+    if (wantsReport &&
+        _containsAny(value, <String>['صيانة', 'صيانه', 'خدمة', 'خدمات'])) {
       return const _LocalToolIntent(
         toolName: 'get_services_report',
-        args: const <String, dynamic>{},
+        args: <String, dynamic>{},
         title: 'تقرير الخدمات والصيانة',
       );
     }
     if (wantsReport &&
-        _containsAny(value, <String>['سند', 'سندات', 'فاتورة', 'فواتير', 'دفعة', 'دفعات', 'تحصيل'])) {
+        _containsAny(value, <String>[
+          'سند',
+          'سندات',
+          'فاتورة',
+          'فواتير',
+          'دفعة',
+          'دفعات',
+          'تحصيل'
+        ])) {
       return const _LocalToolIntent(
         toolName: 'get_invoices_report',
-        args: const <String, dynamic>{},
+        args: <String, dynamic>{},
         title: 'تقرير السندات والدفعات',
       );
     }
     if (wantsReport || asksOutstandingSummary) {
       return const _LocalToolIntent(
         toolName: 'get_financial_summary',
-        args: const <String, dynamic>{},
+        args: <String, dynamic>{},
         title: 'الملخص المالي',
       );
     }
 
-    if (_containsAny(value, <String>['الرئيسية', 'لوحة', 'داشبورد', 'dashboard'])) {
+    if (_containsAny(
+        value, <String>['الرئيسية', 'لوحة', 'داشبورد', 'dashboard'])) {
       return _LocalToolIntent(
-        toolName: _isOfficeSession ? 'get_office_dashboard' : 'get_home_dashboard',
+        toolName:
+            _isOfficeSession ? 'get_office_dashboard' : 'get_home_dashboard',
         args: const <String, dynamic>{},
         title: _isOfficeSession ? 'ملخص لوحة المكتب' : 'ملخص الرئيسية',
       );
     }
-    if (_containsAny(value, <String>['العقارات', 'قائمة العقارات', 'اعرض العقارات'])) {
+    if (_containsAny(
+        value, <String>['العقارات', 'قائمة العقارات', 'اعرض العقارات'])) {
       if (_isOfficeSession) {
         return const _LocalToolIntent(
           toolName: 'get_office_dashboard',
@@ -2494,11 +2695,12 @@ class _AiChatScreenState extends State<AiChatScreen>
       }
       return const _LocalToolIntent(
         toolName: 'get_properties_list',
-        args: const <String, dynamic>{},
+        args: <String, dynamic>{},
         title: 'قائمة العقارات',
       );
     }
-    if (_containsAny(value, <String>['العملاء', 'المستأجرين', 'المستاجرين', 'قائمة العملاء'])) {
+    if (_containsAny(value,
+        <String>['العملاء', 'المستأجرين', 'المستاجرين', 'قائمة العملاء'])) {
       if (_isOfficeSession) {
         return const _LocalToolIntent(
           toolName: 'get_office_clients_list',
@@ -2508,7 +2710,7 @@ class _AiChatScreenState extends State<AiChatScreen>
       }
       return const _LocalToolIntent(
         toolName: 'get_tenants_list',
-        args: const <String, dynamic>{},
+        args: <String, dynamic>{},
         title: 'قائمة العملاء',
       );
     }
@@ -2523,35 +2725,45 @@ class _AiChatScreenState extends State<AiChatScreen>
       }
       return const _LocalToolIntent(
         toolName: 'get_contracts_list',
-        args: const <String, dynamic>{},
+        args: <String, dynamic>{},
         title: 'قائمة العقود',
       );
     }
-    if (_containsAny(value, <String>['غير مدفوعة', 'غير مسددة', 'متأخرة', 'متاخره', 'متأخره', 'متاخرات', 'متأخرات'])) {
+    if (_containsAny(value, <String>[
+      'غير مدفوعة',
+      'غير مسددة',
+      'متأخرة',
+      'متاخره',
+      'متأخره',
+      'متاخرات',
+      'متأخرات'
+    ])) {
       return const _LocalToolIntent(
         toolName: 'get_unpaid_invoices',
-        args: const <String, dynamic>{},
+        args: <String, dynamic>{},
         title: 'السندات غير المسددة',
       );
     }
     if (_containsAny(value, <String>['السندات', 'الفواتير', 'الدفعات'])) {
       return const _LocalToolIntent(
         toolName: 'get_invoices_list',
-        args: const <String, dynamic>{},
+        args: <String, dynamic>{},
         title: 'قائمة السندات والدفعات',
       );
     }
-    if (_containsAny(value, <String>['الصيانة', 'الصيانه', 'طلبات الصيانة', 'الخدمات'])) {
+    if (_containsAny(
+        value, <String>['الصيانة', 'الصيانه', 'طلبات الصيانة', 'الخدمات'])) {
       return const _LocalToolIntent(
         toolName: 'get_maintenance_list',
-        args: const <String, dynamic>{},
+        args: <String, dynamic>{},
         title: 'قائمة الصيانة والخدمات',
       );
     }
-    if (_containsAny(value, <String>['الإشعارات', 'اشعارات', 'التنبيهات', 'تنبيهات'])) {
+    if (_containsAny(
+        value, <String>['الإشعارات', 'اشعارات', 'التنبيهات', 'تنبيهات'])) {
       return const _LocalToolIntent(
         toolName: 'get_notifications',
-        args: const <String, dynamic>{'limit': 15},
+        args: <String, dynamic>{'limit': 15},
         title: 'الإشعارات',
       );
     }
@@ -2561,17 +2773,42 @@ class _AiChatScreenState extends State<AiChatScreen>
   String? _detectScreenKeyFromText(String value) {
     if (_containsAny(value, <String>['الرئيسية', 'home'])) return 'home';
     if (_containsAny(value, <String>['المكتب', 'لوحة المكتب'])) return 'office';
-    if (_containsAny(value, <String>['إضافة عقار', 'اضافة عقار', 'عقار جديد'])) return 'properties_new';
+    if (_containsAny(
+        value, <String>['إضافة عقار', 'اضافة عقار', 'عقار جديد'])) {
+      return 'properties_new';
+    }
     if (_containsAny(value, <String>['العقارات', 'عقار'])) return 'properties';
-    if (_containsAny(value, <String>['إضافة عميل', 'اضافة عميل', 'عميل جديد', 'مستأجر جديد', 'مستاجر جديد'])) return 'tenants_new';
-    if (_containsAny(value, <String>['العملاء', 'المستأجرين', 'المستاجرين', 'مستأجر', 'مستاجر'])) return 'tenants';
-    if (_containsAny(value, <String>['إضافة عقد', 'اضافة عقد', 'عقد جديد'])) return 'contracts_new';
+    if (_containsAny(value, <String>[
+      'إضافة عميل',
+      'اضافة عميل',
+      'عميل جديد',
+      'مستأجر جديد',
+      'مستاجر جديد'
+    ])) {
+      return 'tenants_new';
+    }
+    if (_containsAny(value,
+        <String>['العملاء', 'المستأجرين', 'المستاجرين', 'مستأجر', 'مستاجر'])) {
+      return 'tenants';
+    }
+    if (_containsAny(value, <String>['إضافة عقد', 'اضافة عقد', 'عقد جديد'])) {
+      return 'contracts_new';
+    }
     if (_containsAny(value, <String>['العقود', 'عقد'])) return 'contracts';
-    if (_containsAny(value, <String>['السندات', 'الفواتير', 'دفعات', 'دفعة'])) return 'invoices';
-    if (_containsAny(value, <String>['إضافة صيانة', 'اضافة صيانة', 'طلب صيانة جديد'])) return 'maintenance_new';
-    if (_containsAny(value, <String>['الصيانة', 'الصيانه', 'الخدمات'])) return 'maintenance';
+    if (_containsAny(value, <String>['السندات', 'الفواتير', 'دفعات', 'دفعة'])) {
+      return 'invoices';
+    }
+    if (_containsAny(
+        value, <String>['إضافة صيانة', 'اضافة صيانة', 'طلب صيانة جديد'])) {
+      return 'maintenance_new';
+    }
+    if (_containsAny(value, <String>['الصيانة', 'الصيانه', 'الخدمات'])) {
+      return 'maintenance';
+    }
     if (_containsAny(value, <String>['التقارير', 'تقرير'])) return 'reports';
-    if (_containsAny(value, <String>['الإشعارات', 'اشعارات', 'التنبيهات'])) return 'notifications';
+    if (_containsAny(value, <String>['الإشعارات', 'اشعارات', 'التنبيهات'])) {
+      return 'notifications';
+    }
     return null;
   }
 
@@ -2592,7 +2829,8 @@ class _AiChatScreenState extends State<AiChatScreen>
     _scrollToBottom();
 
     try {
-      final result = await _executor!.executeCached(intent.toolName, intent.args);
+      final result =
+          await _executor!.executeCached(intent.toolName, intent.args);
       final handledResult = await _handleExecutorSideEffects(result);
       final responseText = _formatLocalToolResponse(intent, handledResult);
       _service?.addLocalAssistantMessage(responseText);
@@ -2608,7 +2846,8 @@ class _AiChatScreenState extends State<AiChatScreen>
         _messages.add(
           const _UiMessage(
             role: 'assistant',
-            text: 'تعذر تنفيذ الأمر محليًا الآن. جرّب فتح الشاشة المناسبة أو أعد صياغة الطلب.',
+            text:
+                'تعذر تنفيذ الأمر محليًا الآن. جرّب فتح الشاشة المناسبة أو أعد صياغة الطلب.',
           ),
         );
         _sending = false;
@@ -2660,7 +2899,9 @@ class _AiChatScreenState extends State<AiChatScreen>
           .take(10)
           .toList(growable: false);
       if (items.isEmpty) return 'لا توجد بيانات مطابقة.';
-      final suffix = value.length > 10 ? '\nويوجد المزيد. افتح الشاشة لمراجعة كل النتائج.' : '';
+      final suffix = value.length > 10
+          ? '\nويوجد المزيد. افتح الشاشة لمراجعة كل النتائج.'
+          : '';
       return '${items.map((line) => '- $line').join('\n')}$suffix';
     }
     if (value is Map<String, dynamic>) {
@@ -2671,7 +2912,9 @@ class _AiChatScreenState extends State<AiChatScreen>
             .map((card) => _formatLocalPayloadItem(card, depth: depth + 1))
             .where((line) => line.trim().isNotEmpty)
             .toList(growable: false);
-        if (cardLines.isNotEmpty) lines.addAll(cardLines.map((line) => '- $line'));
+        if (cardLines.isNotEmpty) {
+          lines.addAll(cardLines.map((line) => '- $line'));
+        }
       }
 
       final preferredKeys = <String>[
@@ -2748,7 +2991,8 @@ class _AiChatScreenState extends State<AiChatScreen>
       ];
       for (final key in preferredKeys) {
         if (!value.containsKey(key)) continue;
-        final formatted = _formatLocalPayloadValue(value[key], depth: depth + 1);
+        final formatted =
+            _formatLocalPayloadValue(value[key], depth: depth + 1);
         if (formatted.trim().isEmpty) continue;
         lines.add('${_localPayloadLabel(key)}: $formatted');
       }
@@ -2787,7 +3031,8 @@ class _AiChatScreenState extends State<AiChatScreen>
       if (lines.isEmpty) {
         value.forEach((key, entryValue) {
           if (_shouldHideToolPayloadKey(key)) return;
-          final formatted = _formatLocalPayloadValue(entryValue, depth: depth + 1);
+          final formatted =
+              _formatLocalPayloadValue(entryValue, depth: depth + 1);
           if (formatted.trim().isEmpty) return;
           lines.add('${_localPayloadLabel(key)}: $formatted');
         });
@@ -2795,7 +3040,8 @@ class _AiChatScreenState extends State<AiChatScreen>
       return lines.take(16).join('\n');
     }
     if (value is Map) {
-      return _formatLocalPayloadValue(value.cast<String, dynamic>(), depth: depth);
+      return _formatLocalPayloadValue(value.cast<String, dynamic>(),
+          depth: depth);
     }
     return value.toString();
   }
@@ -2849,9 +3095,13 @@ class _AiChatScreenState extends State<AiChatScreen>
       ]) {
         final value = item[key];
         if (value == null) continue;
-        final formatted = _formatLocalPayloadValue(value, depth: depth + 1).trim();
+        final formatted =
+            _formatLocalPayloadValue(value, depth: depth + 1).trim();
         if (formatted.isEmpty) continue;
-        if (key == 'title' || key == 'name' || key == 'clientName' || key == 'fullName') {
+        if (key == 'title' ||
+            key == 'name' ||
+            key == 'clientName' ||
+            key == 'fullName') {
           parts.insert(0, formatted);
         } else {
           parts.add('${_localPayloadLabel(key)}: $formatted');
@@ -2861,7 +3111,8 @@ class _AiChatScreenState extends State<AiChatScreen>
       return _formatLocalPayloadValue(item, depth: depth + 1);
     }
     if (item is Map) {
-      return _formatLocalPayloadItem(item.cast<String, dynamic>(), depth: depth);
+      return _formatLocalPayloadItem(item.cast<String, dynamic>(),
+          depth: depth);
     }
     return _formatLocalPayloadValue(item, depth: depth + 1);
   }
@@ -2997,7 +3248,8 @@ class _AiChatScreenState extends State<AiChatScreen>
       'fullPermissionUsers': 'مستخدمو الصلاحية الكاملة',
       'viewPermissionUsers': 'مستخدمو صلاحية المشاهدة',
       'clientsWithWorkspaceData': 'العملاء الذين تتوفر لهم بيانات تشغيلية',
-      'clientsWithoutWorkspaceData': 'العملاء الذين لا تتوفر لهم بيانات تشغيلية',
+      'clientsWithoutWorkspaceData':
+          'العملاء الذين لا تتوفر لهم بيانات تشغيلية',
       'workspaceSummary': 'ملخص مساحة العمل',
       'workspaceDataAvailable': 'توفر البيانات التشغيلية',
       'workspaceDataMessage': 'حالة البيانات التشغيلية',
@@ -3025,7 +3277,8 @@ class _AiChatScreenState extends State<AiChatScreen>
         _executor == null) {
       return;
     }
-    final outboundText = attachmentOnlyMessage ? 'هذه هي المرفقات المطلوبة.' : text;
+    final outboundText =
+        attachmentOnlyMessage ? 'هذه هي المرفقات المطلوبة.' : text;
     final visibleUserText = attachmentOnlyMessage
         ? 'أرفقت ${_pendingChatAttachments.length} مرفق/مرفقات.'
         : text;
@@ -3087,35 +3340,69 @@ class _AiChatScreenState extends State<AiChatScreen>
         final calls = _service!.getPendingToolCalls();
         if (calls == null || calls.isEmpty) break;
 
-        final writeCalls = calls.where((call) {
+        final legacyWriteCalls = calls.where((call) {
+          if (_isGatewayToolCall(call)) return false;
           final fn = (call['function'] as Map?)?.cast<String, dynamic>() ??
               const <String, dynamic>{};
           final name = (fn['name'] ?? '').toString();
           return AiChatTools.isWriteTool(name);
         }).toList(growable: false);
 
-        final confirmed =
-            writeCalls.isEmpty ? true : await _confirmWriteToolCalls(writeCalls);
+        final confirmed = legacyWriteCalls.isEmpty
+            ? true
+            : await _confirmWriteToolCalls(legacyWriteCalls);
 
         for (final call in calls) {
           final fn = (call['function'] as Map).cast<String, dynamic>();
-          final name = (fn['name'] ?? '').toString();
+          final rawName = (fn['name'] ?? '').toString();
+          final name = AiToolRegistry.fromOpenAiName(rawName);
           final args = _toolArguments(call);
           final id = (call['id'] ?? '').toString();
-          final isWrite = AiChatTools.isWriteTool(name);
-          final usedPendingAttachments = _toolWillUsePendingAttachments(name, args);
+          final usedPendingAttachments =
+              _toolWillUsePendingAttachments(name, args);
           final mergedArgs = _mergePendingChatAttachmentsIntoArgs(name, args);
+
+          if (_gateway != null && _isGatewayToolCall(call)) {
+            var gatewayResponse = await _gateway!.handleToolCalls(
+              <Map<String, dynamic>>[
+                _toolCallWithArguments(call, mergedArgs),
+              ],
+            );
+            gatewayResponse = await _confirmGatewayResponse(gatewayResponse);
+            final handledPayload =
+                await _handleGatewayResponseSideEffects(gatewayResponse);
+            _service!.addToolResult(
+              id,
+              _sanitizeToolResultForModel(
+                _gatewayResponseForModel(gatewayResponse, handledPayload),
+              ),
+            );
+
+            if (usedPendingAttachments &&
+                _gatewayResponseSucceeded(gatewayResponse, handledPayload) &&
+                mounted) {
+              setState(() {
+                _pendingChatAttachments.clear();
+              });
+            }
+            continue;
+          }
+
+          final isWrite = AiChatTools.isWriteTool(rawName);
 
           final result = isWrite
               ? (confirmed
-                  ? await _executor!.executeCached(name, mergedArgs)
-                  : _toolCancelledResult(name))
-              : await _executor!.executeCached(name, mergedArgs);
+                  ? await _executor!.executeCached(rawName, mergedArgs)
+                  : _toolCancelledResult(rawName))
+              : await _executor!.executeCached(rawName, mergedArgs);
 
           final handledResult = await _handleExecutorSideEffects(result);
-          _service!.addToolResult(id, _sanitizeToolResultForModel(handledResult));
+          _service!
+              .addToolResult(id, _sanitizeToolResultForModel(handledResult));
 
-          if (usedPendingAttachments && _toolResultSucceeded(handledResult) && mounted) {
+          if (usedPendingAttachments &&
+              _toolResultSucceeded(handledResult) &&
+              mounted) {
             setState(() {
               _pendingChatAttachments.clear();
             });
@@ -3128,18 +3415,18 @@ class _AiChatScreenState extends State<AiChatScreen>
       }
 
       if (response == '__TOOL_CALLS__') {
-        response = 'نفذت الخطوات الممكنة، لكن الطلب يحتاج خطوة إضافية. أعد صياغة المطلوب أو افتح الشاشة المناسبة لإكمال العملية.';
+        response =
+            'نفذت الخطوات الممكنة، لكن الطلب يحتاج خطوة إضافية. أعد صياغة المطلوب أو افتح الشاشة المناسبة لإكمال العملية.';
       }
 
       if (mounted) {
         setState(() {
           if (_streamingAssistantIndex != null &&
               _streamingAssistantIndex! < _messages.length) {
-            _messages[_streamingAssistantIndex!] =
-                _UiMessage(
-                  role: 'assistant',
-                  text: _normalizeAssistantText(response),
-                );
+            _messages[_streamingAssistantIndex!] = _UiMessage(
+              role: 'assistant',
+              text: _normalizeAssistantText(response),
+            );
           } else {
             _messages.add(
               _UiMessage(
@@ -3160,9 +3447,9 @@ class _AiChatScreenState extends State<AiChatScreen>
           if (_streamingAssistantIndex != null &&
               _streamingAssistantIndex! < _messages.length) {
             _messages[_streamingAssistantIndex!] =
-                _UiMessage(role: 'assistant', text: errorMessage);
+                const _UiMessage(role: 'assistant', text: errorMessage);
           } else {
-            _messages.add(_UiMessage(
+            _messages.add(const _UiMessage(
               role: 'assistant',
               text: errorMessage,
             ));
@@ -3245,7 +3532,7 @@ class _AiChatScreenState extends State<AiChatScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'مساعد دارفو',
+                'مساعد Ejarz Pro',
                 style: GoogleFonts.cairo(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -3267,7 +3554,9 @@ class _AiChatScreenState extends State<AiChatScreen>
         IconButton(
           icon: const Icon(Icons.delete_outline_rounded, color: Colors.white70),
           tooltip: 'مسح المحادثة',
-          onPressed: _sending ? null : _confirmDeleteConversation, /*
+          onPressed: _sending
+              ? null
+              : _confirmDeleteConversation, /*
             _service?.clearHistory();
             setState(() {
               _messages.clear();
@@ -3319,8 +3608,8 @@ class _AiChatScreenState extends State<AiChatScreen>
             const SizedBox(height: 16),
             Text(
               'اسأل أي شيء عن عقاراتك',
-              style: GoogleFonts.cairo(
-                  fontSize: 16, color: Colors.grey.shade400),
+              style:
+                  GoogleFonts.cairo(fontSize: 16, color: Colors.grey.shade400),
             ),
           ],
         ),

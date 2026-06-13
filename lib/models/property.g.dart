@@ -46,13 +46,14 @@ class PropertyAdapter extends TypeAdapter<Property> {
       waterMode: fields[25] as String?,
       waterShare: fields[26] as String?,
       waterAmount: fields[28] as String?,
+      usageType: fields[29] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Property obj) {
     writer
-      ..writeByte(29)
+      ..writeByte(30)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -110,7 +111,9 @@ class PropertyAdapter extends TypeAdapter<Property> {
       ..writeByte(26)
       ..write(obj.waterShare)
       ..writeByte(28)
-      ..write(obj.waterAmount);
+      ..write(obj.waterAmount)
+      ..writeByte(29)
+      ..write(obj.usageType);
   }
 
   @override

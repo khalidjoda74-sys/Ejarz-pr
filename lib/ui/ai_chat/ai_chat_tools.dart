@@ -556,8 +556,7 @@ class AiChatTools {
   ) {
     // استخراج الحقول المطلوبة ثم حذف 'required' من داخل كل property
     final requiredFields = parameters.entries
-        .where(
-            (e) => (e.value as Map<String, dynamic>)['required'] == true)
+        .where((e) => (e.value as Map<String, dynamic>)['required'] == true)
         .map((e) => e.key)
         .toList();
 
@@ -629,7 +628,10 @@ class AiChatTools {
         },
       },
     ),
-    _fn('get_contracts_list', 'قائمة العقود مع حالاتها الأساسية وبيانات المستأجر والعقار والمبلغ وتاريخ البداية والنهاية.', {}),
+    _fn(
+        'get_contracts_list',
+        'قائمة العقود مع حالاتها الأساسية وبيانات المستأجر والعقار والمبلغ وتاريخ البداية والنهاية.',
+        {}),
     _fn('get_active_contracts', 'العقود النشطة فقط', {}),
     _fn(
       'get_contract_details',
@@ -835,7 +837,8 @@ class AiChatTools {
         },
         'propertyType': {
           'type': 'string',
-          'description': 'اختياري: apartment/villa/building/office/shop/warehouse/land',
+          'description':
+              'اختياري: apartment/villa/building/office/shop/warehouse/land',
         },
         'availability': {
           'type': 'string',
@@ -1023,7 +1026,8 @@ class AiChatTools {
         },
         'operation': {
           'type': 'string',
-          'description': 'اختياري: rent/service/office_commission/office_expense/owner_payout/owner_adjustment وغيرها حسب شاشة التقارير',
+          'description':
+              'اختياري: rent/service/office_commission/office_expense/owner_payout/owner_adjustment وغيرها حسب شاشة التقارير',
         },
         'voucherState': {
           'type': 'string',
@@ -1228,7 +1232,8 @@ class AiChatTools {
         },
         'serviceType': {
           'type': 'string',
-          'description': 'نوع الخدمة: cleaning/elevator/internet/water/electricity',
+          'description':
+              'نوع الخدمة: cleaning/elevator/internet/water/electricity',
           'required': true,
         },
       },
@@ -1251,7 +1256,8 @@ class AiChatTools {
         },
         'clientType': {
           'type': 'string',
-          'description': 'نوع العميل إذا كان المطلوب تغيير النوع: tenant/company/serviceProvider',
+          'description':
+              'نوع العميل إذا كان المطلوب تغيير النوع: tenant/company/serviceProvider',
         },
         'fullName': {'type': 'string', 'description': 'الاسم الجديد'},
         'nationalId': {'type': 'string', 'description': 'رقم الهوية الجديد'},
@@ -1264,11 +1270,12 @@ class AiChatTools {
         },
         'companyCommercialRegister': {
           'type': 'string',
-          'description': 'رقم السجل التجاري عند تعديل عميل من نوع company',
+          'description': 'رقم السجل الموحد عند تعديل عميل من نوع company',
         },
         'companyTaxNumber': {
           'type': 'string',
-          'description': 'الرقم الضريبي عند تعديل عميل من نوع company',
+          'description':
+              'الرقم الضريبي من 15 رقمًا عند تعديل عميل من نوع company',
         },
         'companyRepresentativeName': {
           'type': 'string',
@@ -1277,6 +1284,15 @@ class AiChatTools {
         'companyRepresentativePhone': {
           'type': 'string',
           'description': 'جوال ممثل الشركة عند تعديل عميل من نوع company',
+        },
+        'companyRepresentativeNationalId': {
+          'type': 'string',
+          'description': 'رقم هوية ممثل الشركة عند تعديل عميل من نوع company',
+        },
+        'companyRepresentativeDateOfBirth': {
+          'type': 'string',
+          'description':
+              'تاريخ ميلاد ممثل الشركة بصيغة YYYY-MM-DD عند تعديل عميل من نوع company',
         },
         'serviceSpecialization': {
           'type': 'string',
@@ -1313,11 +1329,12 @@ class AiChatTools {
         },
         'companyCommercialRegister': {
           'type': 'string',
-          'description': 'رقم السجل التجاري. مطلوب إذا كان النوع company.',
+          'description': 'رقم السجل الموحد. مطلوب إذا كان النوع company.',
         },
         'companyTaxNumber': {
           'type': 'string',
-          'description': 'الرقم الضريبي. مطلوب إذا كان النوع company.',
+          'description':
+              'الرقم الضريبي من 15 رقمًا. مطلوب إذا كان النوع company.',
         },
         'companyRepresentativeName': {
           'type': 'string',
@@ -1326,6 +1343,15 @@ class AiChatTools {
         'companyRepresentativePhone': {
           'type': 'string',
           'description': 'رقم جوال ممثل الشركة. مطلوب إذا كان النوع company.',
+        },
+        'companyRepresentativeNationalId': {
+          'type': 'string',
+          'description': 'رقم هوية ممثل الشركة. مطلوب إذا كان النوع company.',
+        },
+        'companyRepresentativeDateOfBirth': {
+          'type': 'string',
+          'description':
+              'تاريخ ميلاد ممثل الشركة بصيغة YYYY-MM-DD. مطلوب إذا كان النوع company.',
         },
         'serviceSpecialization': {
           'type': 'string',
@@ -1402,7 +1428,8 @@ class AiChatTools {
         },
         'type': {
           'type': 'string',
-          'description': 'نوع العقار: apartment/villa/building/land/office/shop/warehouse',
+          'description':
+              'نوع العقار: apartment/villa/building/land/office/shop/warehouse',
           'required': true,
         },
         'address': {
@@ -1412,13 +1439,11 @@ class AiChatTools {
         },
         'rentalMode': {
           'type': 'string',
-          'description':
-              'نمط تأجير العمارة فقط: wholeBuilding/perUnit',
+          'description': 'نمط تأجير العمارة فقط: wholeBuilding/perUnit',
         },
         'totalUnits': {
           'type': 'integer',
-          'description':
-              'عدد الوحدات إذا كانت العمارة بنمط perUnit',
+          'description': 'عدد الوحدات إذا كانت العمارة بنمط perUnit',
         },
         'floors': {'type': 'integer', 'description': 'عدد الأدوار'},
         'rooms': {'type': 'integer', 'description': 'عدد الغرف'},
@@ -1901,7 +1926,8 @@ class AiChatTools {
         },
         'serviceType': {
           'type': 'string',
-          'description': 'نوع الخدمة: cleaning/elevator/internet/water/electricity',
+          'description':
+              'نوع الخدمة: cleaning/elevator/internet/water/electricity',
           'required': true,
         },
         'provider': {
@@ -1927,7 +1953,8 @@ class AiChatTools {
         },
         'sharePercent': {
           'type': 'number',
-          'description': 'اختياري للمياه أو الكهرباء المشتركة بالنسبة: النسبة المطلوبة',
+          'description':
+              'اختياري للمياه أو الكهرباء المشتركة بالنسبة: النسبة المطلوبة',
         },
         'totalAmount': {
           'type': 'number',
@@ -1935,7 +1962,8 @@ class AiChatTools {
         },
         'nextDueDate': {
           'type': 'string',
-          'description': 'اختياري: تاريخ الدورة القادمة أو الاستحقاق القادم (YYYY-MM-DD)',
+          'description':
+              'اختياري: تاريخ الدورة القادمة أو الاستحقاق القادم (YYYY-MM-DD)',
         },
         'scheduledDate': {
           'type': 'string',
@@ -1943,7 +1971,8 @@ class AiChatTools {
         },
         'recurrenceMonths': {
           'type': 'integer',
-          'description': 'اختياري للخدمات المدارة من المالك: 0 أو 1 أو 2 أو 3 أو 6 أو 12',
+          'description':
+              'اختياري للخدمات المدارة من المالك: 0 أو 1 أو 2 أو 3 أو 6 أو 12',
         },
         'remindBeforeDays': {
           'type': 'integer',
@@ -1951,7 +1980,8 @@ class AiChatTools {
         },
         'executeNow': {
           'type': 'boolean',
-          'description': 'اختياري: إذا كانت العملية تتطلب تنفيذًا مرئيًا فسيعود الرد بطلب إكمالها من الشاشة',
+          'description':
+              'اختياري: إذا كانت العملية تتطلب تنفيذًا مرئيًا فسيعود الرد بطلب إكمالها من الشاشة',
         },
       },
     ),
@@ -1966,12 +1996,14 @@ class AiChatTools {
         },
         'serviceType': {
           'type': 'string',
-          'description': 'نوع الخدمة: cleaning/elevator/internet/water/electricity',
+          'description':
+              'نوع الخدمة: cleaning/elevator/internet/water/electricity',
           'required': true,
         },
         'provider': {
           'type': 'string',
-          'description': 'اختياري: مقدم الخدمة الجديد للخدمات التي يدفعها المالك',
+          'description':
+              'اختياري: مقدم الخدمة الجديد للخدمات التي يدفعها المالك',
         },
         'cost': {
           'type': 'number',
@@ -1992,7 +2024,8 @@ class AiChatTools {
         },
         'sharePercent': {
           'type': 'number',
-          'description': 'اختياري للمياه أو الكهرباء المشتركة بالنسبة: النسبة المطلوبة',
+          'description':
+              'اختياري للمياه أو الكهرباء المشتركة بالنسبة: النسبة المطلوبة',
         },
         'totalAmount': {
           'type': 'number',
@@ -2000,7 +2033,8 @@ class AiChatTools {
         },
         'nextDueDate': {
           'type': 'string',
-          'description': 'اختياري: تاريخ الدورة القادمة أو الاستحقاق القادم (YYYY-MM-DD)',
+          'description':
+              'اختياري: تاريخ الدورة القادمة أو الاستحقاق القادم (YYYY-MM-DD)',
         },
         'scheduledDate': {
           'type': 'string',
@@ -2008,7 +2042,8 @@ class AiChatTools {
         },
         'recurrenceMonths': {
           'type': 'integer',
-          'description': 'اختياري للخدمات المدارة من المالك: 0 أو 1 أو 2 أو 3 أو 6 أو 12',
+          'description':
+              'اختياري للخدمات المدارة من المالك: 0 أو 1 أو 2 أو 3 أو 6 أو 12',
         },
         'remindBeforeDays': {
           'type': 'integer',
@@ -2016,7 +2051,8 @@ class AiChatTools {
         },
         'executeNow': {
           'type': 'boolean',
-          'description': 'اختياري: إذا كانت العملية تتطلب تنفيذًا مرئيًا فسيعود الرد بطلب إكمالها من الشاشة',
+          'description':
+              'اختياري: إذا كانت العملية تتطلب تنفيذًا مرئيًا فسيعود الرد بطلب إكمالها من الشاشة',
         },
       },
     ),
@@ -2050,7 +2086,8 @@ class AiChatTools {
         },
         'annualYearsDays': {
           'type': 'object',
-          'description': 'اختياري: خريطة السنوات من 1 إلى 10 لقيم تنبيه السنوات السنوية',
+          'description':
+              'اختياري: خريطة السنوات من 1 إلى 10 لقيم تنبيه السنوات السنوية',
         },
         'contractMonthlyDays': {
           'type': 'integer',
@@ -2070,7 +2107,8 @@ class AiChatTools {
         },
         'contractAnnualYearsDays': {
           'type': 'object',
-          'description': 'اختياري: خريطة السنوات من 1 إلى 10 لقيم تنبيه العقود السنوية',
+          'description':
+              'اختياري: خريطة السنوات من 1 إلى 10 لقيم تنبيه العقود السنوية',
         },
         'dailyContractEndHour': {
           'type': 'integer',
@@ -2184,7 +2222,8 @@ class AiChatTools {
         },
         'value': {
           'type': 'number',
-          'description': 'قيمة العمولة. تُستخدم فقط مع النسبة المئوية، وفي غير ذلك تكون 0.',
+          'description':
+              'قيمة العمولة. تُستخدم فقط مع النسبة المئوية، وفي غير ذلك تكون 0.',
         },
       },
     ),
@@ -2240,7 +2279,8 @@ class AiChatTools {
         },
         'category': {
           'type': 'string',
-          'description': 'نوع الخصم أو التسوية حسب الفئات المعتمدة في شاشة التقارير',
+          'description':
+              'نوع الخصم أو التسوية حسب الفئات المعتمدة في شاشة التقارير',
           'required': true,
         },
         'amount': {
@@ -2353,9 +2393,8 @@ class AiChatTools {
       canWrite: canWrite,
       canReadAll: canReadAll,
     );
-    final description = keys.isEmpty
-        ? 'اسم الشاشة المراد فتحها'
-        : 'اسم الشاشة: $keys';
+    final description =
+        keys.isEmpty ? 'اسم الشاشة المراد فتحها' : 'اسم الشاشة: $keys';
     final tools = <Map<String, dynamic>>[
       _fn(
         'navigate_to_screen',
@@ -2504,7 +2543,8 @@ class AiChatTools {
       'ملخص عملاء المكتب الحالي: إجمالي العملاء، النشطون، المحظورون، ومن لديهم اشتراك.',
       {},
     ),
-    _fn('get_office_users_list', 'قائمة مستخدمي المكتب الحاليين مع الصلاحية وحالة الدخول.', {}),
+    _fn('get_office_users_list',
+        'قائمة مستخدمي المكتب الحاليين مع الصلاحية وحالة الدخول.', {}),
     _fn(
       'get_office_user_details',
       'تفاصيل مستخدم مكتب محدد، مثل الاسم والبريد والصلاحية وحالة الحظر وإمكانية توليد رابط إعادة التعيين.',
@@ -2552,7 +2592,8 @@ class AiChatTools {
         },
         'onlyMine': {
           'type': 'boolean',
-          'description': 'اختياري: true لإرجاع العمليات المنفذة بواسطة الحساب الحالي فقط',
+          'description':
+              'اختياري: true لإرجاع العمليات المنفذة بواسطة الحساب الحالي فقط',
         },
         'limit': {
           'type': 'integer',
@@ -2596,7 +2637,8 @@ class AiChatTools {
         'name': {'type': 'string', 'description': 'الاسم الجديد'},
         'phone': {
           'type': 'string',
-          'description': 'الجوال الجديد أو اتركه فارغًا عند الرغبة بمسحه حسب منطق الشاشة',
+          'description':
+              'الجوال الجديد أو اتركه فارغًا عند الرغبة بمسحه حسب منطق الشاشة',
         },
         'notes': {'type': 'string', 'description': 'الملاحظات الجديدة'},
       },

@@ -1,4 +1,4 @@
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import '../ui/contracts_screen.dart' show Contract, ContractTerm, PaymentCycle;
 import '../ui/invoices_screen.dart' show Invoice;
 import '../data/constants/boxes.dart';
@@ -493,6 +493,3 @@ double sumReceivablesFromContractsExact(
     return totalCents / 100.0;
   }
 }
-
-
-

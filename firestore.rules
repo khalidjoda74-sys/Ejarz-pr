@@ -1,0 +1,345 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function role() {
+      return isSignedIn() && request.auth.token.role != null
+        ? request.auth.token.role
+        : '';
+    }
+
+    function isAdmin() {
+      return isSignedIn() && role() == 'admin';
+    }
+
+    function isReseller() {
+      return isSignedIn() && role() == 'reseller';
+    }
+
+    function isOfficeOwnerRole() {
+      return isSignedIn() && role() in ['office', 'office_owner'];
+    }
+
+    function isOfficeStaffRole() {
+      return isSignedIn() &&
+        role() in ['office_staff', 'office-user', 'office_user', 'staff'];
+    }
+
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isFullPermission(value) {
+      return value in ['full', 'control', 'write', 'admin'];
+    }
+
+    function isKnownPermission(value) {
+      return value in ['full', 'control', 'write', 'admin', 'view', 'read', 'readonly'];
+    }
+
+    function requesterProfileExists() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function requesterOfficeIdFromClaims() {
+      return isSignedIn()
+        ? (
+            request.auth.token.officeId != null
+              ? request.auth.token.officeId
+              : (
+                  request.auth.token.office_id != null
+                    ? request.auth.token.office_id
+                    : ''
+                )
+          )
+        : '';
+    }
+
+    function requesterOfficeIdFromProfile() {
+      return requesterProfileExists()
+        ? (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.officeId != null
+              ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.officeId
+              : (
+                  get(/databases/$(database)/documents/users/$(request.auth.uid)).data.office_id != null
+                    ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.office_id
+                    : ''
+                )
+          )
+        : '';
+    }
+
+    function requesterOfficeId() {
+      return requesterOfficeIdFromClaims() != ''
+        ? requesterOfficeIdFromClaims()
+        : requesterOfficeIdFromProfile();
+    }
+
+    function requesterManagedOfficeUid() {
+      return requesterOfficeId() != '' ? requesterOfficeId() : request.auth.uid;
+    }
+
+    function requesterEmail() {
+      return isSignedIn() && request.auth.token.email != null
+        ? request.auth.token.email
+        : '';
+    }
+
+    function userDocExists(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function userEmail(uid) {
+      return userDocExists(uid) &&
+             get(/databases/$(database)/documents/users/$(uid)).data.email != null
+        ? get(/databases/$(database)/documents/users/$(uid)).data.email
+        : '';
+    }
+
+    function isOfficeUserRecord(data) {
+      return data.accountType == 'office_staff' ||
+        data.entityType == 'office_user' ||
+        data.targetRole == 'office' ||
+        data.role in ['office_staff', 'office-user', 'office_user', 'staff'] ||
+        isKnownPermission(data.officePermission) ||
+        isKnownPermission(data.permission);
+    }
+
+    function staffRecordByUidExists(officeUid) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/offices/$(officeUid)/clients/$(request.auth.uid));
+    }
+
+    function staffRecordByEmailExists(officeUid) {
+      return requesterEmail() != '' &&
+        exists(/databases/$(database)/documents/offices/$(officeUid)/clients/$(requesterEmail()));
+    }
+
+    function isOfficeStaffByUidFor(officeUid) {
+      return staffRecordByUidExists(officeUid) &&
+        isOfficeUserRecord(get(/databases/$(database)/documents/offices/$(officeUid)/clients/$(request.auth.uid)).data);
+    }
+
+    function isOfficeStaffByEmailFor(officeUid) {
+      return staffRecordByEmailExists(officeUid) &&
+        isOfficeUserRecord(get(/databases/$(database)/documents/offices/$(officeUid)/clients/$(requesterEmail())).data);
+    }
+
+    function isOfficeStaffFor(officeUid) {
+      return isSignedIn() &&
+        (
+          (isOfficeStaffRole() && requesterOfficeId() == officeUid) ||
+          isOfficeStaffByUidFor(officeUid) ||
+          isOfficeStaffByEmailFor(officeUid)
+        );
+    }
+
+    function isPrimaryOfficeUser(officeUid) {
+      return isSignedIn() && request.auth.uid == officeUid && isOfficeOwnerRole();
+    }
+
+    function isOfficeWorkspaceReader(officeUid) {
+      return isAdmin() ||
+        isPrimaryOfficeUser(officeUid) ||
+        isOfficeStaffFor(officeUid);
+    }
+
+    function hasFullPermissionFromClaims() {
+      return isSignedIn() &&
+        (
+          isFullPermission(request.auth.token.officePermission) ||
+          isFullPermission(request.auth.token.permission)
+        );
+    }
+
+    function hasFullPermissionFromProfile() {
+      return requesterProfileExists() &&
+        (
+          isFullPermission(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.officePermission) ||
+          isFullPermission(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permission)
+        );
+    }
+
+    function hasFullPermissionFromUidRecord(officeUid) {
+      return staffRecordByUidExists(officeUid) &&
+        (
+          isFullPermission(get(/databases/$(database)/documents/offices/$(officeUid)/clients/$(request.auth.uid)).data.officePermission) ||
+          isFullPermission(get(/databases/$(database)/documents/offices/$(officeUid)/clients/$(request.auth.uid)).data.permission)
+        );
+    }
+
+    function hasFullPermissionFromEmailRecord(officeUid) {
+      return staffRecordByEmailExists(officeUid) &&
+        (
+          isFullPermission(get(/databases/$(database)/documents/offices/$(officeUid)/clients/$(requesterEmail())).data.officePermission) ||
+          isFullPermission(get(/databases/$(database)/documents/offices/$(officeUid)/clients/$(requesterEmail())).data.permission)
+        );
+    }
+
+    function hasFullOfficePermission(officeUid) {
+      return hasFullPermissionFromClaims() ||
+        hasFullPermissionFromProfile() ||
+        hasFullPermissionFromUidRecord(officeUid) ||
+        hasFullPermissionFromEmailRecord(officeUid);
+    }
+
+    function canWriteOfficeWorkspace(officeUid) {
+      return isAdmin() ||
+        isPrimaryOfficeUser(officeUid) ||
+        (isOfficeStaffFor(officeUid) && hasFullOfficePermission(officeUid));
+    }
+
+    function isManagedClientByUid(officeUid, uid) {
+      return officeUid != '' &&
+        exists(/databases/$(database)/documents/offices/$(officeUid)/clients/$(uid)) &&
+        !isOfficeUserRecord(get(/databases/$(database)/documents/offices/$(officeUid)/clients/$(uid)).data);
+    }
+
+    function isManagedClientByEmail(officeUid, uid) {
+      return officeUid != '' &&
+        userEmail(uid) != '' &&
+        exists(/databases/$(database)/documents/offices/$(officeUid)/clients/$(userEmail(uid))) &&
+        !isOfficeUserRecord(get(/databases/$(database)/documents/offices/$(officeUid)/clients/$(userEmail(uid))).data);
+    }
+
+    function isManagedOfficeClientWorkspace(uid) {
+      let officeUid = requesterManagedOfficeUid();
+      return isSignedIn() &&
+        (isManagedClientByUid(officeUid, uid) || isManagedClientByEmail(officeUid, uid));
+    }
+
+    function canReadUserWorkspace(uid) {
+      return isAdmin() ||
+        isSelf(uid) ||
+        isManagedOfficeClientWorkspace(uid) ||
+        isOfficeStaffFor(uid);
+    }
+
+    function canWriteUserWorkspace(uid) {
+      return isAdmin() ||
+        isSelf(uid) ||
+        (
+          isOfficeStaffFor(uid) &&
+          hasFullOfficePermission(uid)
+        ) ||
+        (
+          isManagedOfficeClientWorkspace(uid) &&
+          canWriteOfficeWorkspace(requesterManagedOfficeUid())
+        );
+    }
+
+    function canOfficeModifyClientRecord(officeUid) {
+      return isAdmin() || isPrimaryOfficeUser(officeUid);
+    }
+
+    function canStaffModifyRegularClientRecord(officeUid) {
+      return isOfficeStaffFor(officeUid) && hasFullOfficePermission(officeUid);
+    }
+
+    function limitedProfileKeysOnly() {
+      return request.resource.data.diff(resource.data).removedKeys().size() == 0 &&
+        request.resource.data.diff(resource.data).changedKeys()
+          .hasOnly(['name', 'phone', 'planCost', 'updatedAt']);
+    }
+
+    match /app_config/app_update_config {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /app_config/config {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /user_prefs/{uid} {
+      allow read, write: if isSelf(uid);
+    }
+
+    match /users/{uid} {
+      allow read: if canReadUserWorkspace(uid) ||
+        (
+          isReseller() &&
+          resource.data.role == 'client' &&
+          resource.data.resellerId == request.auth.uid
+        );
+
+      allow create, delete: if isAdmin();
+
+      allow update: if isAdmin() ||
+        (
+          isReseller() &&
+          resource.data.role == 'client' &&
+          resource.data.resellerId == request.auth.uid &&
+          limitedProfileKeysOnly()
+        ) ||
+        (
+          resource.data.role == 'client' &&
+          isManagedOfficeClientWorkspace(uid) &&
+          canWriteOfficeWorkspace(requesterManagedOfficeUid()) &&
+          limitedProfileKeysOnly()
+        );
+    }
+
+    match /users/{uid}/notifications/{nid} {
+      allow read, update: if isSelf(uid);
+      allow create, delete: if isAdmin();
+    }
+
+    match /users/{uid}/fcmTokens/{token} {
+      allow read, write: if isSelf(uid);
+    }
+
+    match /users/{uid}/{subCol}/{docId} {
+      allow read: if canReadUserWorkspace(uid);
+      allow write: if canWriteUserWorkspace(uid);
+    }
+
+    match /offices/{officeUid} {
+      allow read: if isOfficeWorkspaceReader(officeUid);
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || isPrimaryOfficeUser(officeUid);
+
+      match /clients/{clientUid} {
+        allow read: if isOfficeWorkspaceReader(officeUid) ||
+          (isSignedIn() && resource.data.uid == request.auth.uid);
+
+        allow create: if canOfficeModifyClientRecord(officeUid) ||
+          (
+            canStaffModifyRegularClientRecord(officeUid) &&
+            !isOfficeUserRecord(request.resource.data)
+          );
+
+        allow update: if canOfficeModifyClientRecord(officeUid) ||
+          (
+            canStaffModifyRegularClientRecord(officeUid) &&
+            !isOfficeUserRecord(resource.data) &&
+            !isOfficeUserRecord(request.resource.data)
+          );
+
+        allow delete: if canOfficeModifyClientRecord(officeUid) ||
+          (
+            canStaffModifyRegularClientRecord(officeUid) &&
+            !isOfficeUserRecord(resource.data)
+          );
+      }
+    }
+
+    match /packages/{packageId} {
+      allow read: if isAdmin() || isReseller();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /_meta/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

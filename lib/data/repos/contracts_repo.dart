@@ -1,4 +1,4 @@
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_user_collections.dart';
@@ -323,9 +323,8 @@ class ContractsRepo {
     final advanceMode = _advFrom(m['advanceMode']);
 
     // مبالغ/أرقام إضافية
-    final advancePaid = m['advancePaid'] == null
-        ? null
-        : _toDouble(m['advancePaid'], 0.0);
+    final advancePaid =
+        m['advancePaid'] == null ? null : _toDouble(m['advancePaid'], 0.0);
     final dailyCheckoutHour = _toIntOrNull(m['dailyCheckoutHour']);
 
     // الطوابع
@@ -365,8 +364,10 @@ class ContractsRepo {
           (m['attachmentPaths'] as List?)?.whereType<String>().toList() ??
               const <String>[],
       tenantSnapshot: (m['tenantSnapshot'] as Map?)?.cast<String, dynamic>(),
-      propertySnapshot: (m['propertySnapshot'] as Map?)?.cast<String, dynamic>(),
-      buildingSnapshot: (m['buildingSnapshot'] as Map?)?.cast<String, dynamic>(),
+      propertySnapshot:
+          (m['propertySnapshot'] as Map?)?.cast<String, dynamic>(),
+      buildingSnapshot:
+          (m['buildingSnapshot'] as Map?)?.cast<String, dynamic>(),
 
       createdAt: createdAt,
       updatedAt: updatedAt,
@@ -422,11 +423,10 @@ class ContractsRepo {
       'isArchived': m['isArchived'] == true,
       'serialNo': (m['serialNo'] ?? '').toString(),
       'ejarContractNo': (m['ejarContractNo'] ?? '').toString(),
-      'attachmentPaths': (m['attachmentPaths'] as List?)?.whereType<String>().toList() ?? const <String>[],
+      'attachmentPaths':
+          (m['attachmentPaths'] as List?)?.whereType<String>().toList() ??
+              const <String>[],
       'isDeleted': m['isDeleted'] == true,
     };
   }
 }
-
-
-

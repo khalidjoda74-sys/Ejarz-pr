@@ -1,7 +1,7 @@
-const PROPERTY_ATTACHMENT_URL = 'https://via.placeholder.com/1280x720.png?text=Darvoo+Demo+Property';
-const TENANT_ATTACHMENT_URL = 'https://via.placeholder.com/1280x720.png?text=Darvoo+Demo+Tenant';
-const SERVICE_ATTACHMENT_URL = 'https://via.placeholder.com/1280x720.png?text=Darvoo+Demo+Service';
-const CONTRACT_ATTACHMENT_URL = 'https://via.placeholder.com/1280x720.png?text=Darvoo+Demo+Contract';
+const PROPERTY_ATTACHMENT_URL = 'https://via.placeholder.com/1280x720.png?text=Ejarz Pro+Demo+Property';
+const TENANT_ATTACHMENT_URL = 'https://via.placeholder.com/1280x720.png?text=Ejarz Pro+Demo+Tenant';
+const SERVICE_ATTACHMENT_URL = 'https://via.placeholder.com/1280x720.png?text=Ejarz Pro+Demo+Service';
+const CONTRACT_ATTACHMENT_URL = 'https://via.placeholder.com/1280x720.png?text=Ejarz Pro+Demo+Contract';
 const PROPERTY_DOCUMENT_TYPE = 'صك الكتروني';
 
 function normalizeStringList(value) {

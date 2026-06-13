@@ -1,6 +1,6 @@
 workflows:
   ios-appstore:
-    name: Darvoo iOS App Store
+    name: Ejarz Pro iOS App Store
     max_build_duration: 120
     integrations:
       app_store_connect: darvoo_appstore
@@ -10,9 +10,9 @@ workflows:
       cocoapods: default
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.darvoo.owner
+        bundle_identifier: sa.ejarzpro.owner
       vars:
-        BUNDLE_ID: com.darvoo.owner
+        BUNDLE_ID: sa.ejarzpro.owner
     scripts:
       - name: Get Flutter packages
         script: |

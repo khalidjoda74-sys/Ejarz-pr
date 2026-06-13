@@ -1,4 +1,4 @@
-import 'package:darvoo/ui/ai_chat/ai_chat_permissions.dart';
+import 'package:ejarz_pro/ui/ai_chat/ai_chat_permissions.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/operational_uat_harness.dart';
@@ -53,7 +53,9 @@ void main() {
       await harness.dispose();
     });
 
-    test('owner blueprint keeps shared and owner screens available without permission blocks', () async {
+    test(
+        'owner blueprint keeps shared and owner screens available without permission blocks',
+        () async {
       final executor = harness.buildExecutor(ChatUserRole.owner);
       final blueprint = await harness.runObject(executor, 'get_app_blueprint');
 
@@ -158,7 +160,9 @@ void main() {
       expect(_map(reportsModule['validation'])['overall'], 'full_access');
     });
 
-    test('office client blueprint blocks office-wide areas and all write screens', () async {
+    test(
+        'office client blueprint blocks office-wide areas and all write screens',
+        () async {
       final executor = harness.buildExecutor(ChatUserRole.officeClient);
       final blueprint = await harness.runObject(executor, 'get_app_blueprint');
 

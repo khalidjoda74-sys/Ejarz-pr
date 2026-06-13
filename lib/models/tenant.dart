@@ -1,5 +1,5 @@
 // lib/models/tenant.dart
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'package:hive/hive.dart';
 
 /// موديل المستأجر (أفراد فقط) + أدابتر Hive يدوي (بدون codegen)
@@ -38,6 +38,8 @@ class Tenant extends HiveObject {
   String? companyTaxNumber;
   String? companyRepresentativeName;
   String? companyRepresentativePhone;
+  String? companyRepresentativeNationalId;
+  DateTime? companyRepresentativeDateOfBirth;
   String? companyBankAccountNumber;
   String? companyBankName;
   String? serviceSpecialization;
@@ -81,6 +83,8 @@ class Tenant extends HiveObject {
     this.companyTaxNumber,
     this.companyRepresentativeName,
     this.companyRepresentativePhone,
+    this.companyRepresentativeNationalId,
+    this.companyRepresentativeDateOfBirth,
     this.companyBankAccountNumber,
     this.companyBankName,
     this.serviceSpecialization,
@@ -145,13 +149,15 @@ class TenantAdapter extends TypeAdapter<Tenant> {
       serviceSpecialization: fields[32] as String?,
       attachmentPaths: (fields[33] as List?)?.cast<String>() ?? <String>[],
       dateOfBirth: fields[34] as DateTime?,
+      companyRepresentativeNationalId: fields[35] as String?,
+      companyRepresentativeDateOfBirth: fields[36] as DateTime?,
     );
   }
 
   @override
   void write(BinaryWriter w, Tenant t) {
     w
-      ..writeByte(35) // عدد الحقول
+      ..writeByte(37) // عدد الحقول
       ..writeByte(0)
       ..write(t.id)
       ..writeByte(1)
@@ -221,9 +227,10 @@ class TenantAdapter extends TypeAdapter<Tenant> {
       ..writeByte(33)
       ..write(t.attachmentPaths)
       ..writeByte(34)
-      ..write(t.dateOfBirth);
+      ..write(t.dateOfBirth)
+      ..writeByte(35)
+      ..write(t.companyRepresentativeNationalId)
+      ..writeByte(36)
+      ..write(t.companyRepresentativeDateOfBirth);
   }
 }
-
-
-

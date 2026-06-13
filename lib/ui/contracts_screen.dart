@@ -1,7 +1,6 @@
 // lib/ui/contracts_screen.dart
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,14 +11,14 @@ import 'package:hijri/hijri_calendar.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'invoices_screen.dart' show Invoice, kInvoicesBox;
+import 'invoices_screen.dart' show Invoice;
 import '../data/services/comprehensive_reports_service.dart';
 import '../data/services/hive_service.dart';
 import '../data/services/office_client_guard.dart';
 import '../data/services/user_scope.dart';
 import '../data/constants/boxes.dart'; // أو المسار الصحيح حسب مكان الملف
 import '../data/services/pdf_export_service.dart';
-import '../widgets/darvoo_app_bar.dart';
+import '../widgets/ejarz_pro_app_bar.dart';
 import '../widgets/custom_confirm_dialog.dart';
 
 import '../models/tenant.dart';
@@ -289,22 +288,28 @@ double _commissionConfigNumber(dynamic value) {
 
 Future<({String mode, double value, double amount})>
     _loadGlobalCommissionSnapshotForVoucher(double baseAmount) async {
-  final financeBoxName = boxName('financeConfigBox');
-  final box = Hive.isBoxOpen(financeBoxName)
-      ? Hive.box(financeBoxName)
-      : await Hive.openBox(financeBoxName);
-  final raw = box.get('commission::global');
-  if (raw is! Map) {
+  try {
+    final financeBoxName = boxName('financeConfigBox');
+    final box = Hive.isBoxOpen(financeBoxName)
+        ? Hive.box(financeBoxName)
+        : await Hive.openBox(financeBoxName);
+    final raw = box.get('commission::global');
+    if (raw is! Map) {
+      return (mode: '', value: 0.0, amount: 0.0);
+    }
+    final mode = (raw['mode'] ?? '').toString().trim();
+    final value = _commissionConfigNumber(raw['value']);
+    final base = baseAmount.abs();
+    if (mode != 'percent' || value <= 0 || base <= 0) {
+      return (mode: mode, value: value, amount: 0.0);
+    }
+    final amount = ((base * value) / 100).clamp(0, base).toDouble();
+    return (mode: mode, value: value, amount: amount);
+  } catch (e, st) {
+    debugPrint('Failed to load commission snapshot for voucher: $e');
+    debugPrintStack(stackTrace: st);
     return (mode: '', value: 0.0, amount: 0.0);
   }
-  final mode = (raw['mode'] ?? '').toString().trim();
-  final value = _commissionConfigNumber(raw['value']);
-  final base = baseAmount.abs();
-  if (mode != 'percent' || value <= 0 || base <= 0) {
-    return (mode: mode, value: value, amount: 0.0);
-  }
-  final amount = ((base * value) / 100).clamp(0, base).toDouble();
-  return (mode: mode, value: value, amount: amount);
 }
 
 Future<({String mode, double value, double amount})>
@@ -735,7 +740,8 @@ class Contract extends HiveObject {
 
     // 🟡 تخصيص "اليومي": نشط حتى 12:00 ظهرًا من يوم endDate
     if (term == ContractTerm.daily) {
-      return !now.isBefore(dailyStartBoundary) && now.isBefore(dailyEndBoundary);
+      return !now.isBefore(dailyStartBoundary) &&
+          now.isBefore(dailyEndBoundary);
     }
 
     // باقي الأنواع: يبقى العقد ساريًا طوال يوم endDate نفسه.
@@ -787,11 +793,8 @@ void _putSnapshotDate(
 void _putSnapshotList(
     Map<String, dynamic> target, String key, List<String>? values) {
   if (values == null) return;
-  final cleaned = values
-      .map((e) => e.trim())
-      .where((e) => e.isNotEmpty)
-      .toSet()
-      .toList();
+  final cleaned =
+      values.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
   if (cleaned.isEmpty) return;
   target[key] = cleaned;
 }
@@ -812,9 +815,7 @@ dynamic _cloneSnapshotValue(dynamic value) {
 
 String _snapshotClientTypeLabel(String? raw) {
   final value = (raw ?? '').trim().toLowerCase();
-  if (value == 'company' ||
-      value == 'مستأجر (شركة)' ||
-      value == 'شركة') {
+  if (value == 'company' || value == 'مستأجر (شركة)' || value == 'شركة') {
     return 'مستأجر (شركة)';
   }
   if (value == 'serviceprovider' ||
@@ -1044,8 +1045,8 @@ String? _snapshotPropertyFreeDescription(Map<String, dynamic>? snapshot) {
 }
 
 String? _snapshotPropertyFurnishingText(Map<String, dynamic>? snapshot) {
-  final raw =
-      _snapshotPropertySpecMap(_snapshotString(snapshot, 'description'))['المفروشات'];
+  final raw = _snapshotPropertySpecMap(
+      _snapshotString(snapshot, 'description'))['المفروشات'];
   if (raw == null) return null;
   final normalized = raw.trim();
   if (normalized.isEmpty) return null;
@@ -1058,11 +1059,13 @@ String _snapshotPropertyTypeDisplayLabel(
   Map<String, dynamic> propertySnapshot, {
   Map<String, dynamic>? buildingSnapshot,
 }) {
-  final rawType = _snapshotString(propertySnapshot, 'type')?.toLowerCase().trim();
-  final hasBuilding = (_snapshotString(propertySnapshot, 'parentBuildingId') ?? '')
-          .trim()
-          .isNotEmpty ||
-      (buildingSnapshot != null && buildingSnapshot.isNotEmpty);
+  final rawType =
+      _snapshotString(propertySnapshot, 'type')?.toLowerCase().trim();
+  final hasBuilding =
+      (_snapshotString(propertySnapshot, 'parentBuildingId') ?? '')
+              .trim()
+              .isNotEmpty ||
+          (buildingSnapshot != null && buildingSnapshot.isNotEmpty);
   if (rawType == 'apartment' && hasBuilding) {
     return 'وحدة';
   }
@@ -1071,8 +1074,10 @@ String _snapshotPropertyTypeDisplayLabel(
       '—';
 }
 
-String _snapshotBuildingTypeDisplayLabel(Map<String, dynamic>? buildingSnapshot) {
-  final rawType = _snapshotString(buildingSnapshot, 'type')?.toLowerCase().trim();
+String _snapshotBuildingTypeDisplayLabel(
+    Map<String, dynamic>? buildingSnapshot) {
+  final rawType =
+      _snapshotString(buildingSnapshot, 'type')?.toLowerCase().trim();
   final rentalMode =
       _snapshotString(buildingSnapshot, 'rentalMode')?.toLowerCase().trim();
   if (rawType == 'building' && rentalMode == 'perunit') {
@@ -1108,6 +1113,7 @@ bool? _snapshotBoolValue(Map<String, dynamic>? snapshot, String key) {
   return null;
 }
 
+// ignore: unused_element
 String? _snapshotBoolText(
   Map<String, dynamic>? snapshot,
   String key, {
@@ -1129,7 +1135,9 @@ bool _isSnapshotImageAttachment(String path) {
 
 bool _isSnapshotRemoteAttachment(String path) {
   final p = path.trim().toLowerCase();
-  return p.startsWith('http://') || p.startsWith('https://') || p.startsWith('gs://');
+  return p.startsWith('http://') ||
+      p.startsWith('https://') ||
+      p.startsWith('gs://');
 }
 
 Future<String> _resolveSnapshotRemoteUrl(String path) async {
@@ -1188,12 +1196,14 @@ Widget _buildSnapshotAttachmentThumb(String path) {
   );
 }
 
+// ignore: unused_element
 Future<void> _openSnapshotAttachment(BuildContext context, String path) async {
   try {
     final raw = path.trim();
     String launchable = raw;
     if (raw.startsWith('gs://')) {
-      launchable = await FirebaseStorage.instance.refFromURL(raw).getDownloadURL();
+      launchable =
+          await FirebaseStorage.instance.refFromURL(raw).getDownloadURL();
     }
     Uri? uri;
     if (_isSnapshotRemoteAttachment(launchable)) {
@@ -1351,6 +1361,7 @@ Widget _dailyPeriodDetailsWidget(
   );
 }
 
+// ignore: unused_element
 String _paymentPeriodLabelForDue(Contract c, DateTime dueDate) {
   if (c.term == ContractTerm.daily) {
     final days = _dailyContractDays(c.startDate, c.endDate);
@@ -1376,7 +1387,7 @@ Widget _paymentPeriodChipForDue(Contract c, DateTime dueDate) {
       decoration: BoxDecoration(
         color: const Color(0xFF1F2937),
         borderRadius: BorderRadius.circular(10.r),
-        border: Border.all(color: Colors.white.withOpacity(0.15)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1418,7 +1429,7 @@ Widget _paymentPeriodChipForDue(Contract c, DateTime dueDate) {
     decoration: BoxDecoration(
       color: const Color(0xFF1F2937),
       borderRadius: BorderRadius.circular(10.r),
-      border: Border.all(color: Colors.white.withOpacity(0.15)),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
     ),
     child: RichText(text: TextSpan(children: spans)),
   );
@@ -1657,6 +1668,7 @@ int _monthsPerCycleFor(Contract c) {
   return _monthsPerCycle(c.paymentCycle);
 }
 
+// ignore: unused_element
 bool _termEqualsCycle(ContractTerm t, PaymentCycle c) {
   switch (t) {
     case ContractTerm.monthly:
@@ -1748,7 +1760,8 @@ bool isWaterSharedPercentConfig(Map<String, dynamic> cfg) =>
     _waterBillingModeFromConfig(cfg) == 'shared' &&
     _waterSharedMethodFromConfig(cfg) == 'percent';
 
-List<Map<String, dynamic>> waterInstallmentsFromConfig(Map<String, dynamic> cfg) {
+List<Map<String, dynamic>> waterInstallmentsFromConfig(
+    Map<String, dynamic> cfg) {
   final raw = cfg['waterInstallments'];
   if (raw is! List) return <Map<String, dynamic>>[];
   return raw
@@ -1779,6 +1792,7 @@ double waterSharePercentFromConfig(Map<String, dynamic> cfg) {
   return double.tryParse((rawPercent ?? '').toString()) ?? 0.0;
 }
 
+// ignore: unused_element
 String _waterNextDueIsoFromConfig(Map<String, dynamic> cfg) {
   final raw = cfg['nextDueDate'];
   if (raw is String) return raw.trim();
@@ -1826,6 +1840,7 @@ List<Map<String, dynamic>> _listOfMap(dynamic raw) {
       .toList();
 }
 
+// ignore: unused_element
 double _sharedUnitsSharePercentForProperty(
   Map<String, dynamic> cfg,
   String propertyId,
@@ -1880,10 +1895,8 @@ bool isElectricityConfigReady(Map<String, dynamic> cfg) {
   final mode = _electricityBillingModeFromConfig(cfg);
   if (mode == 'separate') return true;
   if (mode != 'shared') return false;
-  final method = (cfg['electricitySharedMethod'] ?? '')
-      .toString()
-      .trim()
-      .toLowerCase();
+  final method =
+      (cfg['electricitySharedMethod'] ?? '').toString().trim().toLowerCase();
   if (method != 'percent') return false;
   return _serviceConfigNumber(cfg['electricitySharePercent']) > 0;
 }
@@ -1966,14 +1979,62 @@ List<String> requiredPeriodicServiceTypesForProperty(Property property) {
   return const <String>['water', 'electricity', 'internet', 'cleaning'];
 }
 
-Future<List<String>> missingRequiredPeriodicServicesForProperty(
+class MissingPeriodicServiceSetup {
+  final String serviceType;
+  final String label;
+  final String targetPropertyId;
+  final String targetPropertyName;
+  final String targetScopeLabel;
+
+  const MissingPeriodicServiceSetup({
+    required this.serviceType,
+    required this.label,
+    required this.targetPropertyId,
+    required this.targetPropertyName,
+    required this.targetScopeLabel,
+  });
+
+  Map<String, dynamic> get navigationArguments => <String, dynamic>{
+        'propertyId': targetPropertyId,
+        'openService': serviceType,
+        'openServiceDirectly': true,
+      };
+
+  String get targetDescription {
+    final name = targetPropertyName.trim();
+    if (name.isEmpty) return targetScopeLabel;
+    return '$targetScopeLabel "$name"';
+  }
+
+  String get navigationSummary => '$label في $targetDescription';
+
+  Map<String, dynamic> toMap() => <String, dynamic>{
+        'serviceType': serviceType,
+        'label': label,
+        'targetPropertyId': targetPropertyId,
+        'targetPropertyName': targetPropertyName,
+        'targetScope': targetScopeLabel,
+      };
+}
+
+String _periodicServiceTargetScopeLabel(Property? property) {
+  if (property == null) return 'العقار';
+  if (property.type == PropertyType.building) return 'العمارة';
+  if ((property.parentBuildingId ?? '').trim().isNotEmpty) return 'الوحدة';
+  return 'العقار';
+}
+
+Future<List<MissingPeriodicServiceSetup>>
+    missingRequiredPeriodicServiceSetupsForProperty(
   String propertyId, {
   Property? property,
 }) async {
   final normalizedPropertyId = propertyId.trim();
-  if (normalizedPropertyId.isEmpty) return const <String>[];
+  if (normalizedPropertyId.isEmpty) {
+    return const <MissingPeriodicServiceSetup>[];
+  }
   final box = await openServicesConfigBox();
-  final missing = <String>[];
+  final missing = <MissingPeriodicServiceSetup>[];
   final propertiesBoxId = boxName(kPropertiesBox);
   final propertiesBox = Hive.isBoxOpen(propertiesBoxId)
       ? Hive.box<Property>(propertiesBoxId)
@@ -1990,12 +2051,10 @@ Future<List<String>> missingRequiredPeriodicServicesForProperty(
   }
 
   var targetProperty = property;
-  if (targetProperty == null) {
-    targetProperty = firstWhereOrNull(
-      propertiesBox.values,
-      (item) => item.id == normalizedPropertyId,
-    );
-  }
+  targetProperty ??= firstWhereOrNull(
+    propertiesBox.values,
+    (item) => item.id == normalizedPropertyId,
+  );
 
   final parentBuildingId = (targetProperty?.parentBuildingId ?? '').trim();
   final parentBuilding = parentBuildingId.isEmpty
@@ -2008,6 +2067,24 @@ Future<List<String>> missingRequiredPeriodicServicesForProperty(
   final requiredTypes = targetProperty == null
       ? const <String>['water', 'electricity', 'internet']
       : requiredPeriodicServiceTypesForProperty(targetProperty);
+
+  void addMissing(
+    String serviceType,
+    String label, {
+    Property? target,
+  }) {
+    final resolvedTarget = target ?? targetProperty;
+    missing.add(
+      MissingPeriodicServiceSetup(
+        serviceType: serviceType,
+        label: label,
+        targetPropertyId: (resolvedTarget?.id ?? normalizedPropertyId).trim(),
+        targetPropertyName: (resolvedTarget?.name ?? '').trim(),
+        targetScopeLabel: _periodicServiceTargetScopeLabel(resolvedTarget),
+      ),
+    );
+  }
+
   for (final type in requiredTypes) {
     final isUnitInsidePerUnitBuilding = parentBuilding != null &&
         parentBuilding.type == PropertyType.building &&
@@ -2020,7 +2097,11 @@ Future<List<String>> missingRequiredPeriodicServicesForProperty(
         if (_isSharedUnitsPercentConfigReady(buildingCfg)) {
           continue;
         }
-        missing.add(periodicServiceDisplayName(type));
+        addMissing(
+          type,
+          periodicServiceDisplayName(type),
+          target: parentBuilding,
+        );
         continue;
       }
       if (type == 'water' && buildingMode == 'units_separate') {
@@ -2030,19 +2111,34 @@ Future<List<String>> missingRequiredPeriodicServicesForProperty(
         if (_isWaterFixedAmountConfigReady(cfgFor(type))) {
           continue;
         }
-        missing.add('المياه (المبلغ المقطوع للوحدة)');
+        addMissing(type, 'المياه (المبلغ المقطوع للوحدة)');
         continue;
       }
       if (buildingMode != 'units') {
-        missing.add(periodicServiceDisplayName(type));
+        addMissing(
+          type,
+          periodicServiceDisplayName(type),
+          target: parentBuilding,
+        );
         continue;
       }
     }
     if (_isPeriodicServiceConfigReady(type, cfgFor(type))) continue;
-    missing.add(periodicServiceDisplayName(type));
+    addMissing(type, periodicServiceDisplayName(type));
   }
 
   return missing;
+}
+
+Future<List<String>> missingRequiredPeriodicServicesForProperty(
+  String propertyId, {
+  Property? property,
+}) async {
+  final missing = await missingRequiredPeriodicServiceSetupsForProperty(
+    propertyId,
+    property: property,
+  );
+  return missing.map((item) => item.label).toList(growable: false);
 }
 
 Map<String, dynamic> _normalizeOwnerPeriodicServiceConfig({
@@ -2085,7 +2181,8 @@ Map<String, dynamic> normalizeElectricityConfigForNoActiveContract(
       'nextDueDate': nextDue?.toIso8601String() ?? '',
       'dueDay': nextDue?.day ?? 0,
       'recurrenceMonths': 1,
-      'electricityPercentRequests': _listOfMap(cfg['electricityPercentRequests']),
+      'electricityPercentRequests':
+          _listOfMap(cfg['electricityPercentRequests']),
     };
   }
   if (sharedUnitsMode == 'units') {
@@ -2373,14 +2470,14 @@ Map<String, dynamic> normalizeWaterConfigForNoActiveContract(
 Map<String, dynamic> _waterHistorySnapshotFromConfig(
   Map<String, dynamic> cfg,
 ) {
-  final linkedContractId = (cfg['waterLinkedContractId'] ?? '').toString().trim();
+  final linkedContractId =
+      (cfg['waterLinkedContractId'] ?? '').toString().trim();
   final rows = waterInstallmentsFromConfig(cfg);
   if (linkedContractId.isEmpty || rows.isEmpty) return <String, dynamic>{};
 
   final invoicesBoxId = boxName(kInvoicesBox);
-  final invoicesBox = Hive.isBoxOpen(invoicesBoxId)
-      ? Hive.box<Invoice>(invoicesBoxId)
-      : null;
+  final invoicesBox =
+      Hive.isBoxOpen(invoicesBoxId) ? Hive.box<Invoice>(invoicesBoxId) : null;
 
   var paidCount = 0;
   var canceledCount = 0;
@@ -2527,7 +2624,7 @@ Map<String, dynamic> rebuildWaterFixedConfigForContract({
       .toList();
   final preservedPaidAmount = paidRows.values.fold<double>(
     0.0,
-    (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0.0),
+    (total, row) => total + ((row['amount'] as num?)?.toDouble() ?? 0.0),
   );
   final distributableTotal = ((totalWaterAmount - preservedPaidAmount)
           .clamp(0.0, double.infinity) as num)
@@ -2587,8 +2684,9 @@ Map<String, dynamic> rebuildWaterFixedConfigForContract({
     'totalWaterAmount': totalWaterAmount,
     'waterPerInstallment': perRaw,
     'waterInstallments': rows,
-    'remainingInstallmentsCount':
-        rows.where((row) => (row['status'] ?? 'pending').toString() != 'paid').length,
+    'remainingInstallmentsCount': rows
+        .where((row) => (row['status'] ?? 'pending').toString() != 'paid')
+        .length,
     'nextDueDate': (firstUnpaid?['dueDate'] ?? '').toString(),
     'recurrenceMonths': mpc,
   };
@@ -2703,6 +2801,7 @@ Future<void> linkWaterConfigToContractIfNeeded(Contract c) async {
 }
 
 /// خطوة دورة واحدة حسب دورة السداد
+// ignore: unused_element
 DateTime _stepOneCycle(DateTime d, PaymentCycle cycle) {
   final base = _dateOnly(d);
   switch (cycle) {
@@ -2742,6 +2841,7 @@ bool _hasStarted(Contract c) {
   }
   return !_dateOnly(SaTimeLite.now()).isBefore(_dateOnly(c.startDate));
 }
+
 bool _endsToday(Contract c) {
   if (c.isTerminated) return false;
   final now = SaTimeLite.now();
@@ -2778,6 +2878,7 @@ DateTime _resolveNonDailyEndDate(DateTime start, int months) {
 /// نهاية غير اليومي:
 /// إذا كان اليوم المماثل موجودًا في الفترة القادمة نطرح يومًا واحدًا،
 /// وإذا لم يكن موجودًا نثبت على آخر يوم متاح بدون خصم.
+// ignore: unused_element
 DateTime _termEndInclusive(DateTime start, ContractTerm term) {
   final months = _monthsInTerm(term);
   return _resolveNonDailyEndDate(start, months);
@@ -2831,6 +2932,7 @@ bool _paidForDue(Contract c, DateTime due) {
     for (final inv in box.values) {
       // تجاهل سند "سداد مقدم عقد" فقط عند خصم المقدم من الإجمالي
       final note = (inv.note ?? '').toString();
+      // ignore: unused_local_variable
       final isAdvanceInvoice = (c.advanceMode == AdvanceMode.deductFromTotal) &&
           note.contains('سداد مقدم عقد');
 
@@ -3003,11 +3105,13 @@ bool _isNearContractEnd(Contract c) {
 }
 
 /// تاريخ الاستحقاق الذي نعرضه للمستخدم (أقدم غير مدفوع، أو القادم)
+// ignore: unused_element
 DateTime? _displayDueDate(Contract c) {
   if (c.term == ContractTerm.daily) return null;
   return _earliestUnpaidDueDate(c);
 }
 
+// ignore: unused_element
 int _expectedInstallments(Contract c) {
   if (c.term == ContractTerm.daily) return 1;
   final months = _monthsInContract(c);
@@ -3015,6 +3119,7 @@ int _expectedInstallments(Contract c) {
   return (months / per).ceil().clamp(1, 1000);
 }
 
+// ignore: unused_element
 int _paidInstallments(Contract c) {
   try {
     if (!Hive.isBoxOpen(boxName(kInvoicesBox))) return 0;
@@ -3061,6 +3166,7 @@ double _perCycleAmount(Contract c) {
   }
 }
 
+// ignore: unused_element
 String _dueStatus(DateTime due) {
   final t = _dateOnly(SaTimeLite.now());
   if (due.isAtSameMomentAs(t)) return 'سداد اليوم';
@@ -3068,6 +3174,7 @@ String _dueStatus(DateTime due) {
   return 'قادمة';
 }
 
+// ignore: unused_element
 Color _dueStatusColor(String status) {
   switch (status) {
     case 'سداد اليوم':
@@ -3079,12 +3186,14 @@ Color _dueStatusColor(String status) {
   }
 }
 
+// ignore: unused_element
 int _inclusiveDays(DateTime a, DateTime b) =>
     _dateOnly(b).difference(_dateOnly(a)).inDays + 1;
 
 int _daysUntil(DateTime d) =>
     _dateOnly(d).difference(_dateOnly(SaTimeLite.now())).inDays;
 
+// ignore: unused_element
 bool _isNearExpiry(Contract c, {int withinDays = 14}) {
   if (c.isTerminated) return false;
   if (!c.isActiveNow) return false;
@@ -3119,7 +3228,7 @@ class _DarkCard extends StatelessWidget {
         border: Border.all(color: const Color(0x26FFFFFF)),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.25),
+              color: Colors.black.withValues(alpha: 0.25),
               blurRadius: 18,
               offset: const Offset(0, 10)),
         ],
@@ -3153,6 +3262,7 @@ Widget _noteCard(String t) => _paymentCard(
       ),
     );
 
+// ignore: unused_element
 String _limitChars(String t, int max) =>
     t.length <= max ? t : '${t.substring(0, max)}…';
 
@@ -3191,7 +3301,7 @@ Widget _chip(String text, {Color bg = const Color(0xFF334155)}) => Container(
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(10.r),
-        border: Border.all(color: Colors.white.withOpacity(0.15)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
       ),
       child: Text(text,
           style: GoogleFonts.cairo(
@@ -3211,7 +3321,7 @@ Widget _dateChip(String from, String to, {Color bg = const Color(0xFF1F2937)}) {
     decoration: BoxDecoration(
       color: bg,
       borderRadius: BorderRadius.circular(10.r),
-      border: Border.all(color: Colors.white.withOpacity(0.15)),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
     ),
     child: RichText(
       text: TextSpan(
@@ -3262,8 +3372,8 @@ Widget _rowInfoWidget(String label, Widget child) {
           width: 120.w,
           child: Text(
             label,
-            style:
-                GoogleFonts.cairo(color: Colors.white70, fontWeight: FontWeight.w700),
+            style: GoogleFonts.cairo(
+                color: Colors.white70, fontWeight: FontWeight.w700),
           ),
         ),
         Expanded(child: child),
@@ -3277,7 +3387,7 @@ Widget _sectionTitle(String t) => Container(
       padding: EdgeInsets.symmetric(vertical: 8.h, horizontal: 12.w),
       margin: EdgeInsets.only(bottom: 12.h),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
+        color: Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(8.r),
       ),
       child: Text(t,
@@ -3365,6 +3475,7 @@ int _nearWindowDaysForTerm(ContractTerm term) {
 }
 
 // اسم قديم ظهر في الخطأ — نخليه Alias للتوافق
+// ignore: unused_element
 int _dueSoonDaysForTerm(ContractTerm term) => _nearWindowDaysForTerm(term);
 
 enum ContractQuickFilter {
@@ -3483,7 +3594,7 @@ String _waMessage({
       ? tenant!.fullName.trim()
       : 'العميل';
 
-  final curr = (c.currency ?? '').trim();
+  final curr = c.currency.trim();
   final currLabel =
       curr.isEmpty ? 'ريال' : (curr.toLowerCase() == 'sar' ? 'ريال' : curr);
 
@@ -3518,6 +3629,7 @@ Future<void> _openWhatsAppToTenant(
   final uri =
       Uri.parse('https://wa.me/$phone?text=${Uri.encodeComponent(message)}');
   final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (!context.mounted) return;
   if (!ok) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('تعذّر فتح واتساب.', style: GoogleFonts.cairo())),
@@ -3556,10 +3668,10 @@ class _ContractsScreenState extends State<ContractsScreen> {
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12.r),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
         ),
         focusedBorder: const OutlineInputBorder(
           borderSide: BorderSide(color: Colors.white),
@@ -4067,26 +4179,24 @@ class _ContractsScreenState extends State<ContractsScreen> {
         routeMap?['filterPreviousPropertyId']?.toString().trim();
     final routePropertyName =
         routeMap?['filterPreviousPropertyName']?.toString().trim();
-    final effectivePreviousTenantId = _showPreviousTenantContracts &&
-            (_filterTenantId ?? '').isNotEmpty
-        ? _filterTenantId
-        : routePreviousTenantId;
+    final effectivePreviousTenantId =
+        _showPreviousTenantContracts && (_filterTenantId ?? '').isNotEmpty
+            ? _filterTenantId
+            : routePreviousTenantId;
     final effectivePreviousTenantName =
         (_filterPreviousTenantName ?? '').isNotEmpty
             ? _filterPreviousTenantName
             : ((routePreviousTenantName ?? '').isNotEmpty
                 ? routePreviousTenantName
                 : null);
-    final effectivePropertyFilterId =
-        (_filterPropertyId ?? '').isNotEmpty ? _filterPropertyId : routePropertyId;
-    final effectivePropertyFilterName =
-        (_filterPropertyName ?? '').isNotEmpty
-            ? _filterPropertyName
-            : ((routePropertyName ?? '').isNotEmpty ? routePropertyName : null);
-    final tenantHistoryScoped =
-        (effectivePreviousTenantId ?? '').isNotEmpty;
-    final propertyHistoryScoped =
-        (effectivePropertyFilterId ?? '').isNotEmpty;
+    final effectivePropertyFilterId = (_filterPropertyId ?? '').isNotEmpty
+        ? _filterPropertyId
+        : routePropertyId;
+    final effectivePropertyFilterName = (_filterPropertyName ?? '').isNotEmpty
+        ? _filterPropertyName
+        : ((routePropertyName ?? '').isNotEmpty ? routePropertyName : null);
+    final tenantHistoryScoped = (effectivePreviousTenantId ?? '').isNotEmpty;
+    final propertyHistoryScoped = (effectivePropertyFilterId ?? '').isNotEmpty;
     final historyScoped = propertyHistoryScoped || tenantHistoryScoped;
     final tenantActiveScoped =
         !historyScoped && (_filterTenantId ?? '').trim().isNotEmpty;
@@ -4125,7 +4235,7 @@ class _ContractsScreenState extends State<ContractsScreen> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text(
               historyScoped
                   ? 'عقود سابقة'
@@ -4178,16 +4288,16 @@ class _ContractsScreenState extends State<ContractsScreen> {
                       prefixIcon:
                           const Icon(Icons.search, color: Colors.white70),
                       filled: true,
-                      fillColor: Colors.white.withOpacity(0.08),
+                      fillColor: Colors.white.withValues(alpha: 0.08),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12.r),
-                        borderSide:
-                            BorderSide(color: Colors.white.withOpacity(0.15)),
+                        borderSide: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.15)),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12.r),
-                        borderSide:
-                            BorderSide(color: Colors.white.withOpacity(0.15)),
+                        borderSide: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.15)),
                       ),
                       focusedBorder: const OutlineInputBorder(
                         borderSide: BorderSide(color: Colors.white),
@@ -4210,8 +4320,8 @@ class _ContractsScreenState extends State<ContractsScreen> {
                         decoration: BoxDecoration(
                           color: const Color(0xFF334155),
                           borderRadius: BorderRadius.circular(10.r),
-                          border:
-                              Border.all(color: Colors.white.withOpacity(0.15)),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.15)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -4243,8 +4353,8 @@ class _ContractsScreenState extends State<ContractsScreen> {
                         decoration: BoxDecoration(
                           color: const Color(0xFF0B3D2E),
                           borderRadius: BorderRadius.circular(10.r),
-                          border:
-                              Border.all(color: Colors.white.withOpacity(0.15)),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.15)),
                         ),
                         child: Text(
                           'المستأجر: ${activeTenantName ?? '—'}',
@@ -4268,8 +4378,8 @@ class _ContractsScreenState extends State<ContractsScreen> {
                         decoration: BoxDecoration(
                           color: const Color(0xFF065F46),
                           borderRadius: BorderRadius.circular(10.r),
-                          border:
-                              Border.all(color: Colors.white.withOpacity(0.15)),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.15)),
                         ),
                         child: Text(
                           'العقار: ${effectivePropertyFilterName ?? '—'}',
@@ -4293,8 +4403,8 @@ class _ContractsScreenState extends State<ContractsScreen> {
                         decoration: BoxDecoration(
                           color: const Color(0xFF4338CA),
                           borderRadius: BorderRadius.circular(10.r),
-                          border:
-                              Border.all(color: Colors.white.withOpacity(0.15)),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.15)),
                         ),
                         child: Text(
                           'المستأجر: ${effectivePreviousTenantName ?? '—'}',
@@ -4324,9 +4434,8 @@ class _ContractsScreenState extends State<ContractsScreen> {
                       final bypassArchiveFilter = historyScoped ||
                           tenantActiveScoped ||
                           _homePaymentsQuickScoped;
-                      final effectiveArchiveFilter = bypassArchiveFilter
-                          ? _ArchiveFilter.all
-                          : _fArchive;
+                      final effectiveArchiveFilter =
+                          bypassArchiveFilter ? _ArchiveFilter.all : _fArchive;
                       // ضع هنا نفس المحتوى الذي كان داخل builder سابقًا (فلترة/بحث/ترتيب/ ListView ...)
                       // فقط استبدل "box" الممرَّر سابقًا بالمتغير المحلي أعلاه.
                       // مثال: var items = box.values.toList();
@@ -4520,10 +4629,10 @@ class _ContractsScreenState extends State<ContractsScreen> {
                                 ? 'لا توجد عقود سابقة لهذا العقار'
                                 : tenantHistoryScoped
                                     ? 'لا توجد عقود سابقة لهذا المستأجر'
-                                : ((effectiveArchiveFilter ==
-                                        _ArchiveFilter.archived)
-                                    ? 'لا توجد عقود مؤرشفة'
-                                    : 'لا توجد عقود'),
+                                    : ((effectiveArchiveFilter ==
+                                            _ArchiveFilter.archived)
+                                        ? 'لا توجد عقود مؤرشفة'
+                                        : 'لا توجد عقود'),
                             style: GoogleFonts.cairo(
                                 color: Colors.white70,
                                 fontWeight: FontWeight.w700),
@@ -4538,6 +4647,7 @@ class _ContractsScreenState extends State<ContractsScreen> {
                         separatorBuilder: (_, __) => SizedBox(height: 10.h),
                         itemBuilder: (_, i) {
                           final c = items[i];
+                          // ignore: unused_local_variable
                           final number = (c.serialNo?.isNotEmpty == true)
                               ? c.serialNo!
                               : c.id; // ← أضِفه هنا
@@ -4658,6 +4768,7 @@ class _ContractsScreenState extends State<ContractsScreen> {
                                   context)) {
                                 return;
                               }
+                              if (!context.mounted) return;
 
                               if (c.isArchived) {
                                 await _showArchiveNoticeDialog(
@@ -4835,6 +4946,7 @@ class _ContractsScreenState extends State<ContractsScreen> {
           onPressed: () async {
             // 🚫 منع عميل المكتب من إضافة عقد
             if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
+            if (!context.mounted) return;
 
             final created = await Navigator.of(context).push<Contract?>(
               MaterialPageRoute(
@@ -4848,7 +4960,7 @@ class _ContractsScreenState extends State<ContractsScreen> {
               // (اختياري) منطقك الحالي بعد الإضافة: إشغال العقار، تحديث عدّاد المستأجر...
               await _onContractCreated(created);
 
-              if (!mounted) return;
+              if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text('تم إضافة العقد', style: GoogleFonts.cairo()),
@@ -4879,8 +4991,6 @@ class _ContractsScreenState extends State<ContractsScreen> {
     _autoReleasedOnce = true;
 
     final now = SaTimeLite.now();
-    final today = _dateOnly(now);
-
     final Box<Property> propsBox = Hive.box<Property>(boxName(kPropertiesBox));
     final Box<Contract> contBox = Hive.box<Contract>(boxName(kContractsBox));
     final Box<Tenant> tenantsBox = Hive.box<Tenant>(boxName(kTenantsBox));
@@ -5007,7 +5117,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
   Box<Property> get _properties => Hive.box<Property>(boxName(kPropertiesBox));
   final Map<String, Future<String>> _remoteThumbUrls = {};
   static const MethodChannel _downloadsChannel =
-      MethodChannel('darvoo/downloads');
+      MethodChannel('ejarzpro/downloads');
 
   // BottomNav + Drawer
   final GlobalKey _bottomNavKey = GlobalKey();
@@ -5016,6 +5126,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
 
   DateTime? _overrideNextDue; // نعتبر القسط التالي بعد السداد مباشرة (عرض محلي)
 
+  // ignore: unused_element
   DateTime? _effectiveNextDue(Contract c) =>
       _overrideNextDue ?? _nextDueDate(c);
 
@@ -5044,7 +5155,8 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
     _snapshotBackfillAttempted = true;
 
     var contract = widget.contract;
-    final live = firstWhereOrNull(_contracts.values, (c) => c.id == contract.id);
+    final live =
+        firstWhereOrNull(_contracts.values, (c) => c.id == contract.id);
     if (live != null) {
       contract = live;
     }
@@ -5052,8 +5164,8 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
 
     final tenant =
         firstWhereOrNull(_tenants.values, (x) => x.id == contract.tenantId);
-    final property =
-        firstWhereOrNull(_properties.values, (x) => x.id == contract.propertyId);
+    final property = firstWhereOrNull(
+        _properties.values, (x) => x.id == contract.propertyId);
     final building = property?.parentBuildingId == null
         ? null
         : firstWhereOrNull(
@@ -5076,13 +5188,14 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
 
   Future<void> _renewContract(BuildContext context, Contract contract) async {
     if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
+    if (!context.mounted) return;
 
     final created = await Navigator.of(context).pushNamed(
       '/contracts/new',
       arguments: {'renewFromContract': contract},
     );
 
-    if (!mounted || created is! Contract) return;
+    if (!context.mounted || created is! Contract) return;
 
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -5595,7 +5708,8 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
           _showTopNotice('تعذر مشاركة المرفق', isError: true);
           return;
         }
-        await Share.shareXFiles([XFile(f.path, mimeType: _mimeFromPath(f.path))]);
+        await Share.shareXFiles(
+            [XFile(f.path, mimeType: _mimeFromPath(f.path))]);
       }
     } catch (e, s) {
       debugPrint('[attachments] share failed: $e');
@@ -5660,9 +5774,19 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
             children: [
               ListTile(
                 leading:
+                    const Icon(Icons.open_in_new_rounded, color: Colors.white),
+                title: Text('فتح مباشرة',
+                    style: GoogleFonts.cairo(color: Colors.white)),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  await _openAttachment(path);
+                },
+              ),
+              ListTile(
+                leading:
                     const Icon(Icons.download_rounded, color: Colors.white),
-                title:
-                    Text('تحميل', style: GoogleFonts.cairo(color: Colors.white)),
+                title: Text('تحميل',
+                    style: GoogleFonts.cairo(color: Colors.white)),
                 onTap: () async {
                   Navigator.of(ctx).pop();
                   await _downloadAttachment(path);
@@ -5670,8 +5794,8 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.share_rounded, color: Colors.white),
-                title:
-                    Text('مشاركة', style: GoogleFonts.cairo(color: Colors.white)),
+                title: Text('مشاركة',
+                    style: GoogleFonts.cairo(color: Colors.white)),
                 onTap: () async {
                   Navigator.of(ctx).pop();
                   await _shareAttachment(path);
@@ -5685,12 +5809,14 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
     );
   }
 
+  // ignore: unused_element
   Future<void> _openAttachment(String path) async {
     try {
       final raw = path.trim();
       String launchable = raw;
       if (raw.startsWith('gs://')) {
-        launchable = await FirebaseStorage.instance.refFromURL(raw).getDownloadURL();
+        launchable =
+            await FirebaseStorage.instance.refFromURL(raw).getDownloadURL();
       }
       Uri? uri;
       if (_isRemoteAttachment(launchable)) {
@@ -5707,7 +5833,8 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
       }
       if (!opened && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر فتح المرفق', style: GoogleFonts.cairo())),
+          SnackBar(
+              content: Text('تعذر فتح المرفق', style: GoogleFonts.cairo())),
         );
       }
     } catch (_) {
@@ -5753,15 +5880,17 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
     final inactive = _isContractInactive(contract);
     final tenantName =
         t?.fullName ?? _snapshotString(tenantSnapshot, 'fullName') ?? '—';
-    final secondLineName =
-        p?.name ??
+    final secondLineName = p?.name ??
         _snapshotString(propertySnapshot, 'name') ??
         building?.name ??
         _snapshotString(buildingSnapshot, 'name') ??
         '—';
 
+    // ignore: unused_local_variable
     final bool dueToday = _isDueToday(contract);
+    // ignore: unused_local_variable
     final bool overdue = _isOverdue(contract);
+    // ignore: unused_local_variable
     final bool dueSoon = _isDueSoon(contract);
 
 // لا نستخدم قاربت/مستحقة/متأخرة لحالة العقد نفسه
@@ -5791,8 +5920,11 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
       statusColor = const Color(0xFF065F46);
     }
 
+    // ignore: unused_local_variable
     final coveredMonths = _coveredMonthsByAdvance(contract);
+    // ignore: unused_local_variable
     final firstDueAfterAdvance = _firstDueAfterAdvance(contract);
+    // ignore: unused_local_variable
     final bool allPaid = _allInstallmentsPaid(contract);
 // كوّن كومة الدفعات غير المسدّدة حتى اليوم
     final unpaidStack = _buildUnpaidStack(contract);
@@ -5820,13 +5952,17 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
     }
 
 // عنوان القسم
+    // ignore: unused_local_variable
     final sectionHeaderTitle =
         unpaidStack.isNotEmpty ? 'دفعات غير مسددة' : 'الدفعة القادمة';
 
 // الحالة + اللون (مطابقة لأعلى الشاشة والقائمة)
+    // ignore: unused_local_variable
     String? nextLabel;
+    // ignore: unused_local_variable
     Color? nextColor;
 
+    // ignore: unused_local_variable
     final perCycleAmount = _perCycleAmount(contract);
 
     // لليومي: حساب القيمة اليومية من الإجمالي
@@ -5863,7 +5999,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text('تفاصيل العقد',
               style: GoogleFonts.cairo(
                   color: Colors.white, fontWeight: FontWeight.w800)),
@@ -5881,6 +6017,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                 if (await OfficeClientGuard.blockIfOfficeClient(context)) {
                   return;
                 }
+                if (!context.mounted) return;
 
                 // 🔒 تأكد أن العقد مرتبط بصندوق Hive
 
@@ -5922,6 +6059,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                     contract.isArchived = true;
                     await contract.save();
                   }
+                  if (!context.mounted) return;
                   await _showArchiveNoticeDialog(
                     context,
                     message:
@@ -5957,6 +6095,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                   } catch (_) {}
 
                   if (hasUnpaid) {
+                    if (!context.mounted) return;
                     await _showArchiveNoticeDialog(
                       context,
                       message:
@@ -6225,7 +6364,9 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                         padding: EdgeInsets.all(14.w),
                         child: Builder(
                           builder: (_) {
-                            final waterTotals = _waterTotalsForContract(contract);
+                            // ignore: unused_local_variable
+                            final waterTotals =
+                                _waterTotalsForContract(contract);
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -6274,7 +6415,9 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                                       '${_fmtMoneyTrunc(contract.advancePaid ?? 0)} ${_displayCurrency(contract.currency)}'),
                                 if (ejarNoForView.isNotEmpty)
                                   _rowInfo('رقم منصة إيجار', ejarNoForView),
-                                if (_waterSummaryText(contract).trim().isNotEmpty)
+                                if (_waterSummaryText(contract)
+                                    .trim()
+                                    .isNotEmpty)
                                   _rowInfo('خدمات المياه',
                                       _waterSummaryText(contract)),
                               ],
@@ -6397,7 +6540,8 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                                       child: Container(
                                         width: 92.w,
                                         height: 92.w,
-                                        color: Colors.white.withOpacity(0.08),
+                                        color: Colors.white
+                                            .withValues(alpha: 0.08),
                                         child: _buildAttachmentThumb(path),
                                       ),
                                     ),
@@ -6427,6 +6571,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                                       .blockIfOfficeClient(context)) {
                                     return;
                                   }
+                                  if (!context.mounted) return;
 
                                   _terminate(context, contract);
                                 },
@@ -6448,6 +6593,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                                     context)) {
                                   return;
                                 }
+                                if (!context.mounted) return;
 
                                 _editNotes(context, contract);
                               },
@@ -6461,8 +6607,9 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                       if (contract.isTerminated ||
                           _hasEnded(contract) ||
                           contract.isExpiredByTime) ...[
-                        _noteCard(
-                            contract.isTerminated ? 'العقد ملغي' : 'العقد منتهي'),
+                        _noteCard(contract.isTerminated
+                            ? 'العقد ملغي'
+                            : 'العقد منتهي'),
                         SizedBox(
                             height: 8
                                 .h), // مسافة بسيطة (عدّلها 6.h أو 10.h حسب رغبتك)
@@ -6556,6 +6703,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                                               .blockIfOfficeClient(context)) {
                                             return;
                                           }
+                                          if (!context.mounted) return;
 
                                           _confirmAndPay(context, contract,
                                               _dateOnly(contract.startDate));
@@ -6691,6 +6839,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                                                           context)) {
                                                     return;
                                                   }
+                                                  if (!context.mounted) return;
 
                                                   _confirmAndPay(
                                                       context,
@@ -6864,6 +7013,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                                                           context)) {
                                                     return;
                                                   }
+                                                  if (!context.mounted) return;
 
                                                   _confirmAndPay(
                                                       context,
@@ -6898,7 +7048,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                             color: const Color(0xFF0B1220),
                             borderRadius: BorderRadius.circular(12.r),
                             border: Border.all(
-                                color: Colors.white.withOpacity(0.12)),
+                                color: Colors.white.withValues(alpha: 0.12)),
                           ),
                           child: Row(
                             children: [
@@ -6949,7 +7099,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
         decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(10.r),
-            border: Border.all(color: Colors.white.withOpacity(0.15))),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.15))),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(icon, size: 16.sp, color: Colors.white),
           SizedBox(width: 6.w),
@@ -7019,7 +7169,8 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
     if (_isContractInactive(contract)) {
       final resolved = snapshot ?? _resolvedTenantSnapshot(contract, tenant);
       if (resolved == null || resolved.isEmpty) {
-        showSnackSafe(context, 'لا تتوفر نسخة محفوظة من بيانات المستأجر لهذا العقد.');
+        showSnackSafe(
+            context, 'لا تتوفر نسخة محفوظة من بيانات المستأجر لهذا العقد.');
         return;
       }
       await Navigator.of(context).push(
@@ -7027,7 +7178,8 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
           builder: (_) => _ContractTenantSnapshotScreen(
             snapshot: resolved,
             onAttachmentTap: _showAttachmentActions,
-            onOpenOriginal: () => _openOriginalTenantFromSnapshot(context, resolved),
+            onOpenOriginal: () =>
+                _openOriginalTenantFromSnapshot(context, resolved),
           ),
         ),
       );
@@ -7054,7 +7206,8 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
       final resolvedProperty =
           propertySnapshot ?? _resolvedPropertySnapshot(contract, property);
       if (resolvedProperty == null || resolvedProperty.isEmpty) {
-        showSnackSafe(context, 'لا تتوفر نسخة محفوظة من بيانات العقار لهذا العقد.');
+        showSnackSafe(
+            context, 'لا تتوفر نسخة محفوظة من بيانات العقار لهذا العقد.');
         return;
       }
       await Navigator.of(context).push(
@@ -7084,14 +7237,14 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
               resolvedProperty,
               isBuilding: false,
             ),
-            onOpenOriginalBuilding: buildingSnapshot == null ||
-                    buildingSnapshot.isEmpty
-                ? null
-                : () => _openOriginalPropertyFromSnapshot(
-                      context,
-                      buildingSnapshot,
-                      isBuilding: true,
-                    ),
+            onOpenOriginalBuilding:
+                buildingSnapshot == null || buildingSnapshot.isEmpty
+                    ? null
+                    : () => _openOriginalPropertyFromSnapshot(
+                          context,
+                          buildingSnapshot,
+                          isBuilding: true,
+                        ),
           ),
         ),
       );
@@ -7116,13 +7269,18 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
     );
 
     if (!ok) return;
+    if (!context.mounted) return;
     await _goPay(context, c, due);
   }
 
   Future<void> _goPay(BuildContext context, Contract c, DateTime due) async {
+    // ignore: unused_local_variable
     final number = (c.serialNo?.isNotEmpty == true) ? c.serialNo! : c.id;
 
     try {
+      await HiveService.ensureReportsBoxesOpen();
+      await openServicesConfigBox();
+
       // منع السداد قبل بداية العقد
       if (!_hasStarted(c)) {
         if (context.mounted) {
@@ -7149,6 +7307,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
         return;
       }
 
+      // ignore: unused_local_variable
       final today = _dateOnly(SaTimeLite.now());
 // 👇 ضع هذا داخل _goPay قبل إنشاء السند (بعد فحوصات البداية/اليومي)
       final earliest = _earliestUnpaidDueDate(c); // أقدم قسط غير مسدَّد فعليًا
@@ -7221,6 +7380,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
 
 // تجهيز رقم العقد للعرض الصحيح
       final serialDisplay = displaySerial(c.serialNo); // سنة-تسلسل
+      // ignore: unused_local_variable
       final serialLtr = '\u200E$serialDisplay\u200E'; // عرض من اليسار لليمين
 
       final inv = Invoice(
@@ -7249,7 +7409,10 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
       );
 
 // أضف السند
-      final invBox = Hive.box<Invoice>(boxName(kInvoicesBox));
+      final invBoxId = boxName(kInvoicesBox);
+      final invBox = Hive.isBoxOpen(invBoxId)
+          ? Hive.box<Invoice>(invBoxId)
+          : await Hive.openBox<Invoice>(invBoxId);
 // ترقيم عند الإنشاء: لجميع السندات غير الملغاة
       if ((inv.serialNo ?? '').isEmpty && inv.isCanceled != true) {
         inv.serialNo = _nextInvoiceSerialForContracts(invBox);
@@ -7275,9 +7438,26 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                 Text('تم إصدار السند تلقائيًا', style: GoogleFonts.cairo())),
       );
 
-      await Navigator.of(context)
-          .pushNamed('/invoices/history', arguments: {'contractId': c.id});
-    } catch (e) {
+      try {
+        await Navigator.of(context)
+            .pushNamed('/invoices/history', arguments: {'contractId': c.id});
+      } catch (e, st) {
+        debugPrint('Failed to open invoices history after payment: $e');
+        debugPrintStack(stackTrace: st);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'تم إصدار السند، لكن تعذر فتح سجل السندات: $e',
+                style: GoogleFonts.cairo(),
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e, st) {
+      debugPrint('Failed to issue contract payment voucher: $e');
+      debugPrintStack(stackTrace: st);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -7293,6 +7473,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
       await Navigator.of(context)
           .pushNamed('/invoices/history', arguments: {'contractId': c.id});
     } catch (_) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('شاشة سندات الدفعات السابقة غير متوفرة بعد.',
               style: GoogleFonts.cairo())));
@@ -7327,15 +7508,15 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
                 hintText: 'اكتب ملاحظاتك هنا',
                 hintStyle: GoogleFonts.cairo(color: Colors.white54),
                 filled: true,
-                fillColor: Colors.white.withOpacity(0.06),
+                fillColor: Colors.white.withValues(alpha: 0.06),
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12.r),
-                    borderSide:
-                        BorderSide(color: Colors.white.withOpacity(0.12))),
+                    borderSide: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.12))),
                 enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12.r),
-                    borderSide:
-                        BorderSide(color: Colors.white.withOpacity(0.12))),
+                    borderSide: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.12))),
                 focusedBorder: const OutlineInputBorder(
                     borderRadius: BorderRadius.all(Radius.circular(12)),
                     borderSide: BorderSide(color: Colors.white)),
@@ -7593,9 +7774,11 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
     }
   }
 
+  // ignore: unused_element
   Future<void> _delete(BuildContext context, Contract contract) async {
     // 🚫 حماية إضافية: منع عميل المكتب من الحذف حتى لو استُدعيت الدالة مباشرة
     if (await OfficeClientGuard.blockIfOfficeClient(context)) return;
+    if (!context.mounted) return;
 
     // ✅ أولاً: اجلب النسخة الحية من بوكس العقود
     final contractsBox = Hive.box<Contract>(boxName(kContractsBox));
@@ -7603,7 +7786,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
     Contract? live = contract;
 
     // لو النسخة التي وصلت ليست داخل الصندوق، حاول إيجادها عن طريق id
-    if (!(live.isInBox ?? false)) {
+    if (!live.isInBox) {
       live = firstWhereOrNull(
         contractsBox.values,
         (c) => c.id == contract.id,
@@ -7630,6 +7813,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
 
     // امنع الحذف ما لم يكن العقد مُنتهياً
     if (!cLive.isTerminated) {
+      if (!context.mounted) return;
       await CustomConfirmDialog.show(
         context: context,
         title: 'لا يمكن الحذف',
@@ -7647,6 +7831,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
           invBoxCheck.values.any((i) => i.contractId == cidCheck);
 
       if (hasInvoices) {
+        if (!context.mounted) return;
         await CustomConfirmDialog.show(
           context: context,
           title: 'لا يمكن الحذف',
@@ -7671,6 +7856,7 @@ class _ContractDetailsScreenState extends State<ContractDetailsScreen> {
     );
 
     if (!ok) return;
+    if (!context.mounted) return;
 
     final properties = Hive.box<Property>(boxName(kPropertiesBox));
     final tenants = Hive.box<Tenant>(boxName(kTenantsBox));
@@ -7751,7 +7937,7 @@ class _ContractSnapshotScaffold extends StatelessWidget {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text(
             title,
             style: GoogleFonts.cairo(
@@ -7799,7 +7985,8 @@ class _ContractSnapshotScaffold extends StatelessWidget {
   }
 }
 
-Widget _snapshotVisibleRowInfo(String label, String? value, {VoidCallback? onTap}) {
+Widget _snapshotVisibleRowInfo(String label, String? value,
+    {VoidCallback? onTap}) {
   final has = (value ?? '').trim().isNotEmpty;
   if (!has) return const SizedBox.shrink();
   final valueText = Text(
@@ -7867,7 +8054,7 @@ class _SnapshotAttachmentGrid extends StatelessWidget {
                   child: Container(
                     width: 92.w,
                     height: 92.w,
-                    color: Colors.white.withOpacity(0.08),
+                    color: Colors.white.withValues(alpha: 0.08),
                     child: _buildSnapshotAttachmentThumb(path),
                   ),
                 ),
@@ -7910,7 +8097,8 @@ class _ContractTenantSnapshotScreen extends StatelessWidget {
         _snapshotString(snapshot, 'companyBankName') != null ||
         _snapshotString(snapshot, 'companyBankAccountNumber') != null ||
         _snapshotString(snapshot, 'companyTaxNumber') != null;
-    final hasService = _snapshotString(snapshot, 'serviceSpecialization') != null;
+    final hasService =
+        _snapshotString(snapshot, 'serviceSpecialization') != null;
     final tags = _snapshotStringList(snapshot, 'tags');
     final attachments = _snapshotStringList(snapshot, 'attachmentPaths');
     final isBlacklisted = _snapshotBoolValue(snapshot, 'isBlacklisted') == true;
@@ -7935,15 +8123,15 @@ class _ContractTenantSnapshotScreen extends StatelessWidget {
           padding: EdgeInsets.all(14.w),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _sectionTitle('بيانات المستأجر وقت العقد'),
-                _snapshotVisibleRowInfo(
-                  'الاسم',
-                  _snapshotString(snapshot, 'fullName'),
-                  onTap: onOpenOriginal == null ? null : () => onOpenOriginal!(),
-                ),
-                _snapshotVisibleRowInfo(
-                    'نوع العميل', _snapshotString(snapshot, 'clientTypeLabel')),
+            children: [
+              _sectionTitle('بيانات المستأجر وقت العقد'),
+              _snapshotVisibleRowInfo(
+                'الاسم',
+                _snapshotString(snapshot, 'fullName'),
+                onTap: onOpenOriginal == null ? null : () => onOpenOriginal!(),
+              ),
+              _snapshotVisibleRowInfo(
+                  'نوع العميل', _snapshotString(snapshot, 'clientTypeLabel')),
               _snapshotVisibleRowInfo(
                   'رقم الهوية', _snapshotString(snapshot, 'nationalId')),
               _snapshotVisibleRowInfo(
@@ -7987,15 +8175,14 @@ class _ContractTenantSnapshotScreen extends StatelessWidget {
                 _sectionTitle('بيانات إضافية'),
                 _snapshotVisibleRowInfo(
                     'اسم الطوارئ', _snapshotString(snapshot, 'emergencyName')),
-                _snapshotVisibleRowInfo(
-                    'جوال الطوارئ', _snapshotString(snapshot, 'emergencyPhone')),
+                _snapshotVisibleRowInfo('جوال الطوارئ',
+                    _snapshotString(snapshot, 'emergencyPhone')),
                 _snapshotVisibleRowInfo(
                     'اسم البنك', _snapshotString(snapshot, 'tenantBankName')),
-                _snapshotVisibleRowInfo(
-                    'رقم الحساب',
+                _snapshotVisibleRowInfo('رقم الحساب',
                     _snapshotString(snapshot, 'tenantBankAccountNumber')),
-                _snapshotVisibleRowInfo(
-                    'الرقم الضريبي', _snapshotString(snapshot, 'tenantTaxNumber')),
+                _snapshotVisibleRowInfo('الرقم الضريبي',
+                    _snapshotString(snapshot, 'tenantTaxNumber')),
                 _snapshotVisibleRowInfo(
                     'الوسوم', tags.isEmpty ? null : tags.join('، ')),
                 _snapshotVisibleRowInfo(
@@ -8020,14 +8207,14 @@ class _ContractTenantSnapshotScreen extends StatelessWidget {
                     'اسم الشركة', _snapshotString(snapshot, 'companyName')),
                 _snapshotVisibleRowInfo('السجل التجاري',
                     _snapshotString(snapshot, 'companyCommercialRegister')),
-                _snapshotVisibleRowInfo(
-                    'الرقم الضريبي', _snapshotString(snapshot, 'companyTaxNumber')),
+                _snapshotVisibleRowInfo('الرقم الضريبي',
+                    _snapshotString(snapshot, 'companyTaxNumber')),
                 _snapshotVisibleRowInfo('اسم الممثل',
                     _snapshotString(snapshot, 'companyRepresentativeName')),
                 _snapshotVisibleRowInfo('جوال الممثل',
                     _snapshotString(snapshot, 'companyRepresentativePhone')),
-                _snapshotVisibleRowInfo('بنك الشركة',
-                    _snapshotString(snapshot, 'companyBankName')),
+                _snapshotVisibleRowInfo(
+                    'بنك الشركة', _snapshotString(snapshot, 'companyBankName')),
                 _snapshotVisibleRowInfo('حساب الشركة',
                     _snapshotString(snapshot, 'companyBankAccountNumber')),
               ],
@@ -8042,8 +8229,8 @@ class _ContractTenantSnapshotScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _sectionTitle('بيانات الخدمة وقت العقد'),
-                _snapshotVisibleRowInfo(
-                    'التخصص', _snapshotString(snapshot, 'serviceSpecialization')),
+                _snapshotVisibleRowInfo('التخصص',
+                    _snapshotString(snapshot, 'serviceSpecialization')),
               ],
             ),
           ),
@@ -8101,13 +8288,15 @@ class _ContractPropertySnapshotScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasBuilding = buildingSnapshot != null && buildingSnapshot!.isNotEmpty;
+    final hasBuilding =
+        buildingSnapshot != null && buildingSnapshot!.isNotEmpty;
     final propertyAttachments =
         _snapshotStringList(propertySnapshot, 'documentAttachmentPaths');
     final buildingAttachments = hasBuilding
         ? _snapshotStringList(buildingSnapshot, 'documentAttachmentPaths')
         : const <String>[];
-    final propertyDescription = _snapshotPropertyFreeDescription(propertySnapshot);
+    final propertyDescription =
+        _snapshotPropertyFreeDescription(propertySnapshot);
     final buildingDescription =
         hasBuilding ? _snapshotPropertyFreeDescription(buildingSnapshot) : null;
     final furnishingText = _snapshotPropertyFurnishingText(propertySnapshot);
@@ -8116,8 +8305,10 @@ class _ContractPropertySnapshotScreen extends StatelessWidget {
       buildingSnapshot: buildingSnapshot,
     );
     final propertyDescriptionLabel = hasBuilding ? 'وصف الوحدة' : 'وصف العقار';
-    final propertyTotalUnits = _snapshotIntValue(propertySnapshot, 'totalUnits');
-    final propertyOccupiedUnits = _snapshotIntValue(propertySnapshot, 'occupiedUnits');
+    final propertyTotalUnits =
+        _snapshotIntValue(propertySnapshot, 'totalUnits');
+    final propertyOccupiedUnits =
+        _snapshotIntValue(propertySnapshot, 'occupiedUnits');
     final effectivePropertyTotalUnits =
         propertyTotalUnits != null && propertyTotalUnits > 0
             ? propertyTotalUnits
@@ -8139,29 +8330,33 @@ class _ContractPropertySnapshotScreen extends StatelessWidget {
         buildingTotalUnits != null && buildingTotalUnits > 0
             ? buildingTotalUnits
             : null;
-    final rawBuildingOccupiedUnits =
-        hasBuilding ? _snapshotIntValue(buildingSnapshot, 'occupiedUnits') : null;
-    final buildingOccupiedDisplay = !hasBuilding || effectiveBuildingTotalUnits == null
-        ? null
-        : (() {
-            var occupied = rawBuildingOccupiedUnits ?? 0;
-            if (occupied <= 0) {
-              occupied = (propertyOccupiedUnits != null && propertyOccupiedUnits! > 0)
-                  ? propertyOccupiedUnits!
-                  : 1;
-            }
-            if (occupied < 0) return 0;
-            if (occupied > effectiveBuildingTotalUnits) {
-              return effectiveBuildingTotalUnits;
-            }
-            return occupied;
-          })();
+    final rawBuildingOccupiedUnits = hasBuilding
+        ? _snapshotIntValue(buildingSnapshot, 'occupiedUnits')
+        : null;
+    final buildingOccupiedDisplay =
+        !hasBuilding || effectiveBuildingTotalUnits == null
+            ? null
+            : (() {
+                var occupied = rawBuildingOccupiedUnits ?? 0;
+                if (occupied <= 0) {
+                  occupied = (propertyOccupiedUnits != null &&
+                          propertyOccupiedUnits > 0)
+                      ? propertyOccupiedUnits
+                      : 1;
+                }
+                if (occupied < 0) return 0;
+                if (occupied > effectiveBuildingTotalUnits) {
+                  return effectiveBuildingTotalUnits;
+                }
+                return occupied;
+              })();
     final buildingVacantDisplay =
         effectiveBuildingTotalUnits == null || buildingOccupiedDisplay == null
             ? null
             : (effectiveBuildingTotalUnits - buildingOccupiedDisplay);
-    final buildingTypeLabel =
-        hasBuilding ? _snapshotBuildingTypeDisplayLabel(buildingSnapshot) : null;
+    final buildingTypeLabel = hasBuilding
+        ? _snapshotBuildingTypeDisplayLabel(buildingSnapshot)
+        : null;
 
     return _ContractSnapshotScaffold(
       title: 'نسخة العقار',
@@ -8196,10 +8391,9 @@ class _ContractPropertySnapshotScreen extends StatelessWidget {
                   'العنوان', _snapshotString(propertySnapshot, 'address')),
               _snapshotVisibleRowInfo(
                   'القيمة الإيجارية', _moneyText(propertySnapshot, 'price')),
+              _snapshotVisibleRowInfo('المساحة', _areaText(propertySnapshot)),
               _snapshotVisibleRowInfo(
-                  'المساحة', _areaText(propertySnapshot)),
-              _snapshotVisibleRowInfo('عدد الغرف',
-                  _snapshotNumberText(propertySnapshot, 'rooms')),
+                  'عدد الغرف', _snapshotNumberText(propertySnapshot, 'rooms')),
               _snapshotVisibleRowInfo('عدد الطوابق',
                   _snapshotNumberText(propertySnapshot, 'floors')),
               if (!hasBuilding)
@@ -8217,13 +8411,15 @@ class _ContractPropertySnapshotScreen extends StatelessWidget {
               if (!hasBuilding)
                 _snapshotVisibleRowInfo(
                     'عدد الوحدات الخالية',
-                    propertyVacantDisplay == null ? null : '$propertyVacantDisplay'),
+                    propertyVacantDisplay == null
+                        ? null
+                        : '$propertyVacantDisplay'),
               _snapshotVisibleRowInfo('وضع التأجير',
                   _snapshotString(propertySnapshot, 'rentalModeLabel')),
-              _snapshotVisibleRowInfo(
-                  'نوع الوثيقة', _snapshotString(propertySnapshot, 'documentType')),
-              _snapshotVisibleRowInfo(
-                  'رقم الوثيقة', _snapshotString(propertySnapshot, 'documentNumber')),
+              _snapshotVisibleRowInfo('نوع الوثيقة',
+                  _snapshotString(propertySnapshot, 'documentType')),
+              _snapshotVisibleRowInfo('رقم الوثيقة',
+                  _snapshotString(propertySnapshot, 'documentNumber')),
               _dateRow(propertySnapshot, 'تاريخ الوثيقة', 'documentDate'),
               _snapshotVisibleRowInfo('رقم الكهرباء',
                   _snapshotString(propertySnapshot, 'electricityNumber')),
@@ -8231,14 +8427,14 @@ class _ContractPropertySnapshotScreen extends StatelessWidget {
                   _snapshotString(propertySnapshot, 'electricityMode')),
               _snapshotVisibleRowInfo('حصة الكهرباء',
                   _snapshotString(propertySnapshot, 'electricityShare')),
-              _snapshotVisibleRowInfo(
-                  'رقم المياه', _snapshotString(propertySnapshot, 'waterNumber')),
+              _snapshotVisibleRowInfo('رقم المياه',
+                  _snapshotString(propertySnapshot, 'waterNumber')),
               _snapshotVisibleRowInfo(
                   'وضع المياه', _snapshotString(propertySnapshot, 'waterMode')),
-              _snapshotVisibleRowInfo(
-                  'حصة المياه', _snapshotString(propertySnapshot, 'waterShare')),
-              _snapshotVisibleRowInfo(
-                  'قيمة المياه', _snapshotString(propertySnapshot, 'waterAmount')),
+              _snapshotVisibleRowInfo('حصة المياه',
+                  _snapshotString(propertySnapshot, 'waterShare')),
+              _snapshotVisibleRowInfo('قيمة المياه',
+                  _snapshotString(propertySnapshot, 'waterAmount')),
               _snapshotVisibleRowInfo(
                   propertyDescriptionLabel, propertyDescription),
               if (hasBuilding) ...[
@@ -8249,10 +8445,9 @@ class _ContractPropertySnapshotScreen extends StatelessWidget {
                       ? null
                       : () => onOpenOriginalBuilding!(),
                 ),
-                _snapshotVisibleRowInfo(
-                    'نوع العقار', buildingTypeLabel),
-                _snapshotVisibleRowInfo(
-                    'عنوان العمارة', _snapshotString(buildingSnapshot, 'address')),
+                _snapshotVisibleRowInfo('نوع العقار', buildingTypeLabel),
+                _snapshotVisibleRowInfo('عنوان العمارة',
+                    _snapshotString(buildingSnapshot, 'address')),
                 _snapshotVisibleRowInfo('عدد طوابق العمارة',
                     _snapshotNumberText(buildingSnapshot, 'floors')),
                 _snapshotVisibleRowInfo(
@@ -8267,12 +8462,15 @@ class _ContractPropertySnapshotScreen extends StatelessWidget {
                         : '$buildingOccupiedDisplay'),
                 _snapshotVisibleRowInfo(
                     'عدد الوحدات الخالية',
-                    buildingVacantDisplay == null ? null : '$buildingVacantDisplay'),
+                    buildingVacantDisplay == null
+                        ? null
+                        : '$buildingVacantDisplay'),
                 _snapshotVisibleRowInfo('نوع وثيقة\nالعمارة',
                     _snapshotString(buildingSnapshot, 'documentType')),
                 _snapshotVisibleRowInfo('رقم وثيقة العمارة',
                     _snapshotString(buildingSnapshot, 'documentNumber')),
-                _dateRow(buildingSnapshot!, 'تاريخ وثيقة العمارة', 'documentDate'),
+                _dateRow(
+                    buildingSnapshot!, 'تاريخ وثيقة العمارة', 'documentDate'),
                 _snapshotVisibleRowInfo('رقم كهرباء العمارة',
                     _snapshotString(buildingSnapshot, 'electricityNumber')),
                 _snapshotVisibleRowInfo('رقم مياه العمارة',
@@ -8336,7 +8534,8 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
   final Set<String> _initialLocalAttachments = <String>{};
   final Map<String, Future<String>> _remoteThumbUrls = {};
   bool _processingAttachments = false;
-  bool _advanceLimitExceeded = false; // المقدم تجاوز المبلغ الكلي
+  // ignore: unused_field
+  final bool _advanceLimitExceeded = false; // المقدم تجاوز المبلغ الكلي
   bool _rentLimitExceeded = false; // ✅ هنا بالضبط
   bool _ejarLimitExceeded = false;
   int? _dailyContractEndHour;
@@ -8426,8 +8625,7 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
     final shouldOpenSettings = await CustomConfirmDialog.show(
       context: context,
       title: 'تنبيه',
-      message:
-          'يجب أولًا إعداد وقت انتهاء العقود اليومية من شاشة الإعدادات.',
+      message: 'يجب أولًا إعداد وقت انتهاء العقود اليومية من شاشة الإعدادات.',
       confirmLabel: 'موافق',
       cancelLabel: 'إلغاء',
       confirmColor: const Color(0xFF0F766E),
@@ -8632,8 +8830,9 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
         ? (source.termYears <= 0 ? 1 : source.termYears.clamp(1, 10))
         : 1;
     _cycle = source.paymentCycle;
-    _cycleYears =
-        source.paymentCycleYears <= 0 ? 1 : source.paymentCycleYears.clamp(1, 10);
+    _cycleYears = source.paymentCycleYears <= 0
+        ? 1
+        : source.paymentCycleYears.clamp(1, 10);
     _currency = source.currency;
     _advMode = AdvanceMode.none;
     _notes.text = source.notes ?? '';
@@ -8645,7 +8844,8 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
     if (_term == ContractTerm.daily) {
       final days = _dailyContractDays(source.startDate, source.endDate);
       _daysCtrl.text = days.toString();
-      final perDay = days > 0 ? (source.totalAmount / days) : source.totalAmount;
+      final perDay =
+          days > 0 ? (source.totalAmount / days) : source.totalAmount;
       _rent.text = perDay.toStringAsFixed(2);
     } else {
       _rent.text = source.totalAmount.toString();
@@ -8762,11 +8962,11 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
     final days = _computeDays();
     final isDaily = _term == ContractTerm.daily;
     final rentInput = double.tryParse(_rent.text.trim()) ?? 0.0;
+    // ignore: unused_local_variable
     final advanceVal = double.tryParse(_advance.text.trim()) ?? 0.0;
     final dailyCheckoutHour = _effectiveDailyCheckoutHour();
-    final dailyCheckoutLabel = dailyCheckoutHour == null
-        ? null
-        : _formatHourAmPm(dailyCheckoutHour);
+    final dailyCheckoutLabel =
+        dailyCheckoutHour == null ? null : _formatHourAmPm(dailyCheckoutHour);
     final dailyRentValue = isDaily ? rentInput : 0.0;
     final totalDaily = isDaily ? (rentInput * (days > 0 ? days : 0)) : 0.0;
     final dailyStartPreview =
@@ -8778,14 +8978,15 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
                 dailyCheckoutHour,
               )
             : null;
-    final dailyEndPreview = isDaily && _endDate != null && dailyCheckoutHour != null
-        ? DateTime(
-            _endDate!.year,
-            _endDate!.month,
-            _endDate!.day,
-            dailyCheckoutHour,
-          )
-        : null;
+    final dailyEndPreview =
+        isDaily && _endDate != null && dailyCheckoutHour != null
+            ? DateTime(
+                _endDate!.year,
+                _endDate!.month,
+                _endDate!.day,
+                dailyCheckoutHour,
+              )
+            : null;
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -8811,7 +9012,7 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           title: Text(isEdit ? 'تعديل عقد' : 'إضافة عقد',
               style: GoogleFonts.cairo(
                   color: Colors.white, fontWeight: FontWeight.w800)),
@@ -8839,7 +9040,12 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
                 left: -100,
                 child: _softCircle(260.r, const Color(0x22FFFFFF))),
             SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 24.h),
+              padding: EdgeInsets.fromLTRB(
+                16.w,
+                16.h,
+                16.w,
+                24.h + _bottomBarHeight + MediaQuery.of(context).padding.bottom,
+              ),
               child: _DarkCard(
                 padding: EdgeInsets.all(16.w),
                 child: Form(
@@ -8954,13 +9160,17 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
                           ),
                           decoration: BoxDecoration(
                             color: dailyCheckoutHour == null
-                                ? const Color(0xFF7C2D12).withOpacity(0.18)
-                                : const Color(0xFF0F766E).withOpacity(0.16),
+                                ? const Color(0xFF7C2D12)
+                                    .withValues(alpha: 0.18)
+                                : const Color(0xFF0F766E)
+                                    .withValues(alpha: 0.16),
                             borderRadius: BorderRadius.circular(14.r),
                             border: Border.all(
                               color: dailyCheckoutHour == null
-                                  ? const Color(0xFFF97316).withOpacity(0.35)
-                                  : const Color(0xFF14B8A6).withOpacity(0.35),
+                                  ? const Color(0xFFF97316)
+                                      .withValues(alpha: 0.35)
+                                  : const Color(0xFF14B8A6)
+                                      .withValues(alpha: 0.35),
                             ),
                           ),
                           child: Text(
@@ -9349,8 +9559,9 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
                               backgroundColor: const Color(0xFF0EA5E9),
                               foregroundColor: Colors.white,
                             ),
-                            onPressed:
-                                _processingAttachments ? null : _pickAttachments,
+                            onPressed: _processingAttachments
+                                ? null
+                                : _pickAttachments,
                             icon: _processingAttachments
                                 ? SizedBox(
                                     width: 16.w,
@@ -9362,8 +9573,8 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
                                   )
                                 : const Icon(Icons.attach_file_rounded),
                             label: Text('إرفاق',
-                                style:
-                                    GoogleFonts.cairo(fontWeight: FontWeight.w700)),
+                                style: GoogleFonts.cairo(
+                                    fontWeight: FontWeight.w700)),
                           ),
                         ],
                       ),
@@ -9384,7 +9595,8 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
                                     child: Container(
                                       width: 88.w,
                                       height: 88.w,
-                                      color: Colors.white.withOpacity(0.08),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.08),
                                       child: _buildAttachmentThumb(path),
                                     ),
                                   ),
@@ -9446,13 +9658,13 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
                 child: IgnorePointer(
                   ignoring: false,
                   child: Container(
-                    color: Colors.black.withOpacity(0.30),
+                    color: Colors.black.withValues(alpha: 0.30),
                     alignment: Alignment.center,
                     child: Container(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 18.w, vertical: 14.h),
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 18.w, vertical: 14.h),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.90),
+                        color: Colors.white.withValues(alpha: 0.90),
                         borderRadius: BorderRadius.circular(14.r),
                       ),
                       child: Row(
@@ -9517,10 +9729,11 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
         labelText: label,
         labelStyle: GoogleFonts.cairo(color: Colors.white70),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withValues(alpha: 0.06),
         enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12.r),
-            borderSide: BorderSide(color: Colors.white.withOpacity(0.15))),
+            borderSide:
+                BorderSide(color: Colors.white.withValues(alpha: 0.15))),
         focusedBorder: const OutlineInputBorder(
             borderSide: BorderSide(color: Colors.white),
             borderRadius: BorderRadius.all(Radius.circular(12))),
@@ -9764,9 +9977,10 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.open_in_new_rounded, color: Colors.white),
-                title:
-                    Text('فتح', style: GoogleFonts.cairo(color: Colors.white)),
+                leading:
+                    const Icon(Icons.open_in_new_rounded, color: Colors.white),
+                title: Text('فتح مباشرة',
+                    style: GoogleFonts.cairo(color: Colors.white)),
                 onTap: () async {
                   Navigator.of(ctx).pop();
                   await _openAttachment(path);
@@ -9785,7 +9999,8 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
       final raw = path.trim();
       String launchable = raw;
       if (raw.startsWith('gs://')) {
-        launchable = await FirebaseStorage.instance.refFromURL(raw).getDownloadURL();
+        launchable =
+            await FirebaseStorage.instance.refFromURL(raw).getDownloadURL();
       }
       Uri? uri;
       if (_isRemoteAttachment(launchable)) {
@@ -9802,7 +10017,8 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
       }
       if (!opened && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر فتح المرفق', style: GoogleFonts.cairo())),
+          SnackBar(
+              content: Text('تعذر فتح المرفق', style: GoogleFonts.cairo())),
         );
       }
     } catch (_) {
@@ -9816,8 +10032,8 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
   Future<String?> _saveAttachmentLocally(PlatformFile file) async {
     try {
       final docs = await getApplicationDocumentsDirectory();
-      final dir =
-          Directory('${docs.path}${Platform.pathSeparator}contract_attachments');
+      final dir = Directory(
+          '${docs.path}${Platform.pathSeparator}contract_attachments');
       if (!dir.existsSync()) {
         dir.createSync(recursive: true);
       }
@@ -9888,10 +10104,8 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
   }
 
   List<String> _removedInitialLocalAttachments() {
-    final currentPaths = _attachments
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toSet();
+    final currentPaths =
+        _attachments.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
     return _initialLocalAttachments
         .where((path) => !currentPaths.contains(path))
         .toList(growable: false);
@@ -9926,18 +10140,21 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
 
   Future<bool> _confirmPeriodicServicesReadyForCreate(Property property) async {
     while (true) {
-      final missing = await missingRequiredPeriodicServicesForProperty(
+      final missing = await missingRequiredPeriodicServiceSetupsForProperty(
         property.id,
         property: property,
       );
       if (missing.isEmpty) return true;
       if (!mounted) return false;
 
+      final firstTarget = missing.first;
+      final missingLabels =
+          missing.map((item) => item.label).toSet().join('، ');
       final openSettings = await CustomConfirmDialog.show(
         context: context,
         title: 'الخدمات الدورية غير مكتملة',
         message:
-            'الخدمات غير المضبوطة: ${missing.join('، ')}.\nيُفضّل ضبطها قبل إنشاء العقد لضمان احتساب المستحقات وربطها بالعقد بشكل صحيح من أول دفعة.',
+            'الخدمات غير المضبوطة: $missingLabels.\nسيتم فتح ${firstTarget.navigationSummary} مباشرة لضبطها قبل إنشاء العقد.',
         confirmLabel: 'ضبط الآن',
         cancelLabel: 'تجاوز',
         confirmColor: const Color(0xFF0F766E),
@@ -9948,7 +10165,7 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
 
       await Navigator.of(context).pushNamed(
         '/property/services',
-        arguments: {'propertyId': property.id},
+        arguments: firstTarget.navigationArguments,
       );
 
       if (!mounted) return false;
@@ -10244,9 +10461,9 @@ class _AddOrEditContractScreenState extends State<AddOrEditContractScreen> {
               final end = _dateOnly(c.endDate);
               final commissionSnapshot =
                   await _loadCommissionSnapshotForContractVoucher(
-                    c,
-                    c.rentAmount,
-                  );
+                c,
+                c.rentAmount,
+              );
               for (int k = 0; k < cyclesCovered; k++) {
                 if (due.isAfter(end)) break;
 
@@ -10390,14 +10607,14 @@ InputDecoration _pickerSheetSearchDecoration(String hintText) {
     hintStyle: GoogleFonts.cairo(color: Colors.white70),
     prefixIcon: const Icon(Icons.search, color: Colors.white70),
     filled: true,
-    fillColor: Colors.white.withOpacity(0.08),
+    fillColor: Colors.white.withValues(alpha: 0.08),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12.r),
-      borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
     ),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12.r),
-      borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
     ),
     focusedBorder: const OutlineInputBorder(
       borderSide: BorderSide(color: Colors.white),
@@ -10420,12 +10637,10 @@ class _TenantPickerSheetState extends State<_TenantPickerSheet> {
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final rawSheetHeight = media.size.height * 0.72;
-    final availableHeight =
-        media.size.height - media.viewInsets.bottom - 12.h;
-    final sheetHeight =
-        availableHeight > 0 && availableHeight < rawSheetHeight
-            ? availableHeight
-            : rawSheetHeight;
+    final availableHeight = media.size.height - media.viewInsets.bottom - 12.h;
+    final sheetHeight = availableHeight > 0 && availableHeight < rawSheetHeight
+        ? availableHeight
+        : rawSheetHeight;
     return SafeArea(
       child: AnimatedPadding(
         duration: const Duration(milliseconds: 180),
@@ -10442,8 +10657,7 @@ class _TenantPickerSheetState extends State<_TenantPickerSheet> {
                 SizedBox(height: 14.h),
                 _pickerSheetHeader(
                   title: 'اختيار المستأجر',
-                  subtitle:
-                      'اختر المستأجر الذي تريد إنشاء العقد باسمه',
+                  subtitle: 'اختر المستأجر الذي تريد إنشاء العقد باسمه',
                 ),
                 SizedBox(height: 12.h),
                 TextField(
@@ -10458,78 +10672,78 @@ class _TenantPickerSheetState extends State<_TenantPickerSheet> {
                   child: ValueListenableBuilder(
                     valueListenable: _tenants.listenable(),
                     builder: (context, Box<Tenant> b, _) {
-                    bool allowedForContract(Tenant t) {
-                      final raw = t.clientType.trim().toLowerCase();
-                      if (raw.isEmpty) return true; // بيانات قديمة = مستأجر
-                      if (raw == 'tenant' || raw == 'مستأجر') return true;
-                      if (raw == 'company' ||
-                          raw == 'tenant_company' ||
-                          raw == 'شركة' ||
-                          raw == 'مستأجر (شركة)') {
-                        return true;
+                      bool allowedForContract(Tenant t) {
+                        final raw = t.clientType.trim().toLowerCase();
+                        if (raw.isEmpty) return true; // بيانات قديمة = مستأجر
+                        if (raw == 'tenant' || raw == 'مستأجر') return true;
+                        if (raw == 'company' ||
+                            raw == 'tenant_company' ||
+                            raw == 'شركة' ||
+                            raw == 'مستأجر (شركة)') {
+                          return true;
+                        }
+                        return false; // يستبعد مقدم الخدمة وأي نوع آخر
                       }
-                      return false; // يستبعد مقدم الخدمة وأي نوع آخر
-                    }
 
-                    var items = b.values
-                        .where((t) => !t.isArchived && allowedForContract(t))
-                        .toList();
-                    if (_q.isNotEmpty) {
-                      final q = _q.toLowerCase();
-                      items = items
-                          .where((t) =>
-                              t.fullName.toLowerCase().contains(q) ||
-                              t.nationalId.toLowerCase().contains(q) ||
-                              t.phone.toLowerCase().contains(q))
+                      var items = b.values
+                          .where((t) => !t.isArchived && allowedForContract(t))
                           .toList();
-                    }
-                    items.sort((a, c) => a.fullName.compareTo(c.fullName));
+                      if (_q.isNotEmpty) {
+                        final q = _q.toLowerCase();
+                        items = items
+                            .where((t) =>
+                                t.fullName.toLowerCase().contains(q) ||
+                                t.nationalId.toLowerCase().contains(q) ||
+                                t.phone.toLowerCase().contains(q))
+                            .toList();
+                      }
+                      items.sort((a, c) => a.fullName.compareTo(c.fullName));
 
-                    if (items.isEmpty) {
-                      return Center(
-                          child: Text('لا يوجد مستأجرون',
-                              style: GoogleFonts.cairo(
-                                  color: Colors.white70,
-                                  fontWeight: FontWeight.w700)));
-                    }
+                      if (items.isEmpty) {
+                        return Center(
+                            child: Text('لا يوجد عملاء',
+                                style: GoogleFonts.cairo(
+                                    color: Colors.white70,
+                                    fontWeight: FontWeight.w700)));
+                      }
 
-                    return Scrollbar(
-                      child: ListView.separated(
-                        padding: EdgeInsets.zero,
-                        itemCount: items.length,
-                        separatorBuilder: (_, __) => SizedBox(height: 6.h),
-                        itemBuilder: (_, i) {
-                          final t = items[i];
-                          return ListTile(
-                            onTap: () => Navigator.of(context).pop(t),
-                            leading:
-                                const Icon(Icons.person, color: Colors.white),
-                            title: Text(
-                              t.fullName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.cairo(color: Colors.white),
-                            ),
-                            subtitle: Text(
-                              'هوية: ${t.nationalId} • جوال: ${t.phone}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.cairo(color: Colors.white70),
-                            ),
-                            trailing: t.isBlacklisted
-                                ? _chip('محظور', bg: const Color(0xFF7F1D1D))
-                                : null,
-                          );
-                        },
-                      ),
-                    );
-                  },
+                      return Scrollbar(
+                        child: ListView.separated(
+                          padding: EdgeInsets.zero,
+                          itemCount: items.length,
+                          separatorBuilder: (_, __) => SizedBox(height: 6.h),
+                          itemBuilder: (_, i) {
+                            final t = items[i];
+                            return ListTile(
+                              onTap: () => Navigator.of(context).pop(t),
+                              leading:
+                                  const Icon(Icons.person, color: Colors.white),
+                              title: Text(
+                                t.fullName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.cairo(color: Colors.white),
+                              ),
+                              subtitle: Text(
+                                'هوية: ${t.nationalId} • جوال: ${t.phone}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.cairo(color: Colors.white70),
+                              ),
+                              trailing: t.isBlacklisted
+                                  ? _chip('محظور', bg: const Color(0xFF7F1D1D))
+                                  : null,
+                            );
+                          },
+                        ),
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -10550,12 +10764,10 @@ class _PropertyPickerSheetState extends State<_PropertyPickerSheet> {
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final rawSheetHeight = media.size.height * 0.72;
-    final availableHeight =
-        media.size.height - media.viewInsets.bottom - 12.h;
-    final sheetHeight =
-        availableHeight > 0 && availableHeight < rawSheetHeight
-            ? availableHeight
-            : rawSheetHeight;
+    final availableHeight = media.size.height - media.viewInsets.bottom - 12.h;
+    final sheetHeight = availableHeight > 0 && availableHeight < rawSheetHeight
+        ? availableHeight
+        : rawSheetHeight;
     return SafeArea(
       child: AnimatedPadding(
         duration: const Duration(milliseconds: 180),
@@ -10572,8 +10784,7 @@ class _PropertyPickerSheetState extends State<_PropertyPickerSheet> {
                 SizedBox(height: 14.h),
                 _pickerSheetHeader(
                   title: 'اختيار العقار أو الوحدة',
-                  subtitle:
-                      'اختر العقار أو الوحدة التي تريد ربط العقد بها',
+                  subtitle: 'اختر العقار أو الوحدة التي تريد ربط العقد بها',
                 ),
                 SizedBox(height: 12.h),
                 TextField(
@@ -10588,208 +10799,216 @@ class _PropertyPickerSheetState extends State<_PropertyPickerSheet> {
                   child: ValueListenableBuilder(
                     valueListenable: _properties.listenable(),
                     builder: (context, Box<Property> b, _) {
-                    final all =
-                        b.values.where((p) => !p.isArchived).toList();
-                    final q = _q.toLowerCase();
+                      final all = b.values.where((p) => !p.isArchived).toList();
+                      final q = _q.toLowerCase();
 
-                    bool matches(Property p) {
-                      if (q.isEmpty) return true;
-                      return p.name.toLowerCase().contains(q) ||
-                          p.address.toLowerCase().contains(q);
-                    }
-
-                    final topLevel =
-                        all.where((p) => p.parentBuildingId == null).toList();
-                    final unitsByBuilding = <String, List<Property>>{};
-                    for (final p in all) {
-                      final parentId = p.parentBuildingId;
-                      if (parentId == null) continue;
-                      if (p.occupiedUnits > 0) continue; // فقط الوحدات المتاحة
-                      final list = unitsByBuilding.putIfAbsent(
-                          parentId, () => <Property>[]);
-                      list.add(p);
-                    }
-                    for (final units in unitsByBuilding.values) {
-                      units.sort((a, c) => a.name.compareTo(c.name));
-                    }
-
-                    topLevel.sort((a, c) {
-                      final aHasUnits = a.type == PropertyType.building &&
-                          (unitsByBuilding[a.id]?.isNotEmpty ?? false);
-                      final cHasUnits = c.type == PropertyType.building &&
-                          (unitsByBuilding[c.id]?.isNotEmpty ?? false);
-                      if (aHasUnits != cHasUnits) return aHasUnits ? -1 : 1;
-                      return a.name.compareTo(c.name);
-                    });
-
-                    final hasAny = topLevel.any((p) {
-                      final units = unitsByBuilding[p.id] ?? const <Property>[];
-                      if (p.type == PropertyType.building && units.isNotEmpty) {
-                        return matches(p) || units.any(matches);
+                      bool matches(Property p) {
+                        if (q.isEmpty) return true;
+                        return p.name.toLowerCase().contains(q) ||
+                            p.address.toLowerCase().contains(q);
                       }
-                      if (p.occupiedUnits > 0) return false;
-                      if (p.type == PropertyType.building &&
-                          p.rentalMode == RentalMode.perUnit) {
-                        return false;
-                      }
-                      return matches(p);
-                    });
 
-                    if (!hasAny) {
-                      return Center(
-                          child: Text('لا توجد عناصر متاحة',
-                              style: GoogleFonts.cairo(
-                                  color: Colors.white70,
-                                  fontWeight: FontWeight.w700)));
-                    }
-
-                    final widgets = <Widget>[];
-                    for (final p in topLevel) {
-                      final units = unitsByBuilding[p.id] ?? const <Property>[];
-                      final isBuildingWithUnits =
-                          p.type == PropertyType.building && units.isNotEmpty;
-
-                      if (isBuildingWithUnits) {
-                        final showBuilding = matches(p);
-                        final visibleUnits = showBuilding
-                            ? units
-                            : units.where(matches).toList(growable: false);
-                        if (!showBuilding && visibleUnits.isEmpty) {
-                          continue;
+                      final topLevel =
+                          all.where((p) => p.parentBuildingId == null).toList();
+                      final unitsByBuilding = <String, List<Property>>{};
+                      for (final p in all) {
+                        final parentId = p.parentBuildingId;
+                        if (parentId == null) continue;
+                        if (p.occupiedUnits > 0) {
+                          continue; // فقط الوحدات المتاحة
                         }
-                        final expanded =
-                            _expandedBuildingIds.contains(p.id) || q.isNotEmpty;
-                        widgets.add(
-                          Container(
-                            margin: EdgeInsets.only(bottom: 6.h),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.04),
-                              borderRadius: BorderRadius.circular(12.r),
-                              border: Border.all(
-                                  color: Colors.white.withOpacity(0.10)),
-                            ),
-                            child: ExpansionTile(
-                              key: ValueKey('building_${p.id}'),
-                              initiallyExpanded: expanded,
-                              onExpansionChanged: (isOpen) {
-                                setState(() {
-                                  if (isOpen) {
-                                    _expandedBuildingIds.add(p.id);
-                                  } else {
-                                    _expandedBuildingIds.remove(p.id);
-                                  }
-                                });
-                              },
-                              iconColor: Colors.white70,
-                              collapsedIconColor: Colors.white70,
-                              title: Text(
-                                p.name,
+                        final list = unitsByBuilding.putIfAbsent(
+                            parentId, () => <Property>[]);
+                        list.add(p);
+                      }
+                      for (final units in unitsByBuilding.values) {
+                        units.sort((a, c) => a.name.compareTo(c.name));
+                      }
+
+                      topLevel.sort((a, c) {
+                        final aHasUnits = a.type == PropertyType.building &&
+                            (unitsByBuilding[a.id]?.isNotEmpty ?? false);
+                        final cHasUnits = c.type == PropertyType.building &&
+                            (unitsByBuilding[c.id]?.isNotEmpty ?? false);
+                        if (aHasUnits != cHasUnits) return aHasUnits ? -1 : 1;
+                        return a.name.compareTo(c.name);
+                      });
+
+                      final hasAny = topLevel.any((p) {
+                        final units =
+                            unitsByBuilding[p.id] ?? const <Property>[];
+                        if (p.type == PropertyType.building &&
+                            units.isNotEmpty) {
+                          return matches(p) || units.any(matches);
+                        }
+                        if (p.occupiedUnits > 0) return false;
+                        if (p.type == PropertyType.building &&
+                            p.rentalMode == RentalMode.perUnit) {
+                          return false;
+                        }
+                        return matches(p);
+                      });
+
+                      if (!hasAny) {
+                        return Center(
+                            child: Text('لا توجد عناصر متاحة',
                                 style: GoogleFonts.cairo(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
+                                    color: Colors.white70,
+                                    fontWeight: FontWeight.w700)));
+                      }
+
+                      final widgets = <Widget>[];
+                      for (final p in topLevel) {
+                        final units =
+                            unitsByBuilding[p.id] ?? const <Property>[];
+                        final isBuildingWithUnits =
+                            p.type == PropertyType.building && units.isNotEmpty;
+
+                        if (isBuildingWithUnits) {
+                          final showBuilding = matches(p);
+                          final visibleUnits = showBuilding
+                              ? units
+                              : units.where(matches).toList(growable: false);
+                          if (!showBuilding && visibleUnits.isEmpty) {
+                            continue;
+                          }
+                          final expanded =
+                              _expandedBuildingIds.contains(p.id) ||
+                                  q.isNotEmpty;
+                          widgets.add(
+                            Container(
+                              margin: EdgeInsets.only(bottom: 6.h),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.04),
+                                borderRadius: BorderRadius.circular(12.r),
+                                border: Border.all(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.10)),
+                              ),
+                              child: ExpansionTile(
+                                key: ValueKey('building_${p.id}'),
+                                initiallyExpanded: expanded,
+                                onExpansionChanged: (isOpen) {
+                                  setState(() {
+                                    if (isOpen) {
+                                      _expandedBuildingIds.add(p.id);
+                                    } else {
+                                      _expandedBuildingIds.remove(p.id);
+                                    }
+                                  });
+                                },
+                                iconColor: Colors.white70,
+                                collapsedIconColor: Colors.white70,
+                                title: Text(
+                                  p.name,
+                                  style: GoogleFonts.cairo(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
-                              ),
-                              subtitle: Text(
-                                p.address,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.cairo(color: Colors.white70),
-                              ),
-                              childrenPadding:
-                                  EdgeInsets.only(right: 8.w, left: 8.w),
-                              children: [
-                                Padding(
-                                  padding:
-                                      EdgeInsets.fromLTRB(12.w, 0, 12.w, 6.h),
-                                  child: Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Text(
-                                      'اختر وحدة من هذه العمارة',
-                                      style: GoogleFonts.cairo(
-                                        color: Colors.white60,
-                                        fontWeight: FontWeight.w700,
+                                subtitle: Text(
+                                  p.address,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style:
+                                      GoogleFonts.cairo(color: Colors.white70),
+                                ),
+                                childrenPadding:
+                                    EdgeInsets.only(right: 8.w, left: 8.w),
+                                children: [
+                                  Padding(
+                                    padding:
+                                        EdgeInsets.fromLTRB(12.w, 0, 12.w, 6.h),
+                                    child: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Text(
+                                        'اختر وحدة من هذه العمارة',
+                                        style: GoogleFonts.cairo(
+                                          color: Colors.white60,
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                                for (final u in visibleUnits)
-                                  ListTile(
-                                    dense: true,
-                                    contentPadding: EdgeInsets.symmetric(
-                                        horizontal: 10.w, vertical: 0),
-                                    onTap: () => Navigator.of(context).pop(u),
-                                    leading: const Icon(
-                                      Icons.meeting_room_rounded,
-                                      color: Colors.white70,
+                                  for (final u in visibleUnits)
+                                    ListTile(
+                                      dense: true,
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 10.w, vertical: 0),
+                                      onTap: () => Navigator.of(context).pop(u),
+                                      leading: const Icon(
+                                        Icons.meeting_room_rounded,
+                                        color: Colors.white70,
+                                      ),
+                                      title: Text(
+                                        u.name,
+                                        style: GoogleFonts.cairo(
+                                            color: Colors.white),
+                                      ),
+                                      subtitle: (u.address).trim().isEmpty
+                                          ? null
+                                          : Text(
+                                              u.address,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: GoogleFonts.cairo(
+                                                  color: Colors.white70),
+                                            ),
+                                      trailing: _chip('وحدة',
+                                          bg: const Color(0xFF334155)),
                                     ),
-                                    title: Text(
-                                      u.name,
-                                      style: GoogleFonts.cairo(
-                                          color: Colors.white),
-                                    ),
-                                    subtitle: (u.address).trim().isEmpty
-                                        ? null
-                                        : Text(
-                                            u.address,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: GoogleFonts.cairo(
-                                                color: Colors.white70),
-                                          ),
-                                    trailing: _chip('وحدة',
-                                        bg: const Color(0xFF334155)),
-                                  ),
-                              ],
+                                ],
+                              ),
+                            ),
+                          );
+                          continue;
+                        }
+
+                        if (p.occupiedUnits > 0) continue;
+                        if (p.type == PropertyType.building &&
+                            p.rentalMode == RentalMode.perUnit) {
+                          continue;
+                        }
+                        if (!matches(p)) continue;
+
+                        widgets.add(
+                          Padding(
+                            padding: EdgeInsets.only(bottom: 6.h),
+                            child: ListTile(
+                              onTap: () => Navigator.of(context).pop(p),
+                              leading: const Icon(Icons.home_work_rounded,
+                                  color: Colors.white),
+                              title: Text(p.name,
+                                  style:
+                                      GoogleFonts.cairo(color: Colors.white)),
+                              subtitle: Text(p.address,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style:
+                                      GoogleFonts.cairo(color: Colors.white70)),
+                              trailing: _chip(
+                                  p.type == PropertyType.building
+                                      ? 'عمارة (كامل)'
+                                      : 'مستقل',
+                                  bg: const Color(0xFF334155)),
                             ),
                           ),
                         );
-                        continue;
                       }
 
-                      if (p.occupiedUnits > 0) continue;
-                      if (p.type == PropertyType.building &&
-                          p.rentalMode == RentalMode.perUnit) {
-                        continue;
-                      }
-                      if (!matches(p)) continue;
-
-                      widgets.add(
-                        Padding(
-                          padding: EdgeInsets.only(bottom: 6.h),
-                          child: ListTile(
-                            onTap: () => Navigator.of(context).pop(p),
-                            leading: const Icon(Icons.home_work_rounded,
-                                color: Colors.white),
-                            title: Text(p.name,
-                                style: GoogleFonts.cairo(color: Colors.white)),
-                            subtitle: Text(p.address,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style:
-                                    GoogleFonts.cairo(color: Colors.white70)),
-                            trailing: _chip(
-                                p.type == PropertyType.building
-                                    ? 'عمارة (كامل)'
-                                    : 'مستقل',
-                                bg: const Color(0xFF334155)),
-                          ),
+                      return Scrollbar(
+                        child: ListView(
+                          padding: EdgeInsets.zero,
+                          children: widgets,
                         ),
                       );
-                    }
-
-                    return Scrollbar(
-                      child: ListView(
-                        padding: EdgeInsets.zero,
-                        children: widgets,
-                      ),
-                    );
-                  },
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }

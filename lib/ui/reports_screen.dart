@@ -1,4 +1,4 @@
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 import '../data/constants/boxes.dart';
 import '../data/services/comprehensive_reports_service.dart';
@@ -16,15 +18,22 @@ import '../data/services/user_scope.dart';
 import '../models/tenant.dart';
 import '../models/property.dart';
 import '../widgets/custom_confirm_dialog.dart';
-import '../widgets/darvoo_app_bar.dart';
+import '../widgets/ejarz_pro_app_bar.dart';
 import 'contracts_screen.dart'
-    show Contract, ContractTerm, ContractsScreen, ContractQuickFilter;
+    show
+        Contract,
+        ContractDetailsScreen,
+        ContractTerm,
+        ContractsScreen,
+        ContractQuickFilter,
+        PaymentCycle;
 import 'maintenance_screen.dart'
     show MaintenancePriority, MaintenanceRequest, MaintenanceStatus;
 import 'home_screen.dart';
 import 'invoices_screen.dart' show Invoice, InvoiceDetailsScreen;
 import 'properties_screen.dart';
-import 'tenants_screen.dart' as tenants_ui show TenantsScreen;
+import 'tenants_screen.dart' as tenants_ui
+    show TenantDetailsScreen, TenantsScreen;
 import 'widgets/app_bottom_nav.dart';
 import 'widgets/app_side_drawer.dart';
 import 'widgets/collapsible_filter_handle.dart';
@@ -53,9 +62,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Timer? _refreshDebounce;
   bool _pauseReactiveRefresh = false;
   final ScrollController _flowScrollController = ScrollController();
-  bool _flowAutoScrollStoppedByUser = false;
-  bool _flowAutoScrollRunning = false;
-  bool _flowForward = true;
   final Set<String> _hiddenOwnerLedgerEntryIds = <String>{};
   _ContractPeriodFilter _contractsPeriodFilter = _ContractPeriodFilter.all;
   _ServicePriorityFilter _servicesPriorityFilter = _ServicePriorityFilter.all;
@@ -66,10 +72,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
   String? _vouchersSelectedPropertyId;
   String? _ownersSelectedPropertyId;
   _VoucherStatusFilter _voucherStatusFilter = _VoucherStatusFilter.posted;
-  _VoucherDirectionFilter _voucherDirectionFilter =
-      _VoucherDirectionFilter.all;
-  _VoucherOperationFilter _voucherOperationFilter =
-      _VoucherOperationFilter.all;
+  _VoucherDirectionFilter _voucherDirectionFilter = _VoucherDirectionFilter.all;
+  _VoucherOperationFilter _voucherOperationFilter = _VoucherOperationFilter.all;
   _ClientTenantSubTypeFilter _clientsTenantSubTypeFilter =
       _ClientTenantSubTypeFilter.all;
   bool _topFiltersCollapsed = false;
@@ -122,7 +126,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     });
   }
 
-  Future<T> _runWithReactiveRefreshPaused<T>(Future<T> Function() action) async {
+  Future<T> _runWithReactiveRefreshPaused<T>(
+      Future<T> Function() action) async {
     final previous = _pauseReactiveRefresh;
     _pauseReactiveRefresh = true;
     _refreshDebounce?.cancel();
@@ -177,6 +182,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     _scheduleRefreshAfterDialogAction();
   }
 
+  // ignore: unused_element
   void _closeDialogSafely<T>(BuildContext dialogContext, [T? result]) {
     FocusManager.instance.primaryFocus?.unfocus();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -222,71 +228,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
-  void _stopFlowAutoScrollByUser() {
-    if (_flowAutoScrollStoppedByUser) return;
-    _flowAutoScrollStoppedByUser = true;
-    if (_flowScrollController.hasClients) {
-      final current = _flowScrollController.offset;
-      try {
-        _flowScrollController.jumpTo(current);
-      } catch (_) {}
-    }
-  }
-
-  void _scheduleFlowAutoScroll() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startFlowAutoScrollIfNeeded();
-    });
-  }
-
-  Future<void> _startFlowAutoScrollIfNeeded() async {
-    if (!mounted ||
-        _flowAutoScrollStoppedByUser ||
-        _flowAutoScrollRunning ||
-        !_flowScrollController.hasClients) {
-      return;
-    }
-    final maxExtent = _flowScrollController.position.maxScrollExtent;
-    if (maxExtent <= 0) return;
-
-    _flowAutoScrollRunning = true;
-    try {
-      while (mounted &&
-          !_flowAutoScrollStoppedByUser &&
-          _flowScrollController.hasClients) {
-        final currentMax = _flowScrollController.position.maxScrollExtent;
-        if (currentMax <= 0) break;
-
-        final target = _flowForward ? currentMax : 0.0;
-        final current = _flowScrollController.offset;
-        final distance = (target - current).abs();
-
-        if (distance < 1.5) {
-          _flowForward = !_flowForward;
-          await Future.delayed(const Duration(milliseconds: 300));
-          continue;
-        }
-
-        final msPerPx = _flowForward ? 22.0 : 16.0;
-        final duration = Duration(
-          milliseconds: (distance * msPerPx).clamp(1800.0, 12000.0).round(),
-        );
-        await _flowScrollController.animateTo(
-          target,
-          duration: duration,
-          curve: Curves.easeInOut,
-        );
-
-        _flowForward = !_flowForward;
-        await Future.delayed(const Duration(milliseconds: 260));
-      }
-    } catch (_) {
-      // تجاهل إيقاف الحركة الناتج عن تفاعل المستخدم.
-    } finally {
-      _flowAutoScrollRunning = false;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final data = _snapshot;
@@ -311,7 +252,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ),
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          leading: darvooLeading(context, iconColor: Colors.white),
+          leading: ejarzProLeading(context, iconColor: Colors.white),
           centerTitle: true,
           title: Text(
             'التقارير الشاملة',
@@ -580,12 +521,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final filteredTenants = _filterClientsForReports(allClients);
     final todayKsa = KsaTime.dateOnly(KsaTime.now());
 
-    final linkedTenantsCount = filteredTenants
-        .where((t) => t.activeContractsCount > 0)
-        .length;
-    final unlinkedTenantsCount = filteredTenants
-        .where((t) => t.activeContractsCount == 0)
-        .length;
+    final linkedTenantsCount =
+        filteredTenants.where((t) => t.activeContractsCount > 0).length;
+    final unlinkedTenantsCount =
+        filteredTenants.where((t) => t.activeContractsCount == 0).length;
     final expiredIdsCount = filteredTenants.where((t) {
       return _normalizeDashboardClientType(t) == 'tenant' &&
           t.idExpiry != null &&
@@ -602,7 +541,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         onTap: () => _openClientsScreen(),
       ),
       _DashboardCountItem(
-        title: 'مستأجرون أفراد',
+        title: 'عملاء أفراد',
         count: tenantIndividuals.length,
         icon: Icons.person_rounded,
         startColor: const Color(0xFF0F766E),
@@ -610,7 +549,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         onTap: () => _openClientsScreen(clientType: 'tenant'),
       ),
       _DashboardCountItem(
-        title: 'مستأجرون شركات',
+        title: 'عملاء شركات',
         count: tenantCompanies.length,
         icon: Icons.apartment_rounded,
         startColor: const Color(0xFFB45309),
@@ -663,7 +602,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final indicatorItems = <_ClientReportIndicatorItem>[];
     switch (_clientsTenantSubTypeFilter) {
       case _ClientTenantSubTypeFilter.individuals:
-        indicatorsTitle = 'مؤشرات المستأجرين (أفراد)';
+        indicatorsTitle = 'مؤشرات العملاء (أفراد)';
         indicatorItems.addAll([
           _ClientReportIndicatorItem(
             title: 'مرتبطين بعقد',
@@ -683,7 +622,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ]);
         break;
       case _ClientTenantSubTypeFilter.companies:
-        indicatorsTitle = 'مؤشرات المستأجرين (شركات)';
+        indicatorsTitle = 'مؤشرات العملاء (شركات)';
         indicatorItems.addAll([
           _ClientReportIndicatorItem(
             title: 'مرتبطين بعقد',
@@ -698,7 +637,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ]);
         break;
       case _ClientTenantSubTypeFilter.all:
-        indicatorsTitle = 'مؤشرات كل المستأجرين';
+        indicatorsTitle = 'مؤشرات كل العملاء';
         indicatorItems.addAll([
           _ClientReportIndicatorItem(
             title: 'مرتبطين بعقد',
@@ -726,7 +665,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             child: Row(
               children: [
                 Text(
-                  'نوع المستأجر',
+                  'نوع العميل',
                   style: GoogleFonts.cairo(
                     color: Colors.white,
                     fontWeight: FontWeight.w800,
@@ -763,11 +702,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             ),
                             DropdownMenuItem(
                               value: _ClientTenantSubTypeFilter.individuals,
-                              child: Text('مستأجرون أفراد'),
+                              child: Text('عملاء أفراد'),
                             ),
                             DropdownMenuItem(
                               value: _ClientTenantSubTypeFilter.companies,
-                              child: Text('مستأجرون شركات'),
+                              child: Text('عملاء شركات'),
                             ),
                           ],
                           onChanged: (value) {
@@ -826,7 +765,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
         .toList(growable: false);
     final allProperties = _loadPropertiesForReports()
         .where((property) =>
-            _propertiesTypeFilter == null || property.type == _propertiesTypeFilter)
+            _propertiesTypeFilter == null ||
+            property.type == _propertiesTypeFilter)
         .toList(growable: false);
     final archivedProperties = _loadPropertiesForReports(includeArchived: true)
         .where((property) =>
@@ -951,9 +891,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
       summaryExpenses = 0;
       summaryNet = 0;
     } else {
-      summaryTitle = isAllPropertiesSelected
-          ? 'كل العقارات'
-          : selectedPropertyName;
+      summaryTitle =
+          isAllPropertiesSelected ? 'كل العقارات' : selectedPropertyName;
       summaryRevenues =
           selectedRows.fold<double>(0, (sum, item) => sum + item.revenues);
       summaryExpenses =
@@ -1255,11 +1194,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
       if (next != null && e.upcomingInstallments > 0) {
         // إذا كان الاستحقاق اليوم
         if (_isToday(next)) {
-          totalDueTodaySum += (e.totalAmount - e.paidAmount) / (e.upcomingInstallments + e.overdueInstallments); 
+          totalDueTodaySum += (e.totalAmount - e.paidAmount) /
+              (e.upcomingInstallments + e.overdueInstallments);
           // ملاحظة: هذا تقدير تقريبي للمبلغ المستحق بناءً على عدد الأقساط المتبقية
         } else {
           // قارب
-          totalNearDueSum += (e.totalAmount - e.paidAmount) / (e.upcomingInstallments + e.overdueInstallments);
+          totalNearDueSum += (e.totalAmount - e.paidAmount) /
+              (e.upcomingInstallments + e.overdueInstallments);
         }
       }
     }
@@ -1511,15 +1452,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     ),
                   ),
                   SizedBox(width: 8.w),
-                                  Text(
-                                    'التقارير المالية للعقود',
-                                    style: GoogleFonts.cairo(
-                                      color: Colors.white,
-                                      fontSize: 16.sp,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                  
+                  Text(
+                    'التقارير المالية للعقود',
+                    style: GoogleFonts.cairo(
+                      color: Colors.white,
+                      fontSize: 16.sp,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1575,7 +1515,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget _dividerItem() => Container(
         margin: EdgeInsets.symmetric(vertical: 12.h),
         height: 1,
-        color: Colors.white.withOpacity(0.05),
+        color: Colors.white.withValues(alpha: 0.05),
       );
 
   Widget _reportValueRowItem(
@@ -1586,13 +1526,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
   ) {
     return Row(
       children: [
-        Icon(icon, color: color.withOpacity(0.8), size: 18.sp),
+        Icon(icon, color: color.withValues(alpha: 0.8), size: 18.sp),
         SizedBox(width: 8.w),
         Expanded(
           child: Text(
             label,
             style: GoogleFonts.cairo(
-              color: Colors.white.withOpacity(0.7),
+              color: Colors.white.withValues(alpha: 0.7),
               fontSize: 13.sp,
               fontWeight: FontWeight.w700,
             ),
@@ -1601,9 +1541,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
         Container(
           padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
+            color: color.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8.r),
-            border: Border.all(color: color.withOpacity(0.3)),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
           ),
           child: Text(
             value,
@@ -1618,7 +1558,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  Widget _amountRowItem(String label, double value, Color color, IconData icon) {
+  Widget _amountRowItem(
+      String label, double value, Color color, IconData icon) {
     return _reportValueRowItem(
       label,
       _money(value),
@@ -1654,14 +1595,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
     };
     final statusByLinkedVoucherId = <String, MaintenanceStatus>{
       for (final m in maintenanceRows)
-        if ((m.invoiceId ?? '').trim().isNotEmpty) (m.invoiceId ?? '').trim(): m.status,
+        if ((m.invoiceId ?? '').trim().isNotEmpty)
+          (m.invoiceId ?? '').trim(): m.status,
     };
     final priorityByMaintenanceId = <String, MaintenancePriority>{
       for (final m in maintenanceRows) m.id: m.priority,
     };
     final priorityByLinkedVoucherId = <String, MaintenancePriority>{
       for (final m in maintenanceRows)
-        if ((m.invoiceId ?? '').trim().isNotEmpty) (m.invoiceId ?? '').trim(): m.priority,
+        if ((m.invoiceId ?? '').trim().isNotEmpty)
+          (m.invoiceId ?? '').trim(): m.priority,
     };
 
     MaintenanceStatus? resolveStatus(ServiceReportItem item) {
@@ -1714,9 +1657,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
       if (st == null) return item.isPaid;
       return st == MaintenanceStatus.completed;
     }).length;
-    final cancelledCount = filtered
-        .where((item) => item.state == VoucherState.cancelled)
-        .length;
+    final cancelledCount =
+        filtered.where((item) => item.state == VoucherState.cancelled).length;
     final financialRows = filtered
         .where((item) => item.state != VoucherState.cancelled)
         .toList(growable: false);
@@ -1763,7 +1705,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     final items = <_DashboardCountItem>[
       _DashboardCountItem(
-        title: '\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u062e\u062f\u0645\u0627\u062a',
+        title:
+            '\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u062e\u062f\u0645\u0627\u062a',
         count: totalCount,
         icon: Icons.miscellaneous_services_rounded,
         startColor: const Color(0xFF0D9488),
@@ -1787,7 +1730,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
         onTap: () => navigateToServices(MaintenanceStatus.inProgress),
       ),
       _DashboardCountItem(
-        title: '\u062e\u062f\u0645\u0627\u062a \u0645\u0643\u062a\u0645\u0644\u0629',
+        title:
+            '\u062e\u062f\u0645\u0627\u062a \u0645\u0643\u062a\u0645\u0644\u0629',
         count: completedCount,
         icon: Icons.task_alt_rounded,
         startColor: const Color(0xFF16A34A),
@@ -1919,7 +1863,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ),
           _dashboardCountsGrid(items),
           if (filtered.isEmpty)
-            _emptyCard('\u0644\u0627 \u062a\u0648\u062c\u062f \u062e\u062f\u0645\u0627\u062a \u0636\u0645\u0646 \u0627\u0644\u0641\u0644\u0627\u062a\u0631 \u0627\u0644\u062d\u0627\u0644\u064a\u0629')
+            _emptyCard(
+                '\u0644\u0627 \u062a\u0648\u062c\u062f \u062e\u062f\u0645\u0627\u062a \u0636\u0645\u0646 \u0627\u0644\u0641\u0644\u0627\u062a\u0631 \u0627\u0644\u062d\u0627\u0644\u064a\u0629')
           else ...[
             SizedBox(height: 24.h),
             Padding(
@@ -1979,10 +1924,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
       ),
     );
   }
+
   Widget _ownersTab(ComprehensiveReportSnapshot data) {
     const showAllPropertiesTogetherValue = '__owners_show_all_properties__';
     final ownerPropertyIds = data.owners
-        .expand((owner) => owner.propertyBreakdowns.map((item) => item.propertyId))
+        .expand(
+            (owner) => owner.propertyBreakdowns.map((item) => item.propertyId))
         .toSet();
     final allProperties = _loadPropertiesForReports()
         .where((property) => ownerPropertyIds.contains(property.id))
@@ -1991,8 +1938,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final rawSelectedPropertyId = (_ownersSelectedPropertyId ?? '').trim();
     final isShowingAllPropertiesTogether =
         rawSelectedPropertyId == showAllPropertiesTogetherValue;
-    final hasSelectedProperty =
-        !isShowingAllPropertiesTogether &&
+    final hasSelectedProperty = !isShowingAllPropertiesTogether &&
         rawSelectedPropertyId.isNotEmpty &&
         propertyOptions.any((item) => item.propertyId == rawSelectedPropertyId);
     final selectedPropertyId = hasSelectedProperty ? rawSelectedPropertyId : '';
@@ -2218,8 +2164,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         ],
                       ),
                       SizedBox(height: 8.h),
-                        _miniKpiRows3([
-                          _MiniKpiCellData(
+                      _miniKpiRows3([
+                        _MiniKpiCellData(
                           title: 'إجمالي الإيجار المحصل',
                           value: _money(summaryRent),
                         ),
@@ -2330,8 +2276,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             child: ElevatedButton(
                               onPressed: () => _showOwnerPayoutDialog(
                                 owner,
-                                propertyId:
-                                    isPropertyFiltered ? selectedPropertyId : null,
+                                propertyId: isPropertyFiltered
+                                    ? selectedPropertyId
+                                    : null,
                                 propertyName: selectedPropertyName.isNotEmpty
                                     ? selectedPropertyName
                                     : '',
@@ -2353,8 +2300,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             child: ElevatedButton(
                               onPressed: () => _showOwnerAdjustmentDialog(
                                 owner,
-                                propertyId:
-                                    isPropertyFiltered ? selectedPropertyId : null,
+                                propertyId: isPropertyFiltered
+                                    ? selectedPropertyId
+                                    : null,
                                 propertyName: selectedPropertyName.isNotEmpty
                                     ? selectedPropertyName
                                     : '',
@@ -2374,7 +2322,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           SizedBox(
                             width: 140.w,
                             child: ElevatedButton(
-                              onPressed: () => _showOwnerBankAccountsDialog(owner),
+                              onPressed: () =>
+                                  _showOwnerBankAccountsDialog(owner),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFFE0E7FF),
                                 foregroundColor: Colors.black87,
@@ -2391,7 +2340,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         ],
                       ),
                       if (!isPropertyFiltered &&
-                          _visibleOwnerLedgerEntries(owner.ledger).isNotEmpty) ...[
+                          _visibleOwnerLedgerEntries(owner.ledger)
+                              .isNotEmpty) ...[
                         SizedBox(height: 10.h),
                         Theme(
                           data: Theme.of(context).copyWith(
@@ -2422,6 +2372,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       ),
     );
 
+    // ignore: dead_code
     return _tabScroll(
       child: Column(
         children: [
@@ -2523,7 +2474,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         SizedBox(
                           width: 140.w,
                           child: ElevatedButton(
-                            onPressed: () => _showOwnerBankAccountsDialog(owner),
+                            onPressed: () =>
+                                _showOwnerBankAccountsDialog(owner),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFE0E7FF),
                               foregroundColor: Colors.black87,
@@ -2539,7 +2491,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         ),
                       ],
                     ),
-                    if (_visibleOwnerLedgerEntries(owner.ledger).isNotEmpty) ...[
+                    if (_visibleOwnerLedgerEntries(owner.ledger)
+                        .isNotEmpty) ...[
                       SizedBox(height: 10.h),
                       Theme(
                         data: Theme.of(context).copyWith(
@@ -2799,7 +2752,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ).firstMatch(voucher.note)?.group(1)?.trim();
         if (linkedVoucherId != null && linkedVoucherId.isNotEmpty) {
           final linkedVoucher = scopedVouchersById[linkedVoucherId];
-          if (linkedVoucher != null && linkedVoucher.contractId.trim().isNotEmpty) {
+          if (linkedVoucher != null &&
+              linkedVoucher.contractId.trim().isNotEmpty) {
             return 'contracts';
           }
         }
@@ -2879,8 +2833,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       bool matchesDirection;
       if (_voucherDirectionFilter == _VoucherDirectionFilter.receipts) {
         matchesDirection = v.direction == VoucherDirection.receipt;
-      } else if (_voucherDirectionFilter ==
-          _VoucherDirectionFilter.payments) {
+      } else if (_voucherDirectionFilter == _VoucherDirectionFilter.payments) {
         matchesDirection = v.direction == VoucherDirection.payment;
       } else {
         matchesDirection = true;
@@ -2966,10 +2919,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         items: _VoucherStatusFilter.values
                             .map(
                               (e) => DropdownMenuItem<_VoucherStatusFilter?>(
-                              value: e,
-                              child: Text(e.label),
-                            ),
-                          )
+                                value: e,
+                                child: Text(e.label),
+                              ),
+                            )
                             .toList(),
                         onChanged: (v) {
                           if (v == null) return;
@@ -3196,6 +3149,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     _applyPeriodFilters(from: result.from, to: result.to);
   }
 
+  // ignore: unused_element
   Future<void> _showAssignOwnerDialog(PropertyReportItem item) async {
     final candidates = _ownerCandidates();
     if (candidates.isEmpty) {
@@ -3277,6 +3231,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  // ignore: unused_element
   Future<bool?> _showAddOwnerBankAccountDialog(OwnerReportItem owner) async {
     final bankCtl = TextEditingController();
     final accountCtl = TextEditingController();
@@ -3452,6 +3407,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return result;
   }
 
+  // ignore: unused_element
   Future<void> _showOwnerPreview(
     OwnerReportItem owner, {
     String? propertyId,
@@ -3805,12 +3761,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     final normalizedFrom =
         from == null ? null : DateTime(from.year, from.month, from.day);
-    final normalizedTo = to == null ? null : DateTime(to.year, to.month, to.day);
+    final normalizedTo =
+        to == null ? null : DateTime(to.year, to.month, to.day);
     final now = KsaTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final weekday = now.weekday;
     final weekStart = DateTime(now.year, now.month, now.day - (weekday - 1));
-    final weekEnd = DateTime(weekStart.year, weekStart.month, weekStart.day + 6);
+    final weekEnd =
+        DateTime(weekStart.year, weekStart.month, weekStart.day + 6);
     final monthStart = DateTime(now.year, now.month, 1);
     final monthEnd = DateTime(now.year, now.month + 1, 0);
 
@@ -3830,9 +3788,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     required DateTime? from,
     required DateTime? to,
   }) {
-    DateTime? normalizedFrom = from == null
-        ? null
-        : DateTime(from.year, from.month, from.day);
+    DateTime? normalizedFrom =
+        from == null ? null : DateTime(from.year, from.month, from.day);
     DateTime? normalizedTo =
         to == null ? null : DateTime(to.year, to.month, to.day);
     if (normalizedFrom != null &&
@@ -3927,7 +3884,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Widget _flowIndicatorsBand(ComprehensiveReportSnapshot data) {
-    _scheduleFlowAutoScroll();
     final d = data.dashboard;
     final ownerNetBalance = data.owners.fold<double>(
       0,
@@ -3939,18 +3895,30 @@ class _ReportsScreenState extends State<ReportsScreen> {
         amount: d.totalReceipts,
         color: const Color(0xFF22C55E),
         icon: Icons.download_rounded,
+        onTap: () => _openFinancialDrilldown(
+          _FinancialDrilldownType.revenues,
+          data,
+        ),
       ),
       _FlowIndicatorItem(
         label: 'إجمالي المصروفات',
         amount: d.totalExpenses,
         color: const Color(0xFFF97316),
         icon: Icons.upload_rounded,
+        onTap: () => _openFinancialDrilldown(
+          _FinancialDrilldownType.expenses,
+          data,
+        ),
       ),
       _FlowIndicatorItem(
         label: 'الصافي',
         amount: d.netCashFlow,
         color: const Color(0xFF38BDF8),
         icon: Icons.swap_vert_circle,
+        onTap: () => _openFinancialDrilldown(
+          _FinancialDrilldownType.net,
+          data,
+        ),
       ),
       _FlowIndicatorItem(
         label: 'عمولة المكتب',
@@ -3975,21 +3943,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
           borderRadius: BorderRadius.circular(14.r),
           border: Border.all(color: Colors.white24),
         ),
-        child: Listener(
-          onPointerDown: (_) => _stopFlowAutoScrollByUser(),
-          child: SingleChildScrollView(
-            controller: _flowScrollController,
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: items
-                  .map(
-                    (item) => Padding(
-                      padding: EdgeInsets.only(left: 8.w),
-                      child: _flowIndicatorTile(item: item),
-                    ),
-                  )
-                  .toList(),
-            ),
+        child: SingleChildScrollView(
+          controller: _flowScrollController,
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: items
+                .map(
+                  (item) => Padding(
+                    padding: EdgeInsets.only(left: 8.w),
+                    child: _flowIndicatorTile(item: item),
+                  ),
+                )
+                .toList(),
           ),
         ),
       ),
@@ -4002,7 +3967,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final indicatorColor =
         item.amount < 0 ? const Color(0xFFF87171) : item.color;
     final hasValue = item.amount.abs() > 0.000001;
-    return Container(
+    final tile = Container(
       width: 146.w,
       padding: EdgeInsets.all(10.w),
       decoration: BoxDecoration(
@@ -4035,6 +4000,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   ],
                 ),
               ),
+              const Spacer(),
+              if (item.onTap != null)
+                Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  color: Colors.white.withValues(alpha: 0.55),
+                  size: 13.sp,
+                ),
             ],
           ),
           SizedBox(height: 8.h),
@@ -4059,6 +4031,443 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ),
         ],
       ),
+    );
+    if (item.onTap == null) return tile;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: item.onTap,
+        borderRadius: BorderRadius.circular(12.r),
+        child: tile,
+      ),
+    );
+  }
+
+  Future<void> _openFinancialDrilldown(
+    _FinancialDrilldownType type,
+    ComprehensiveReportSnapshot data,
+  ) async {
+    final rowsByType = <_FinancialDrilldownType, List<_FinancialDrilldownRow>>{
+      _FinancialDrilldownType.revenues: _buildFinancialDrilldownRows(
+        data,
+        _FinancialDrilldownType.revenues,
+      ),
+      _FinancialDrilldownType.expenses: _buildFinancialDrilldownRows(
+        data,
+        _FinancialDrilldownType.expenses,
+      ),
+      _FinancialDrilldownType.net: _buildFinancialDrilldownRows(
+        data,
+        _FinancialDrilldownType.net,
+      ),
+    };
+    final excluded = _buildFinancialExcludedSummaries(data);
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _FinancialDrilldownScreen(
+          initialType: type,
+          rowsByType: rowsByType,
+          excludedSummaries: excluded,
+          periodLabel: _filtersSummaryText(),
+          onOpenVoucher: _openVoucherFromReports,
+          onOpenContract: _openReportContract,
+          onOpenProperty: _openReportProperty,
+          onOpenParty: _openReportParty,
+        ),
+      ),
+    );
+  }
+
+  List<_FinancialExcludedSummary> _buildFinancialExcludedSummaries(
+    ComprehensiveReportSnapshot data,
+  ) {
+    double sum(Iterable<VoucherReportItem> items) =>
+        items.fold<double>(0, (total, item) => total + item.amount.abs());
+
+    final inactive = data.vouchers.where(
+      (v) =>
+          v.state == VoucherState.cancelled ||
+          v.state == VoucherState.reversed ||
+          v.state == VoucherState.draft,
+    );
+    final ownerPayouts = data.vouchers.where(
+      (v) =>
+          v.state == VoucherState.posted &&
+          v.source == VoucherSource.ownerPayout,
+    );
+    final officeWithdrawals = data.vouchers.where(
+      (v) =>
+          v.state == VoucherState.posted &&
+          v.source == VoucherSource.officeWithdrawal,
+    );
+    final ownerAdjustments = data.vouchers.where(
+      (v) =>
+          v.state == VoucherState.posted &&
+          v.source == VoucherSource.ownerAdjustment,
+    );
+
+    return <_FinancialExcludedSummary>[
+      _FinancialExcludedSummary(
+        title: 'سندات غير معتمدة',
+        count: inactive.length,
+        amount: sum(inactive),
+        note: 'مسودات أو سندات ملغية/معكوسة لا تدخل في الصافي.',
+      ),
+      _FinancialExcludedSummary(
+        title: 'تحويلات للمالك',
+        count: ownerPayouts.length,
+        amount: sum(ownerPayouts),
+        note: 'توزيع مستحقات وليس مصروف تشغيل.',
+      ),
+      _FinancialExcludedSummary(
+        title: 'سحوبات المكتب',
+        count: officeWithdrawals.length,
+        amount: sum(officeWithdrawals),
+        note: 'حركة رصيد داخلية وليست مصروفًا تشغيليًا.',
+      ),
+      _FinancialExcludedSummary(
+        title: 'تسويات المالك',
+        count: ownerAdjustments.length,
+        amount: sum(ownerAdjustments),
+        note: 'تعرض في كشف المالك ولا تُحسب كإيراد تشغيلي.',
+      ),
+    ].where((item) => item.count > 0).toList(growable: false);
+  }
+
+  List<_FinancialDrilldownRow> _buildFinancialDrilldownRows(
+    ComprehensiveReportSnapshot data,
+    _FinancialDrilldownType type,
+  ) {
+    final properties = _loadPropertiesForReports(includeArchived: true);
+    final tenants = _loadTenantsForDashboard(includeArchived: true);
+    final contracts = _loadContractsForReports();
+    final propertyById = <String, Property>{
+      for (final property in properties) property.id: property,
+    };
+    final tenantById = <String, Tenant>{
+      for (final tenant in tenants) tenant.id: tenant
+    };
+    final contractById = <String, Contract>{
+      for (final contract in contracts) contract.id: contract,
+    };
+    final invoiceBoxName = boxName(kInvoicesBox);
+    final invoicesById = <String, Invoice>{};
+    if (Hive.isBoxOpen(invoiceBoxName)) {
+      for (final invoice in Hive.box<Invoice>(invoiceBoxName).values) {
+        invoicesById[invoice.id] = invoice;
+      }
+    }
+
+    final rows = <_FinancialDrilldownRow>[];
+    for (final voucher in data.vouchers) {
+      final isRevenue = _voucherCountsAsRevenue(voucher);
+      final isExpense = _voucherCountsAsExpense(voucher);
+      if (type == _FinancialDrilldownType.revenues && !isRevenue) continue;
+      if (type == _FinancialDrilldownType.expenses && !isExpense) continue;
+      if (type == _FinancialDrilldownType.net && !isRevenue && !isExpense) {
+        continue;
+      }
+      rows.add(
+        _financialRowFromVoucher(
+          voucher,
+          data: data,
+          propertyById: propertyById,
+          tenantById: tenantById,
+          contractById: contractById,
+          invoice: invoicesById[voucher.id],
+          isRevenue: isRevenue,
+        ),
+      );
+    }
+
+    rows.sort((a, b) {
+      final dateCmp = a.date.compareTo(b.date);
+      if (dateCmp != 0) return dateCmp;
+      final createdCmp = a.createdAt.compareTo(b.createdAt);
+      if (createdCmp != 0) return createdCmp;
+      return a.voucherId.compareTo(b.voucherId);
+    });
+
+    var runningBalance = 0.0;
+    final balancedRows = <_FinancialDrilldownRow>[];
+    for (final row in rows) {
+      runningBalance += row.signedAmount;
+      balancedRows.add(row.copyWith(balanceAfter: runningBalance));
+    }
+    balancedRows.sort((a, b) {
+      final dateCmp = b.date.compareTo(a.date);
+      if (dateCmp != 0) return dateCmp;
+      final createdCmp = b.createdAt.compareTo(a.createdAt);
+      if (createdCmp != 0) return createdCmp;
+      return b.voucherId.compareTo(a.voucherId);
+    });
+    return balancedRows;
+  }
+
+  bool _voucherCountsAsRevenue(VoucherReportItem voucher) {
+    return voucher.state == VoucherState.posted &&
+        voucher.direction == VoucherDirection.receipt &&
+        voucher.source != VoucherSource.ownerAdjustment;
+  }
+
+  bool _voucherCountsAsExpense(VoucherReportItem voucher) {
+    return voucher.state == VoucherState.posted &&
+        voucher.direction == VoucherDirection.payment &&
+        voucher.source != VoucherSource.officeWithdrawal &&
+        voucher.source != VoucherSource.ownerPayout &&
+        voucher.source != VoucherSource.ownerAdjustment;
+  }
+
+  _FinancialDrilldownRow _financialRowFromVoucher(
+    VoucherReportItem voucher, {
+    required ComprehensiveReportSnapshot data,
+    required Map<String, Property> propertyById,
+    required Map<String, Tenant> tenantById,
+    required Map<String, Contract> contractById,
+    required Invoice? invoice,
+    required bool isRevenue,
+  }) {
+    final propertyParts = _financialPropertyParts(
+      voucher,
+      data: data,
+      propertyById: propertyById,
+    );
+    final partyId = _financialPartyId(voucher);
+    final partyName = _voucherPartyLabel(voucher, data);
+    final tenant = tenantById[partyId] ?? tenantById[voucher.tenantId.trim()];
+    final phone = (tenant?.phone ?? '').trim();
+    final contract = contractById[voucher.contractId.trim()];
+    final dueAmount = (invoice?.amount.abs() ?? voucher.amount.abs());
+    final paidAmount = voucher.paidAmount > 0
+        ? voucher.paidAmount.abs()
+        : voucher.amount.abs();
+    final remainingAmount =
+        (dueAmount - paidAmount) <= 0 ? 0.0 : dueAmount - paidAmount;
+    final reportAmount = voucher.amount.abs();
+    final statement = _voucherDisplayReason(voucher).trim();
+    final fallbackStatement = _cleanVoucherReportNote(voucher.note).trim();
+    final effectiveStatement = statement.isNotEmpty
+        ? statement
+        : (fallbackStatement.isNotEmpty
+            ? fallbackStatement
+            : _voucherOperationLabel(voucher));
+
+    return _FinancialDrilldownRow(
+      date: voucher.date,
+      createdAt: voucher.createdAt,
+      voucherId: voucher.id,
+      voucherNo:
+          voucher.serialNo.trim().isEmpty ? voucher.id : voucher.serialNo,
+      direction: isRevenue
+          ? _FinancialRowDirection.revenue
+          : _FinancialRowDirection.expense,
+      operation: _voucherOperationLabel(voucher),
+      propertyId: voucher.propertyId.trim(),
+      propertyName: propertyParts.propertyName,
+      unitName: propertyParts.unitName,
+      propertyDisplay: propertyParts.display,
+      partyId: partyId,
+      partyName: partyName,
+      partyPhone: phone.isEmpty ? '-' : phone,
+      contractId: voucher.contractId.trim(),
+      contractNo: _voucherContractLabel(voucher, data),
+      paymentPeriod: _financialPaymentPeriod(
+        contract,
+        invoice,
+        voucher,
+      ),
+      dueAmount: dueAmount,
+      paidAmount: paidAmount,
+      remainingAmount: remainingAmount,
+      amountIn: isRevenue ? reportAmount : 0,
+      amountOut: isRevenue ? 0 : reportAmount,
+      paymentMethod: voucher.paymentMethod.trim().isEmpty
+          ? '-'
+          : voucher.paymentMethod.trim(),
+      status: _financialVoucherStatus(
+        voucher,
+        dueAmount: dueAmount,
+        paidAmount: paidAmount,
+        isRevenue: isRevenue,
+      ),
+      statement: effectiveStatement,
+      balanceAfter: 0,
+    );
+  }
+
+  ({String propertyName, String unitName, String display})
+      _financialPropertyParts(
+    VoucherReportItem voucher, {
+    required ComprehensiveReportSnapshot data,
+    required Map<String, Property> propertyById,
+  }) {
+    final propertyId = voucher.propertyId.trim();
+    final property = propertyById[propertyId];
+    final manualProperty = _voucherManualMarkerValue(voucher.note, 'PROPERTY');
+    if (property == null) {
+      final fallback =
+          (manualProperty ?? data.propertyNames[propertyId] ?? propertyId)
+              .trim();
+      final display = fallback.isEmpty ? '-' : fallback;
+      return (propertyName: display, unitName: '-', display: display);
+    }
+    final parentId = (property.parentBuildingId ?? '').trim();
+    if (parentId.isEmpty) {
+      return (
+        propertyName:
+            property.name.trim().isEmpty ? propertyId : property.name.trim(),
+        unitName: '-',
+        display:
+            property.name.trim().isEmpty ? propertyId : property.name.trim(),
+      );
+    }
+    final buildingName = (propertyById[parentId]?.name ?? '').trim();
+    final propertyName = buildingName.isEmpty ? parentId : buildingName;
+    final unitName =
+        property.name.trim().isEmpty ? propertyId : property.name.trim();
+    return (
+      propertyName: propertyName,
+      unitName: unitName,
+      display: '$propertyName / $unitName',
+    );
+  }
+
+  String _financialPartyId(VoucherReportItem voucher) {
+    final direct = voucher.tenantId.trim();
+    if (direct.isNotEmpty) return direct;
+    return (_voucherManualMarkerValue(voucher.note, 'PARTY_ID') ?? '').trim();
+  }
+
+  String _financialPaymentPeriod(
+    Contract? contract,
+    Invoice? invoice,
+    VoucherReportItem voucher,
+  ) {
+    if (contract == null) return '-';
+    if (_voucherContractOperationLabel(voucher).contains('مقدم')) {
+      return 'سداد مقدم عقد';
+    }
+    if (contract.term == ContractTerm.daily) {
+      return 'من ${_fmtDate(contract.startDate) ?? '-'} إلى ${_fmtDate(contract.endDate) ?? '-'}';
+    }
+    final from = _financialDateOnly(invoice?.dueDate ?? voucher.date);
+    final rawTo = _financialAddMonths(
+      from,
+      _financialPaymentCycleMonths(contract),
+    ).subtract(const Duration(days: 1));
+    final contractEnd = _financialDateOnly(contract.endDate);
+    final to = rawTo.isAfter(contractEnd) ? contractEnd : rawTo;
+    return 'من ${_fmtDate(from) ?? '-'} إلى ${_fmtDate(to) ?? '-'}';
+  }
+
+  String _financialVoucherStatus(
+    VoucherReportItem voucher, {
+    required double dueAmount,
+    required double paidAmount,
+    required bool isRevenue,
+  }) {
+    if (voucher.state != VoucherState.posted) return voucher.state.arLabel;
+    if (!isRevenue) return 'مصروف معتمد';
+    if (dueAmount > 0 && paidAmount + 0.000001 < dueAmount) {
+      return 'مسدد جزئي';
+    }
+    return 'مسدد كامل';
+  }
+
+  DateTime _financialDateOnly(DateTime value) =>
+      DateTime(value.year, value.month, value.day);
+
+  int _financialPaymentCycleMonths(Contract contract) {
+    switch (contract.paymentCycle) {
+      case PaymentCycle.monthly:
+        return 1;
+      case PaymentCycle.quarterly:
+        return 3;
+      case PaymentCycle.semiAnnual:
+        return 6;
+      case PaymentCycle.annual:
+        return (contract.paymentCycleYears <= 0
+                ? 1
+                : contract.paymentCycleYears) *
+            12;
+    }
+  }
+
+  DateTime _financialAddMonths(DateTime date, int months) {
+    final monthIndex = date.month + months - 1;
+    final year = date.year + monthIndex ~/ 12;
+    final month = monthIndex % 12 + 1;
+    final day = date.day <= DateUtils.getDaysInMonth(year, month)
+        ? date.day
+        : DateUtils.getDaysInMonth(year, month);
+    return DateTime(year, month, day);
+  }
+
+  Future<void> _openReportContract(String contractId) async {
+    final id = contractId.trim();
+    if (id.isEmpty) {
+      _showSnack('لا يوجد عقد مرتبط بهذه الحركة');
+      return;
+    }
+    if (!Hive.isBoxOpen(HiveService.contractsBoxName())) {
+      await HiveService.ensureReportsBoxesOpen();
+    }
+    if (!mounted) return;
+    final box = Hive.box<Contract>(HiveService.contractsBoxName());
+    final contract = box.get(id);
+    if (contract == null) {
+      _showSnack('تعذر العثور على العقد المطلوب');
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+          builder: (_) => ContractDetailsScreen(contract: contract)),
+    );
+  }
+
+  Future<void> _openReportProperty(String propertyId) async {
+    final id = propertyId.trim();
+    if (id.isEmpty) {
+      _showSnack('لا يوجد عقار مرتبط بهذه الحركة');
+      return;
+    }
+    final name = boxName(kPropertiesBox);
+    if (!Hive.isBoxOpen(name)) {
+      await HiveService.ensureReportsBoxesOpen();
+    }
+    if (!mounted) return;
+    final box = Hive.box<Property>(name);
+    final property = box.get(id);
+    if (property == null) {
+      _showSnack('تعذر العثور على العقار المطلوب');
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PropertyDetailsScreen(item: property)),
+    );
+  }
+
+  Future<void> _openReportParty(String partyId) async {
+    final id = partyId.trim();
+    if (id.isEmpty) {
+      _showSnack('لا يوجد عميل أو مقدم خدمة مرتبط بهذه الحركة');
+      return;
+    }
+    final name = boxName(kTenantsBox);
+    if (!Hive.isBoxOpen(name)) {
+      await HiveService.ensureReportsBoxesOpen();
+    }
+    if (!mounted) return;
+    final box = Hive.box<Tenant>(name);
+    final tenant = box.get(id);
+    if (tenant == null) {
+      _showSnack('تعذر العثور على العميل أو مقدم الخدمة المطلوب');
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+          builder: (_) => tenants_ui.TenantDetailsScreen(tenant: tenant)),
     );
   }
 
@@ -4208,6 +4617,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _metricsGrid(List<_MetricItem> items) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -4282,9 +4692,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return _loadTenantsForDashboard(includeArchived: includeArchived)
         .where((tenant) {
       final type = _normalizeDashboardClientType(tenant);
-      return type == 'tenant' ||
-          type == 'company' ||
-          type == 'serviceProvider';
+      return type == 'tenant' || type == 'company' || type == 'serviceProvider';
     }).toList();
   }
 
@@ -4351,12 +4759,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     final sortedTopLevel = topLevel.toList(growable: false)
       ..sort((a, b) {
-        final aIsBuildingWithUnits =
-            a.type == PropertyType.building &&
-                (unitsByBuilding[a.id]?.isNotEmpty ?? false);
-        final bIsBuildingWithUnits =
-            b.type == PropertyType.building &&
-                (unitsByBuilding[b.id]?.isNotEmpty ?? false);
+        final aIsBuildingWithUnits = a.type == PropertyType.building &&
+            (unitsByBuilding[a.id]?.isNotEmpty ?? false);
+        final bIsBuildingWithUnits = b.type == PropertyType.building &&
+            (unitsByBuilding[b.id]?.isNotEmpty ?? false);
         if (aIsBuildingWithUnits != bIsBuildingWithUnits) {
           return aIsBuildingWithUnits ? -1 : 1;
         }
@@ -4417,12 +4823,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     final sortedTopLevel = topLevel.toList(growable: false)
       ..sort((a, b) {
-        final aIsBuildingWithUnits =
-            a.type == PropertyType.building &&
-                (unitsByBuilding[a.id]?.isNotEmpty ?? false);
-        final bIsBuildingWithUnits =
-            b.type == PropertyType.building &&
-                (unitsByBuilding[b.id]?.isNotEmpty ?? false);
+        final aIsBuildingWithUnits = a.type == PropertyType.building &&
+            (unitsByBuilding[a.id]?.isNotEmpty ?? false);
+        final bIsBuildingWithUnits = b.type == PropertyType.building &&
+            (unitsByBuilding[b.id]?.isNotEmpty ?? false);
         if (aIsBuildingWithUnits != bIsBuildingWithUnits) {
           return aIsBuildingWithUnits ? -1 : 1;
         }
@@ -4444,8 +4848,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           normalizedSelectedPropertyId,
         );
         final isAllSelected = normalizedSelectedPropertyId.isEmpty;
-        final isSecondarySelected =
-            secondaryOptionValue != null &&
+        final isSecondarySelected = secondaryOptionValue != null &&
             normalizedSelectedPropertyId == secondaryOptionValue.trim();
         return SafeArea(
           child: SizedBox(
@@ -4582,8 +4985,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                       contentPadding: EdgeInsets.symmetric(
                                         horizontal: 6.w,
                                       ),
-                                      onTap: () => Navigator.of(sheetContext)
-                                          .pop(
+                                      onTap: () =>
+                                          Navigator.of(sheetContext).pop(
                                         _PropertySelectionSheetResult(
                                           propertyId: unit.id,
                                         ),
@@ -4629,19 +5032,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                 Icons.home_work_rounded,
                                 color: Colors.white70,
                               ),
-                               title: Text(
-                                 property.name,
-                                 style: GoogleFonts.cairo(
-                                   color: Colors.white,
-                                   fontWeight: FontWeight.w700,
-                                 ),
-                               ),
-                               trailing: _selectionCheckmark(
-                                 normalizedSelectedPropertyId == property.id,
-                               ),
-                               subtitle: (property.address).trim().isEmpty
-                                   ? null
-                                   : Text(
+                              title: Text(
+                                property.name,
+                                style: GoogleFonts.cairo(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              trailing: _selectionCheckmark(
+                                normalizedSelectedPropertyId == property.id,
+                              ),
+                              subtitle: (property.address).trim().isEmpty
+                                  ? null
+                                  : Text(
                                       property.address,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -4669,8 +5072,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       return type == 'tenant' || type == 'company';
     }).toList();
 
-    if (_clientsTenantSubTypeFilter ==
-        _ClientTenantSubTypeFilter.individuals) {
+    if (_clientsTenantSubTypeFilter == _ClientTenantSubTypeFilter.individuals) {
       filtered = filtered
           .where((tenant) => _normalizeDashboardClientType(tenant) == 'tenant')
           .toList();
@@ -4692,18 +5094,20 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return filtered;
   }
 
+  // ignore: unused_element
   String _clientReportTypeLabel(String type) {
     switch (type) {
       case 'company':
-        return 'مستأجر شركة';
+        return 'عميل شركة';
       case 'serviceProvider':
         return 'مقدم خدمة';
       case 'tenant':
       default:
-        return 'مستأجر فرد';
+        return 'عميل فرد';
     }
   }
 
+  // ignore: unused_element
   Color _clientReportTypeColor(String type) {
     switch (type) {
       case 'company':
@@ -4716,6 +5120,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
+  // ignore: unused_element
   String _clientReportMetaText(Tenant client, String type) {
     final parts = <String>[];
     if (type == 'company') {
@@ -5138,6 +5543,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _line(String title, String value, {bool muted = false}) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 2.h),
@@ -5389,6 +5795,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _ownerBankAccountCard({
     required OwnerBankAccountRecord account,
     required VoidCallback onCopyAccountNumber,
@@ -5521,6 +5928,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _lightFieldButton({
     required String title,
     required String value,
@@ -5635,6 +6043,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }).toList(growable: false);
   }
 
+  // ignore: unused_element
   Widget _lightDropdownField<T>({
     required String title,
     required T? value,
@@ -5659,6 +6068,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  // ignore: unused_element
   InputDecoration _dialogInputDeco(String label) {
     return InputDecoration(
       labelText: label,
@@ -5739,7 +6149,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         decoration: BoxDecoration(
           color: const Color(0xFF0B1220),
           borderRadius: BorderRadius.circular(10.r),
-          border: Border.all(color: accentColor.withOpacity(0.55)),
+          border: Border.all(color: accentColor.withValues(alpha: 0.55)),
         ),
         child: Row(
           children: [
@@ -5861,13 +6271,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               ),
                               decoration: BoxDecoration(
                                 color: isSelected
-                                    ? accentColor.withOpacity(0.14)
+                                    ? accentColor.withValues(alpha: 0.14)
                                     : const Color(0xFF111827),
                                 borderRadius: BorderRadius.circular(14.r),
                                 border: Border.all(
-                                  color: isSelected
-                                      ? accentColor
-                                      : Colors.white12,
+                                  color:
+                                      isSelected ? accentColor : Colors.white12,
                                 ),
                               ),
                               child: Row(
@@ -5991,6 +6400,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
+  // ignore: unused_element
   Color _stateColor(VoucherState state) {
     switch (state) {
       case VoucherState.draft:
@@ -6004,6 +6414,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
+  // ignore: unused_element
   String _serviceTypeAr(String type) {
     switch (type) {
       case 'water':
@@ -6041,7 +6452,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
   bool _looksLikeGeneratedServiceVoucherText(String raw) {
     final note = _normalizeVoucherServiceText(raw);
     if (note.isEmpty) return false;
-    if (note.contains('[service]') || note.contains('[shared_service_office:')) {
+    if (note.contains('[service]') ||
+        note.contains('[shared_service_office:')) {
       return true;
     }
     final hasServiceToken = _voucherServiceTypeTokenFromText(raw) != null;
@@ -6216,9 +6628,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
         .firstWhere((line) => line.isNotEmpty, orElse: () => '');
     if (firstLine.isEmpty) return 'عملية أخرى';
     final beforePropertyRef = firstLine.split('•').first.trim();
-    final normalized = beforePropertyRef
-        .replaceFirst(RegExp(r'^خدمات\s*-\s*'), '')
-        .trim();
+    final normalized =
+        beforePropertyRef.replaceFirst(RegExp(r'^خدمات\s*-\s*'), '').trim();
     return normalized.isEmpty ? 'عملية أخرى' : normalized;
   }
 
@@ -6251,14 +6662,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   String _voucherManualTitle(String note) {
-    final match = RegExp(r'\[TITLE:(.*?)\]', caseSensitive: false)
-        .firstMatch(note);
+    final match =
+        RegExp(r'\[TITLE:(.*?)\]', caseSensitive: false).firstMatch(note);
     return (match?.group(1) ?? '').trim();
   }
 
   String? _voucherManualMarkerValue(String note, String key) {
-    final match = RegExp('\\[$key:(.*?)\\]', caseSensitive: false)
-        .firstMatch(note);
+    final match =
+        RegExp('\\[$key:(.*?)\\]', caseSensitive: false).firstMatch(note);
     final value = match?.group(1)?.trim();
     return (value == null || value.isEmpty) ? null : value;
   }
@@ -6302,6 +6713,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
+  // ignore: unused_element
   Color _voucherOperationColor(VoucherReportItem v) {
     switch (_voucherOperationOf(v)) {
       case _VoucherOperationFilter.rentReceipt:
@@ -6334,6 +6746,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
+  // ignore: unused_element
   String _voucherPropertyLabel(
     VoucherReportItem v,
     ComprehensiveReportSnapshot data,
@@ -6343,6 +6756,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return data.propertyNames[propertyId] ?? propertyId;
   }
 
+  // ignore: unused_element
   String _voucherContractLabel(
     VoucherReportItem v,
     ComprehensiveReportSnapshot data,
@@ -6352,6 +6766,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return data.contractNumbers[contractId] ?? contractId;
   }
 
+  // ignore: unused_element
   String _voucherPartyLabel(
     VoucherReportItem v,
     ComprehensiveReportSnapshot data,
@@ -6359,9 +6774,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     if (v.source == VoucherSource.manual || v.source == VoucherSource.other) {
       final partyId = v.tenantId.trim();
       if (partyId.isNotEmpty) {
-        return data.tenantNames[partyId] ??
-            data.ownerNames[partyId] ??
-            partyId;
+        return data.tenantNames[partyId] ?? data.ownerNames[partyId] ?? partyId;
       }
       final partyName = _voucherManualMarkerValue(v.note, 'PARTY');
       if (partyName != null) return partyName;
@@ -6375,9 +6788,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       case VoucherSource.ownerAdjustment:
         final ownerId = v.tenantId.trim();
         if (ownerId.isEmpty) return 'المالك';
-        return data.ownerNames[ownerId] ??
-            data.tenantNames[ownerId] ??
-            ownerId;
+        return data.ownerNames[ownerId] ?? data.tenantNames[ownerId] ?? ownerId;
       case VoucherSource.officeWithdrawal:
       case VoucherSource.officeCommission:
       case VoucherSource.manual:
@@ -6398,37 +6809,33 @@ class _ReportsScreenState extends State<ReportsScreen> {
   String _cleanVoucherReportNote(String note) {
     final raw = note.trim();
     if (raw.isEmpty) return '';
-    final lines = raw
-        .split('\n')
-        .map((line) => line.trim())
-        .where((line) {
-          if (line.isEmpty) return false;
-          final lower = line.toLowerCase();
-          return lower != '[manual]' &&
-              !lower.startsWith('[shared_service_office:') &&
-              !lower.startsWith('[party:') &&
-              !lower.startsWith('[party_id:') &&
-              !lower.startsWith('[property:') &&
-              !lower.startsWith('[property_id:') &&
-              !lower.startsWith('[title:') &&
-              !lower.startsWith('[commission_mode:') &&
-              !lower.startsWith('[commission_value:') &&
-              !lower.startsWith('[commission_amount:') &&
-              !lower.startsWith('[owner_payout]') &&
-              !lower.startsWith('[owner_adjustment]') &&
-              !lower.startsWith('[office_commission]') &&
-              !lower.startsWith('[office_withdrawal]') &&
-              !lower.startsWith('[service]') &&
-              !lower.startsWith('[owner_payout_id:') &&
-              !lower.startsWith('[owner_adjustment_id:') &&
-              !lower.startsWith('[owner_adjustment_category:') &&
-              !lower.startsWith('[contract_voucher_id:') &&
-              !lower.startsWith('[posted]') &&
-              !lower.startsWith('[cancelled]') &&
-              !lower.startsWith('[reversal]') &&
-              !lower.startsWith('[reversed]');
-        })
-        .toList(growable: false);
+    final lines = raw.split('\n').map((line) => line.trim()).where((line) {
+      if (line.isEmpty) return false;
+      final lower = line.toLowerCase();
+      return lower != '[manual]' &&
+          !lower.startsWith('[shared_service_office:') &&
+          !lower.startsWith('[party:') &&
+          !lower.startsWith('[party_id:') &&
+          !lower.startsWith('[property:') &&
+          !lower.startsWith('[property_id:') &&
+          !lower.startsWith('[title:') &&
+          !lower.startsWith('[commission_mode:') &&
+          !lower.startsWith('[commission_value:') &&
+          !lower.startsWith('[commission_amount:') &&
+          !lower.startsWith('[owner_payout]') &&
+          !lower.startsWith('[owner_adjustment]') &&
+          !lower.startsWith('[office_commission]') &&
+          !lower.startsWith('[office_withdrawal]') &&
+          !lower.startsWith('[service]') &&
+          !lower.startsWith('[owner_payout_id:') &&
+          !lower.startsWith('[owner_adjustment_id:') &&
+          !lower.startsWith('[owner_adjustment_category:') &&
+          !lower.startsWith('[contract_voucher_id:') &&
+          !lower.startsWith('[posted]') &&
+          !lower.startsWith('[cancelled]') &&
+          !lower.startsWith('[reversal]') &&
+          !lower.startsWith('[reversed]');
+    }).toList(growable: false);
     return lines.join('\n').trim();
   }
 
@@ -6474,14 +6881,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
         .map((line) => _trimVoucherReasonPrefix(title, line))
         .where((line) => line.isNotEmpty)
         .where((line) {
-          final normalizedLine = _normalizeVoucherText(line);
-          if (normalizedLine.isEmpty) return false;
-          if (normalizedLine == normalizedTitle) return false;
-          final withoutGenericPrefix =
-              normalizedLine.replaceFirst(RegExp(r'^خدمات\s*-\s*'), '');
-          return withoutGenericPrefix != normalizedTitle;
-        })
-        .toList(growable: false);
+      final normalizedLine = _normalizeVoucherText(line);
+      if (normalizedLine.isEmpty) return false;
+      if (normalizedLine == normalizedTitle) return false;
+      final withoutGenericPrefix =
+          normalizedLine.replaceFirst(RegExp(r'^خدمات\s*-\s*'), '');
+      return withoutGenericPrefix != normalizedTitle;
+    }).toList(growable: false);
 
     return lines.join(' • ').trim();
   }
@@ -6538,9 +6944,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         border: Border.all(
           color: isCancelledVoucher
               ? const Color(0x55F87171)
-              : (isReversedVoucher
-                  ? const Color(0x5593C5FD)
-                  : Colors.white12),
+              : (isReversedVoucher ? const Color(0x5593C5FD) : Colors.white12),
         ),
       ),
       child: ListTile(
@@ -6691,14 +7095,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
         : (isReversedVoucher ? 'السند معكوس' : 'فتح السند');
     final actionColor = isCancelledVoucher
         ? const Color(0xFFF87171)
-        : (isReversedVoucher
-            ? const Color(0xFF93C5FD)
-            : Colors.white);
+        : (isReversedVoucher ? const Color(0xFF93C5FD) : Colors.white);
     final actionIcon = isCancelledVoucher
         ? Icons.block_rounded
-        : (isReversedVoucher
-            ? Icons.undo_rounded
-            : Icons.receipt_long_rounded);
+        : (isReversedVoucher ? Icons.undo_rounded : Icons.receipt_long_rounded);
     return Container(
       margin: EdgeInsets.only(bottom: 6.h),
       padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
@@ -6712,9 +7112,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         border: Border.all(
           color: isCancelledVoucher
               ? const Color(0x55F87171)
-              : (isReversedVoucher
-                  ? const Color(0x5593C5FD)
-                  : Colors.white12),
+              : (isReversedVoucher ? const Color(0x5593C5FD) : Colors.white12),
         ),
       ),
       child: ListTile(
@@ -6767,14 +7165,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
         : (isReversedVoucher ? 'السند معكوس' : 'فتح السند');
     final actionColor = isCancelledVoucher
         ? const Color(0xFFF87171)
-        : (isReversedVoucher
-            ? const Color(0xFF93C5FD)
-            : Colors.white);
+        : (isReversedVoucher ? const Color(0xFF93C5FD) : Colors.white);
     final actionIcon = isCancelledVoucher
         ? Icons.block_rounded
-        : (isReversedVoucher
-            ? Icons.undo_rounded
-            : Icons.receipt_long_rounded);
+        : (isReversedVoucher ? Icons.undo_rounded : Icons.receipt_long_rounded);
 
     final tile = Container(
       margin: EdgeInsets.only(bottom: 6.h),
@@ -6785,9 +7179,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             : const Color(0x12000000),
         borderRadius: BorderRadius.circular(12.r),
         border: Border.all(
-          color: isCancelledVoucher
-              ? const Color(0x55F87171)
-              : Colors.white12,
+          color: isCancelledVoucher ? const Color(0x55F87171) : Colors.white12,
         ),
       ),
       child: ListTile(
@@ -6949,9 +7341,7 @@ class _OfficeVoucherScreenState extends State<_OfficeVoucherScreen>
       ? widget.office.officeExpenses
       : widget.office.commissionRevenue;
 
-  String get _amountLabel => widget.isExpense
-      ? 'مبلغ المصروف'
-      : 'مبلغ العمولة';
+  String get _amountLabel => widget.isExpense ? 'مبلغ المصروف' : 'مبلغ العمولة';
 
   Future<void> _chooseDate() async {
     final picked = await showDatePicker(
@@ -6990,6 +7380,7 @@ class _OfficeVoucherScreenState extends State<_OfficeVoucherScreen>
       final fieldContext = _noteFieldKey.currentContext;
       if (fieldContext == null) return;
       await Scrollable.ensureVisible(
+        // ignore: use_build_context_synchronously
         fieldContext,
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
@@ -7195,10 +7586,12 @@ class _OfficeVoucherScreenState extends State<_OfficeVoucherScreen>
 
   @override
   Widget build(BuildContext context) {
-    final horizontalPadding = MediaQuery.of(context).size.width >= 900 ? 24.w : 16.w;
+    final horizontalPadding =
+        MediaQuery.of(context).size.width >= 900 ? 24.w : 16.w;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final actionBarHeight = 64.h;
 
+    // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: () async {
         if (_submitting) return false;
@@ -7420,7 +7813,8 @@ class _OfficeWithdrawalScreen extends StatefulWidget {
   });
 
   @override
-  State<_OfficeWithdrawalScreen> createState() => _OfficeWithdrawalScreenState();
+  State<_OfficeWithdrawalScreen> createState() =>
+      _OfficeWithdrawalScreenState();
 }
 
 class _OfficeWithdrawalScreenState extends State<_OfficeWithdrawalScreen>
@@ -7511,6 +7905,7 @@ class _OfficeWithdrawalScreenState extends State<_OfficeWithdrawalScreen>
       final fieldContext = _noteFieldKey.currentContext;
       if (fieldContext == null) return;
       await Scrollable.ensureVisible(
+        // ignore: use_build_context_synchronously
         fieldContext,
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
@@ -7748,6 +8143,7 @@ class _OfficeWithdrawalScreenState extends State<_OfficeWithdrawalScreen>
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final actionBarHeight = 64.h;
 
+    // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: () async {
         if (_submitting) return false;
@@ -7795,7 +8191,8 @@ class _OfficeWithdrawalScreenState extends State<_OfficeWithdrawalScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _infoLine('الجهة', 'المكتب'),
-                    _infoLine('صافي ربح المكتب', _money(widget.preview.netProfit)),
+                    _infoLine(
+                        'صافي ربح المكتب', _money(widget.preview.netProfit)),
                     _infoLine(
                       'إجمالي سحوبات المكتب',
                       _money(widget.preview.previousWithdrawals),
@@ -8067,6 +8464,7 @@ class _OwnerPayoutScreenState extends State<_OwnerPayoutScreen>
       final fieldContext = _noteFieldKey.currentContext;
       if (fieldContext == null) return;
       await Scrollable.ensureVisible(
+        // ignore: use_build_context_synchronously
         fieldContext,
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
@@ -8304,6 +8702,7 @@ class _OwnerPayoutScreenState extends State<_OwnerPayoutScreen>
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final actionBarHeight = 64.h;
 
+    // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: () async {
         if (_submitting) return false;
@@ -8611,6 +9010,7 @@ class _OwnerAdjustmentScreenState extends State<_OwnerAdjustmentScreen>
       final fieldContext = _noteFieldKey.currentContext;
       if (fieldContext == null) return;
       await Scrollable.ensureVisible(
+        // ignore: use_build_context_synchronously
         fieldContext,
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
@@ -8849,6 +9249,7 @@ class _OwnerAdjustmentScreenState extends State<_OwnerAdjustmentScreen>
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final actionBarHeight = 64.h;
 
+    // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: () async {
         if (_submitting) return false;
@@ -8934,8 +9335,7 @@ class _OwnerAdjustmentScreenState extends State<_OwnerAdjustmentScreen>
                 decoration: _inputDeco('نوع الخصم'),
                 items: OwnerAdjustmentCategory.values
                     .map(
-                      (category) =>
-                          DropdownMenuItem<OwnerAdjustmentCategory>(
+                      (category) => DropdownMenuItem<OwnerAdjustmentCategory>(
                         value: category,
                         child: Text(category.arLabel),
                       ),
@@ -9644,6 +10044,7 @@ class _OwnerBankAccountsScreenState extends State<_OwnerBankAccountsScreen> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final actionBarHeight = 64.h;
 
+    // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: _handleBack,
       child: Scaffold(
@@ -9661,6 +10062,7 @@ class _OwnerBankAccountsScreenState extends State<_OwnerBankAccountsScreen> {
                 : () async {
                     final shouldPop = await _handleBack();
                     if (!mounted || !shouldPop) return;
+                    // ignore: use_build_context_synchronously
                     Navigator.of(context).pop();
                   },
             icon: const Icon(
@@ -9701,7 +10103,8 @@ class _OwnerBankAccountsScreenState extends State<_OwnerBankAccountsScreen> {
                 SizedBox(height: 12.h),
                 TextField(
                   controller: _bankCtl,
-                  scrollPadding: EdgeInsets.only(bottom: actionBarHeight + 16.h),
+                  scrollPadding:
+                      EdgeInsets.only(bottom: actionBarHeight + 16.h),
                   onChanged: (_) {
                     setState(() {
                       _formError = null;
@@ -9721,7 +10124,8 @@ class _OwnerBankAccountsScreenState extends State<_OwnerBankAccountsScreen> {
                 SizedBox(height: 10.h),
                 TextField(
                   controller: _accountCtl,
-                  scrollPadding: EdgeInsets.only(bottom: actionBarHeight + 16.h),
+                  scrollPadding:
+                      EdgeInsets.only(bottom: actionBarHeight + 16.h),
                   onChanged: (_) {
                     setState(() {
                       _formError = null;
@@ -9743,7 +10147,8 @@ class _OwnerBankAccountsScreenState extends State<_OwnerBankAccountsScreen> {
                 SizedBox(height: 10.h),
                 TextField(
                   controller: _ibanCtl,
-                  scrollPadding: EdgeInsets.only(bottom: actionBarHeight + 16.h),
+                  scrollPadding:
+                      EdgeInsets.only(bottom: actionBarHeight + 16.h),
                   onChanged: (_) {
                     setState(() {
                       _formError = null;
@@ -9952,8 +10357,7 @@ class _CommissionRuleDialog extends StatefulWidget {
 
 class _CommissionRuleDialogState extends State<_CommissionRuleDialog> {
   static const double _maxPercent = 100;
-  static const String _percentLimitMessage =
-      'النسبة لا يمكن أن تتجاوز 100%';
+  static const String _percentLimitMessage = 'النسبة لا يمكن أن تتجاوز 100%';
 
   late CommissionMode _mode;
   late final TextEditingController _valueCtl;
@@ -10082,6 +10486,7 @@ class _CommissionRuleDialogState extends State<_CommissionRuleDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: _handleBack,
       child: AlertDialog(
@@ -10554,13 +10959,1316 @@ class _FlowIndicatorItem {
   final double amount;
   final Color color;
   final IconData icon;
+  final VoidCallback? onTap;
 
   const _FlowIndicatorItem({
     required this.label,
     required this.amount,
     required this.color,
     required this.icon,
+    this.onTap,
   });
+}
+
+enum _FinancialDrilldownType { revenues, expenses, net }
+
+extension _FinancialDrilldownTypeLabel on _FinancialDrilldownType {
+  String get title {
+    switch (this) {
+      case _FinancialDrilldownType.revenues:
+        return 'تفاصيل الإيرادات';
+      case _FinancialDrilldownType.expenses:
+        return 'تفاصيل المصروفات';
+      case _FinancialDrilldownType.net:
+        return 'تحليل الصافي';
+    }
+  }
+
+  String get tabLabel {
+    switch (this) {
+      case _FinancialDrilldownType.revenues:
+        return 'الإيرادات';
+      case _FinancialDrilldownType.expenses:
+        return 'المصروفات';
+      case _FinancialDrilldownType.net:
+        return 'الصافي';
+    }
+  }
+
+  String get fileStem {
+    switch (this) {
+      case _FinancialDrilldownType.revenues:
+        return 'revenues_report';
+      case _FinancialDrilldownType.expenses:
+        return 'expenses_report';
+      case _FinancialDrilldownType.net:
+        return 'net_report';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case _FinancialDrilldownType.revenues:
+        return Icons.download_rounded;
+      case _FinancialDrilldownType.expenses:
+        return Icons.upload_rounded;
+      case _FinancialDrilldownType.net:
+        return Icons.account_balance_wallet_rounded;
+    }
+  }
+
+  Color get accent {
+    switch (this) {
+      case _FinancialDrilldownType.revenues:
+        return const Color(0xFF22C55E);
+      case _FinancialDrilldownType.expenses:
+        return const Color(0xFFF97316);
+      case _FinancialDrilldownType.net:
+        return const Color(0xFF38BDF8);
+    }
+  }
+}
+
+enum _FinancialRowDirection { revenue, expense }
+
+class _FinancialExcludedSummary {
+  final String title;
+  final int count;
+  final double amount;
+  final String note;
+
+  const _FinancialExcludedSummary({
+    required this.title,
+    required this.count,
+    required this.amount,
+    required this.note,
+  });
+}
+
+class _FinancialDrilldownRow {
+  final DateTime date;
+  final DateTime createdAt;
+  final String voucherId;
+  final String voucherNo;
+  final _FinancialRowDirection direction;
+  final String operation;
+  final String propertyId;
+  final String propertyName;
+  final String unitName;
+  final String propertyDisplay;
+  final String partyId;
+  final String partyName;
+  final String partyPhone;
+  final String contractId;
+  final String contractNo;
+  final String paymentPeriod;
+  final double dueAmount;
+  final double paidAmount;
+  final double remainingAmount;
+  final double amountIn;
+  final double amountOut;
+  final String paymentMethod;
+  final String status;
+  final String statement;
+  final double balanceAfter;
+
+  const _FinancialDrilldownRow({
+    required this.date,
+    required this.createdAt,
+    required this.voucherId,
+    required this.voucherNo,
+    required this.direction,
+    required this.operation,
+    required this.propertyId,
+    required this.propertyName,
+    required this.unitName,
+    required this.propertyDisplay,
+    required this.partyId,
+    required this.partyName,
+    required this.partyPhone,
+    required this.contractId,
+    required this.contractNo,
+    required this.paymentPeriod,
+    required this.dueAmount,
+    required this.paidAmount,
+    required this.remainingAmount,
+    required this.amountIn,
+    required this.amountOut,
+    required this.paymentMethod,
+    required this.status,
+    required this.statement,
+    required this.balanceAfter,
+  });
+
+  double get signedAmount => amountIn - amountOut;
+
+  String get directionLabel =>
+      direction == _FinancialRowDirection.revenue ? 'إيراد' : 'مصروف';
+
+  _FinancialDrilldownRow copyWith({double? balanceAfter}) {
+    return _FinancialDrilldownRow(
+      date: date,
+      createdAt: createdAt,
+      voucherId: voucherId,
+      voucherNo: voucherNo,
+      direction: direction,
+      operation: operation,
+      propertyId: propertyId,
+      propertyName: propertyName,
+      unitName: unitName,
+      propertyDisplay: propertyDisplay,
+      partyId: partyId,
+      partyName: partyName,
+      partyPhone: partyPhone,
+      contractId: contractId,
+      contractNo: contractNo,
+      paymentPeriod: paymentPeriod,
+      dueAmount: dueAmount,
+      paidAmount: paidAmount,
+      remainingAmount: remainingAmount,
+      amountIn: amountIn,
+      amountOut: amountOut,
+      paymentMethod: paymentMethod,
+      status: status,
+      statement: statement,
+      balanceAfter: balanceAfter ?? this.balanceAfter,
+    );
+  }
+
+  String get searchableText => <String>[
+        voucherNo,
+        directionLabel,
+        operation,
+        propertyName,
+        unitName,
+        propertyDisplay,
+        partyName,
+        partyPhone,
+        contractNo,
+        paymentPeriod,
+        paymentMethod,
+        status,
+        statement,
+      ].join(' ').toLowerCase();
+}
+
+enum _FinancialNetFilter { all, revenues, expenses }
+
+class _FinancialDrilldownScreen extends StatefulWidget {
+  final _FinancialDrilldownType initialType;
+  final Map<_FinancialDrilldownType, List<_FinancialDrilldownRow>> rowsByType;
+  final List<_FinancialExcludedSummary> excludedSummaries;
+  final String periodLabel;
+  final Future<void> Function(String voucherId) onOpenVoucher;
+  final Future<void> Function(String contractId) onOpenContract;
+  final Future<void> Function(String propertyId) onOpenProperty;
+  final Future<void> Function(String partyId) onOpenParty;
+
+  const _FinancialDrilldownScreen({
+    required this.initialType,
+    required this.rowsByType,
+    required this.excludedSummaries,
+    required this.periodLabel,
+    required this.onOpenVoucher,
+    required this.onOpenContract,
+    required this.onOpenProperty,
+    required this.onOpenParty,
+  });
+
+  @override
+  State<_FinancialDrilldownScreen> createState() =>
+      _FinancialDrilldownScreenState();
+}
+
+class _FinancialDrilldownScreenState extends State<_FinancialDrilldownScreen> {
+  static const Color _pageBaseColor = Color(0xFF0F172A);
+  static const Color _panelColor = Color(0xB30B1220);
+  static const Color _fieldColor = Color(0xB3111827);
+
+  final TextEditingController _searchController = TextEditingController();
+  final ScrollController _tableScrollController = ScrollController();
+  late _FinancialDrilldownType _type;
+  _FinancialNetFilter _netFilter = _FinancialNetFilter.all;
+  bool _tableAutoScrollStoppedByUser = false;
+  bool _tableAutoScrollRunning = false;
+  bool _tableAutoScrollForward = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _type = widget.initialType;
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _tableScrollController.dispose();
+    super.dispose();
+  }
+
+  void _handleBottomTap(int i) {
+    switch (i) {
+      case 0:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+        );
+        break;
+      case 1:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const PropertiesScreen()),
+        );
+        break;
+      case 2:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const tenants_ui.TenantsScreen()),
+        );
+        break;
+      case 3:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const ContractsScreen()),
+        );
+        break;
+    }
+  }
+
+  List<_FinancialDrilldownRow> _rowsFor(_FinancialDrilldownType type) {
+    return widget.rowsByType[type] ?? const <_FinancialDrilldownRow>[];
+  }
+
+  List<_FinancialDrilldownRow> get _visibleRows {
+    final query = _searchController.text.trim().toLowerCase();
+    return _rowsFor(_type).where((row) {
+      if (_type == _FinancialDrilldownType.net) {
+        if (_netFilter == _FinancialNetFilter.revenues &&
+            row.direction != _FinancialRowDirection.revenue) {
+          return false;
+        }
+        if (_netFilter == _FinancialNetFilter.expenses &&
+            row.direction != _FinancialRowDirection.expense) {
+          return false;
+        }
+      }
+      if (query.isEmpty) return true;
+      return row.searchableText.contains(query);
+    }).toList(growable: false);
+  }
+
+  void _scheduleTableAutoScrollHint() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startTableAutoScrollHintIfNeeded();
+    });
+  }
+
+  void _stopTableAutoScrollHintByUser() {
+    if (_tableAutoScrollStoppedByUser) return;
+    _tableAutoScrollStoppedByUser = true;
+    if (!_tableScrollController.hasClients) return;
+    try {
+      _tableScrollController.jumpTo(_tableScrollController.offset);
+    } catch (_) {}
+  }
+
+  Future<void> _startTableAutoScrollHintIfNeeded() async {
+    if (!mounted ||
+        _tableAutoScrollStoppedByUser ||
+        _tableAutoScrollRunning ||
+        !_tableScrollController.hasClients) {
+      return;
+    }
+
+    final initialMax = _tableScrollController.position.maxScrollExtent;
+    if (initialMax <= 1) return;
+
+    _tableAutoScrollRunning = true;
+    try {
+      while (mounted &&
+          !_tableAutoScrollStoppedByUser &&
+          _tableScrollController.hasClients) {
+        final maxExtent = _tableScrollController.position.maxScrollExtent;
+        if (maxExtent <= 1) break;
+
+        final target = _tableAutoScrollForward ? maxExtent : 0.0;
+        final current = _tableScrollController.offset.clamp(0.0, maxExtent);
+        final distance = (target - current).abs();
+
+        if (distance < 2) {
+          _tableAutoScrollForward = !_tableAutoScrollForward;
+          await Future.delayed(const Duration(milliseconds: 650));
+          continue;
+        }
+
+        final duration = Duration(
+          milliseconds: (distance * 42).clamp(3000.0, 18000.0).round(),
+        );
+        await _tableScrollController.animateTo(
+          target,
+          duration: duration,
+          curve: Curves.easeInOut,
+        );
+
+        _tableAutoScrollForward = !_tableAutoScrollForward;
+        await Future.delayed(const Duration(milliseconds: 650));
+      }
+    } catch (_) {
+      // يتوقف التحريك طبيعيًا عند لمس المستخدم أو تبدل الجدول.
+    } finally {
+      _tableAutoScrollRunning = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = _visibleRows;
+    final totalIn = rows.fold<double>(0, (sum, row) => sum + row.amountIn);
+    final totalOut = rows.fold<double>(0, (sum, row) => sum + row.amountOut);
+    final net = totalIn - totalOut;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: _pageBaseColor,
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          leading: ejarzProLeading(context, iconColor: Colors.white),
+          centerTitle: true,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          title: Text(
+            _type.title,
+            style: GoogleFonts.cairo(fontWeight: FontWeight.w800),
+          ),
+          actions: [
+            IconButton(
+              onPressed: _exportPdf,
+              tooltip: 'PDF',
+              icon: const Icon(Icons.picture_as_pdf_rounded),
+              color: Colors.white,
+            ),
+          ],
+        ),
+        bottomNavigationBar: AppBottomNav(
+          currentIndex: 0,
+          onTap: _handleBottomTap,
+        ),
+        body: Stack(
+          children: [
+            _gradientBackground(),
+            Positioned(
+              top: -120,
+              right: -80,
+              child: _softCircle(220.r, const Color(0x33FFFFFF)),
+            ),
+            Positioned(
+              bottom: -140,
+              left: -100,
+              child: _softCircle(260.r, const Color(0x22FFFFFF)),
+            ),
+            SafeArea(
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(14.w, 14.h, 14.w, 20.h),
+                children: [
+                  _hero(totalIn: totalIn, totalOut: totalOut, net: net),
+                  SizedBox(height: 12.h),
+                  _toolbar(),
+                  if (_type == _FinancialDrilldownType.net &&
+                      widget.excludedSummaries.isNotEmpty) ...[
+                    SizedBox(height: 12.h),
+                    _excludedMovementsCard(),
+                  ],
+                  SizedBox(height: 12.h),
+                  if (rows.isEmpty) _emptyState() else _tableCard(rows),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _gradientBackground() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: [
+            Color(0xFF0F172A),
+            Color(0xFF0F766E),
+            Color(0xFF14B8A6),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _softCircle(double size, Color color) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+    );
+  }
+
+  Widget _hero({
+    required double totalIn,
+    required double totalOut,
+    required double net,
+  }) {
+    return Container(
+      padding: EdgeInsets.all(14.w),
+      decoration: BoxDecoration(
+        color: _panelColor,
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42.w,
+                height: 42.w,
+                decoration: BoxDecoration(
+                  color: _type.accent.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12.r),
+                  border: Border.all(
+                    color: _type.accent.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Icon(_type.icon, color: _type.accent),
+              ),
+              SizedBox(width: 10.w),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _type.title,
+                      style: GoogleFonts.cairo(
+                        color: Colors.white,
+                        fontSize: 17.sp,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 2.h),
+                    Text(
+                      widget.periodLabel,
+                      style: GoogleFonts.cairo(
+                        color: Colors.white60,
+                        fontSize: 11.sp,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 14.h),
+          Wrap(
+            spacing: 8.w,
+            runSpacing: 8.h,
+            children: [
+              _summaryPill('الإيرادات', totalIn, const Color(0xFF22C55E)),
+              _summaryPill('المصروفات', totalOut, const Color(0xFFF97316)),
+              _summaryPill('الصافي', net, const Color(0xFF38BDF8)),
+              _summaryCountPill('الحركات', _visibleRows.length),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryPill(String label, double value, Color color) {
+    return Container(
+      width: 150.w,
+      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 9.h),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(10.r),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.cairo(
+              color: Colors.white70,
+              fontSize: 11.sp,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          SizedBox(height: 2.h),
+          Text(
+            _money(value),
+            style: GoogleFonts.cairo(
+              color: color,
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryCountPill(String label, int count) {
+    return Container(
+      width: 150.w,
+      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 9.h),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10.r),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.cairo(
+              color: Colors.white70,
+              fontSize: 11.sp,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          SizedBox(height: 2.h),
+          Text(
+            '$count',
+            style: GoogleFonts.cairo(
+              color: Colors.white,
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _toolbar() {
+    return Container(
+      padding: EdgeInsets.all(12.w),
+      decoration: BoxDecoration(
+        color: _panelColor,
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: Column(
+        children: [
+          _typeSwitcher(),
+          SizedBox(height: 10.h),
+          TextField(
+            controller: _searchController,
+            onChanged: (_) => setState(() {}),
+            style: GoogleFonts.cairo(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'بحث برقم السند، العميل، العقار، العقد، البيان...',
+              hintStyle: GoogleFonts.cairo(color: Colors.white54),
+              prefixIcon:
+                  const Icon(Icons.search_rounded, color: Colors.white70),
+              filled: true,
+              fillColor: _fieldColor,
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12.r),
+                borderSide: const BorderSide(color: Colors.white24),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12.r),
+                borderSide: BorderSide(color: _type.accent),
+              ),
+            ),
+          ),
+          if (_type == _FinancialDrilldownType.net) ...[
+            SizedBox(height: 10.h),
+            Row(
+              children: [
+                Expanded(
+                    child: _netFilterChip('الكل', _FinancialNetFilter.all)),
+                SizedBox(width: 8.w),
+                Expanded(
+                  child:
+                      _netFilterChip('إيرادات', _FinancialNetFilter.revenues),
+                ),
+                SizedBox(width: 8.w),
+                Expanded(
+                  child:
+                      _netFilterChip('مصروفات', _FinancialNetFilter.expenses),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _typeSwitcher() {
+    return Row(
+      children: _FinancialDrilldownType.values.map((type) {
+        final isLast = type == _FinancialDrilldownType.values.last;
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsetsDirectional.only(end: isLast ? 0 : 8.w),
+            child: _typeSwitchButton(type),
+          ),
+        );
+      }).toList(growable: false),
+    );
+  }
+
+  Widget _typeSwitchButton(_FinancialDrilldownType type) {
+    final selected = _type == type;
+    return InkWell(
+      onTap: selected
+          ? null
+          : () {
+              setState(() {
+                _type = type;
+                _netFilter = _FinancialNetFilter.all;
+                _searchController.clear();
+              });
+            },
+      borderRadius: BorderRadius.circular(10.r),
+      child: Container(
+        height: 40.h,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected
+              ? type.accent.withValues(alpha: 0.20)
+              : Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(10.r),
+          border: Border.all(
+            color: selected
+                ? type.accent.withValues(alpha: 0.65)
+                : Colors.white.withValues(alpha: 0.12),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              type.icon,
+              color: selected ? type.accent : Colors.white60,
+              size: 16.sp,
+            ),
+            SizedBox(width: 5.w),
+            Flexible(
+              child: Text(
+                type.tabLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.cairo(
+                  color: selected ? Colors.white : Colors.white70,
+                  fontSize: 11.sp,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _netFilterChip(String label, _FinancialNetFilter value) {
+    final selected = _netFilter == value;
+    return InkWell(
+      onTap: () => setState(() => _netFilter = value),
+      borderRadius: BorderRadius.circular(10.r),
+      child: Container(
+        alignment: Alignment.center,
+        padding: EdgeInsets.symmetric(vertical: 9.h),
+        decoration: BoxDecoration(
+          color: selected
+              ? _type.accent.withValues(alpha: 0.18)
+              : Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(10.r),
+          border: Border.all(
+            color: selected
+                ? _type.accent.withValues(alpha: 0.55)
+                : Colors.white.withValues(alpha: 0.12),
+          ),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.cairo(
+            color: selected ? Colors.white : Colors.white70,
+            fontWeight: FontWeight.w800,
+            fontSize: 12.sp,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _excludedMovementsCard() {
+    return Container(
+      padding: EdgeInsets.all(12.w),
+      decoration: BoxDecoration(
+        color: _panelColor,
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'حركات لا تدخل في الصافي',
+            style: GoogleFonts.cairo(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 14.sp,
+            ),
+          ),
+          SizedBox(height: 8.h),
+          ...widget.excludedSummaries.map(
+            (item) => Padding(
+              padding: EdgeInsets.only(bottom: 8.h),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline_rounded,
+                      color: Colors.white54, size: 17.sp),
+                  SizedBox(width: 8.w),
+                  Expanded(
+                    child: Text(
+                      '${item.title}: ${item.count} حركة بقيمة ${_money(item.amount)} ريال. ${item.note}',
+                      style: GoogleFonts.cairo(
+                        color: Colors.white70,
+                        fontSize: 11.sp,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyState() {
+    return Container(
+      padding: EdgeInsets.all(22.w),
+      decoration: BoxDecoration(
+        color: _panelColor,
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.receipt_long_rounded, color: Colors.white38, size: 42.sp),
+          SizedBox(height: 8.h),
+          Text(
+            'لا توجد حركات ضمن الفلاتر الحالية',
+            style: GoogleFonts.cairo(
+              color: Colors.white70,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tableCard(List<_FinancialDrilldownRow> rows) {
+    _scheduleTableAutoScrollHint();
+    return Container(
+      decoration: BoxDecoration(
+        color: _panelColor,
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14.r),
+        child: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) => _stopTableAutoScrollHintByUser(),
+          child: SingleChildScrollView(
+            controller: _tableScrollController,
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowColor: WidgetStateProperty.all(_fieldColor),
+              dataRowMinHeight: 58.h,
+              dataRowMaxHeight: 74.h,
+              columnSpacing: 18.w,
+              horizontalMargin: 12.w,
+              columns: _tableColumns(),
+              rows: rows.map(_tableRow).toList(growable: false),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<DataColumn> _tableColumns() {
+    switch (_type) {
+      case _FinancialDrilldownType.revenues:
+        return [
+          _column('تاريخ السداد'),
+          _column('رقم السند'),
+          _column('نوع الإيراد'),
+          _column('العقار / الوحدة'),
+          _column('العميل'),
+          _column('الجوال'),
+          _column('رقم العقد'),
+          _column('فترة السداد'),
+          _column('المطلوب'),
+          _column('المسدد'),
+          _column('المتبقي'),
+          _column('الحالة'),
+          _column('فتح'),
+        ];
+      case _FinancialDrilldownType.expenses:
+        return [
+          _column('تاريخ الصرف'),
+          _column('رقم السند'),
+          _column('الخدمة / النوع'),
+          _column('مقدم الخدمة / الطرف'),
+          _column('العقار / الوحدة'),
+          _column('البيان'),
+          _column('المبلغ'),
+          _column('طريقة الدفع'),
+          _column('الحالة'),
+          _column('فتح'),
+        ];
+      case _FinancialDrilldownType.net:
+        return [
+          _column('التاريخ'),
+          _column('الاتجاه'),
+          _column('نوع الحركة'),
+          _column('البيان'),
+          _column('العقار / الوحدة'),
+          _column('العميل / الطرف'),
+          _column('رقم السند'),
+          _column('داخل'),
+          _column('خارج'),
+          _column('الرصيد بعد الحركة'),
+          _column('فتح'),
+        ];
+    }
+  }
+
+  DataColumn _column(String label) {
+    return DataColumn(
+      label: Text(
+        label,
+        style: GoogleFonts.cairo(
+          color: Colors.white,
+          fontWeight: FontWeight.w900,
+          fontSize: 12.sp,
+        ),
+      ),
+    );
+  }
+
+  DataRow _tableRow(_FinancialDrilldownRow row) {
+    final color = row.direction == _FinancialRowDirection.revenue
+        ? const Color(0xFF22C55E)
+        : const Color(0xFFF97316);
+    switch (_type) {
+      case _FinancialDrilldownType.revenues:
+        return DataRow(cells: [
+          _textCell(_fmtDate(row.date)),
+          _strongCell(row.voucherNo),
+          _chipCell(row.operation, color),
+          _textCell(row.propertyDisplay),
+          _textCell(row.partyName),
+          _textCell(row.partyPhone),
+          _textCell(row.contractNo),
+          _textCell(row.paymentPeriod, width: 190.w),
+          _moneyCell(row.dueAmount),
+          _moneyCell(row.paidAmount),
+          _moneyCell(row.remainingAmount),
+          _chipCell(
+              row.status,
+              row.remainingAmount > 0
+                  ? const Color(0xFFF59E0B)
+                  : const Color(0xFF22C55E)),
+          _actionsCell(row),
+        ]);
+      case _FinancialDrilldownType.expenses:
+        return DataRow(cells: [
+          _textCell(_fmtDate(row.date)),
+          _strongCell(row.voucherNo),
+          _chipCell(row.operation, color),
+          _textCell(row.partyName),
+          _textCell(row.propertyDisplay),
+          _textCell(row.statement, width: 240.w),
+          _moneyCell(row.amountOut),
+          _textCell(row.paymentMethod),
+          _chipCell(row.status, color),
+          _actionsCell(row),
+        ]);
+      case _FinancialDrilldownType.net:
+        return DataRow(cells: [
+          _textCell(_fmtDate(row.date)),
+          _chipCell(row.directionLabel, color),
+          _textCell(row.operation),
+          _textCell(row.statement, width: 240.w),
+          _textCell(row.propertyDisplay),
+          _textCell(row.partyName),
+          _strongCell(row.voucherNo),
+          _moneyCell(row.amountIn),
+          _moneyCell(row.amountOut),
+          _moneyCell(row.balanceAfter),
+          _actionsCell(row),
+        ]);
+    }
+  }
+
+  DataCell _textCell(String value, {double? width}) {
+    return DataCell(
+      SizedBox(
+        width: width ?? 132.w,
+        child: Text(
+          value.trim().isEmpty ? '-' : value.trim(),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.cairo(
+            color: Colors.white70,
+            fontSize: 11.sp,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  DataCell _strongCell(String value) {
+    return DataCell(
+      Text(
+        value.trim().isEmpty ? '-' : value.trim(),
+        style: GoogleFonts.cairo(
+          color: Colors.white,
+          fontSize: 11.sp,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  DataCell _moneyCell(double value) {
+    return DataCell(
+      Text(
+        _money(value),
+        style: GoogleFonts.cairo(
+          color: value == 0 ? Colors.white38 : Colors.white,
+          fontSize: 11.sp,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  DataCell _chipCell(String value, Color color) {
+    return DataCell(
+      Container(
+        constraints: BoxConstraints(maxWidth: 150.w),
+        padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 5.h),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(8.r),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Text(
+          value.trim().isEmpty ? '-' : value.trim(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.cairo(
+            color: color,
+            fontSize: 10.5.sp,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+
+  DataCell _actionsCell(_FinancialDrilldownRow row) {
+    return DataCell(
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _miniAction(
+            icon: Icons.receipt_long_rounded,
+            enabled: row.voucherId.trim().isNotEmpty,
+            onTap: () => widget.onOpenVoucher(row.voucherId),
+          ),
+          _miniAction(
+            icon: Icons.description_rounded,
+            enabled: row.contractId.trim().isNotEmpty,
+            onTap: () => widget.onOpenContract(row.contractId),
+          ),
+          _miniAction(
+            icon: Icons.apartment_rounded,
+            enabled: row.propertyId.trim().isNotEmpty,
+            onTap: () => widget.onOpenProperty(row.propertyId),
+          ),
+          _miniAction(
+            icon: Icons.person_rounded,
+            enabled: row.partyId.trim().isNotEmpty,
+            onTap: () => widget.onOpenParty(row.partyId),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniAction({
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(left: 4.w),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(8.r),
+        child: Container(
+          width: 30.w,
+          height: 30.w,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: enabled
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.white.withValues(alpha: 0.03),
+            borderRadius: BorderRadius.circular(8.r),
+            border: Border.all(
+              color: enabled
+                  ? Colors.white.withValues(alpha: 0.16)
+                  : Colors.white.withValues(alpha: 0.06),
+            ),
+          ),
+          child: Icon(
+            icon,
+            color: enabled ? Colors.white70 : Colors.white24,
+            size: 16.sp,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _exportPdf() async {
+    final rows = _visibleRows;
+    final doc = pw.Document();
+    final regular = await _loadPdfFont('assets/fonts/tahoma.ttf');
+    final bold = await _loadPdfFont('assets/fonts/tahomabd.ttf');
+    final issuedAt = KsaTime.now();
+    final standardHeader = await PdfExportService.buildStandardPdfHeader(
+      documentTitle: _type.title,
+      issueDate: issuedAt,
+      regular: regular,
+      bold: bold,
+      titleFontSize: 22,
+      officeFontSize: 11,
+    );
+    final headers = _exportHeaders();
+    final tableRows = rows.map(_exportValues).toList(growable: false);
+    final totalIn = rows.fold<double>(0, (sum, row) => sum + row.amountIn);
+    final totalOut = rows.fold<double>(0, (sum, row) => sum + row.amountOut);
+    final net = totalIn - totalOut;
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(20),
+        theme: pw.ThemeData.withFont(base: regular, bold: bold),
+        build: (context) => [
+          pw.Directionality(
+            textDirection: pw.TextDirection.rtl,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                ...standardHeader,
+                pw.Container(
+                  width: double.infinity,
+                  padding: const pw.EdgeInsets.all(8),
+                  decoration: pw.BoxDecoration(
+                    color: const PdfColor.fromInt(0xFFF8FAFC),
+                    border: pw.Border.all(
+                      color: const PdfColor.fromInt(0xFFCBD5E1),
+                    ),
+                    borderRadius: pw.BorderRadius.circular(8),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        widget.periodLabel,
+                        style: const pw.TextStyle(fontSize: 9),
+                      ),
+                      pw.SizedBox(height: 5),
+                      pw.Text(
+                        'الإيرادات: ${_money(totalIn)} ريال | المصروفات: ${_money(totalOut)} ريال | الصافي: ${_money(net)} ريال | عدد الحركات: ${rows.length}',
+                        style: pw.TextStyle(
+                          fontSize: 9,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 10),
+                pw.TableHelper.fromTextArray(
+                  headers: headers,
+                  data: tableRows,
+                  border:
+                      pw.TableBorder.all(color: PdfColors.grey400, width: .4),
+                  headerDecoration: const pw.BoxDecoration(
+                    color: PdfColor.fromInt(0xFFE5F3F1),
+                  ),
+                  headerStyle:
+                      pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
+                  cellStyle: const pw.TextStyle(fontSize: 6.2),
+                  cellAlignment: pw.Alignment.centerRight,
+                  headerAlignment: pw.Alignment.centerRight,
+                  cellPadding:
+                      const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 4),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final bytes = await doc.save();
+    if (!mounted) return;
+    await PdfExportService.openPdfBytesDirectly(
+      context: context,
+      bytes: bytes,
+      filename: '${_type.fileStem}_${issuedAt.millisecondsSinceEpoch}.pdf',
+    );
+  }
+
+  Future<pw.Font> _loadPdfFont(String path) async {
+    try {
+      final data = await rootBundle.load(path);
+      return pw.Font.ttf(data);
+    } catch (_) {
+      return pw.Font.helvetica();
+    }
+  }
+
+  List<String> _exportHeaders() {
+    switch (_type) {
+      case _FinancialDrilldownType.revenues:
+        return [
+          'تاريخ السداد',
+          'رقم السند',
+          'نوع الإيراد',
+          'العقار',
+          'الوحدة',
+          'العميل',
+          'رقم الجوال',
+          'رقم العقد',
+          'فترة السداد',
+          'المبلغ المطلوب',
+          'المبلغ المسدد',
+          'المتبقي',
+          'الحالة',
+          'طريقة الدفع',
+          'البيان',
+        ];
+      case _FinancialDrilldownType.expenses:
+        return [
+          'تاريخ الصرف',
+          'رقم السند',
+          'نوع المصروف',
+          'مقدم الخدمة / الطرف',
+          'العقار',
+          'الوحدة',
+          'البيان',
+          'المبلغ',
+          'طريقة الدفع',
+          'الحالة',
+        ];
+      case _FinancialDrilldownType.net:
+        return [
+          'التاريخ',
+          'الاتجاه',
+          'نوع الحركة',
+          'البيان',
+          'العقار',
+          'الوحدة',
+          'العميل / الطرف',
+          'رقم السند',
+          'داخل',
+          'خارج',
+          'الرصيد بعد الحركة',
+        ];
+    }
+  }
+
+  List<String> _exportValues(_FinancialDrilldownRow row) {
+    switch (_type) {
+      case _FinancialDrilldownType.revenues:
+        return [
+          _fmtDate(row.date),
+          row.voucherNo,
+          row.operation,
+          row.propertyName,
+          row.unitName,
+          row.partyName,
+          row.partyPhone,
+          row.contractNo,
+          row.paymentPeriod,
+          _money(row.dueAmount),
+          _money(row.paidAmount),
+          _money(row.remainingAmount),
+          row.status,
+          row.paymentMethod,
+          row.statement,
+        ];
+      case _FinancialDrilldownType.expenses:
+        return [
+          _fmtDate(row.date),
+          row.voucherNo,
+          row.operation,
+          row.partyName,
+          row.propertyName,
+          row.unitName,
+          row.statement,
+          _money(row.amountOut),
+          row.paymentMethod,
+          row.status,
+        ];
+      case _FinancialDrilldownType.net:
+        return [
+          _fmtDate(row.date),
+          row.directionLabel,
+          row.operation,
+          row.statement,
+          row.propertyName,
+          row.unitName,
+          row.partyName,
+          row.voucherNo,
+          _money(row.amountIn),
+          _money(row.amountOut),
+          _money(row.balanceAfter),
+        ];
+    }
+  }
+
+  String _fmtDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _money(num value) => value.toStringAsFixed(2);
 }
 
 class ReportsRoutes {
@@ -10568,6 +12276,3 @@ class ReportsRoutes {
         '/reports': (context) => const ReportsScreen(),
       };
 }
-
-
-

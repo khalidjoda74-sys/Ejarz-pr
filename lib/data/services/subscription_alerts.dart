@@ -1,5 +1,5 @@
 // lib/data/services/subscription_alerts.dart
-import 'package:darvoo/utils/ksa_time.dart';
+import 'package:ejarz_pro/utils/ksa_time.dart';
 import 'package:intl/intl.dart';
 
 class SubscriptionAlert {
@@ -44,6 +44,3 @@ class SubscriptionAlerts {
     return null;
   }
 }
-
-
-
