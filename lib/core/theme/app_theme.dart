@@ -40,9 +40,9 @@ class AppTheme {
         builders: {
           TargetPlatform.android: _MajalisnaPageTransitionsBuilder(),
           TargetPlatform.fuchsia: _MajalisnaPageTransitionsBuilder(),
-          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: _MajalisnaPageTransitionsBuilder(),
           TargetPlatform.linux: _MajalisnaPageTransitionsBuilder(),
-          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: _MajalisnaPageTransitionsBuilder(),
           TargetPlatform.windows: _MajalisnaPageTransitionsBuilder(),
         },
       ),
