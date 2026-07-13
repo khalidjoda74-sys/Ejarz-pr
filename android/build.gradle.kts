@@ -1,8 +1,3 @@
-plugins {
-    // 👇 خليه بدون version عشان يستخدم النسخة الموجودة أصلاً (4.3.15) ويختفي التضارب
-    id("com.google.gms.google-services") apply false
-}
-
 allprojects {
     repositories {
         google()

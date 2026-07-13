@@ -1,32 +1,23 @@
 {
-  "flutter": {
-    "platforms": {
-      "android": {
-        "default": {
-          "projectId": "darvoo",
-          "appId": "1:142850470461:android:6b32d6569d337ac2b97054",
-          "fileOutput": "android/app/google-services.json"
-        }
-      },
-      "dart": {
-        "lib/firebase_options.dart": {
-          "projectId": "darvoo",
-          "configurations": {
-            "android": "1:142850470461:android:6b32d6569d337ac2b97054",
-            "ios": "1:142850470461:ios:9b05f5ac2506e7ebb97054",
-            "web": "1:142850470461:web:f5f2012c8f0a618ab97054"
-          }
-        }
-      }
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "runtime": "nodejs22",
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
     }
-  },
+  ],
   "firestore": {
-    "rules": "firestore.rules"
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
   },
   "storage": {
     "rules": "storage.rules"
   },
   "hosting": {
+    "site": "majalisna-discussions-20260629",
     "public": "build/web",
     "ignore": [
       "firebase.json",
@@ -38,17 +29,35 @@
         "source": "**",
         "destination": "/index.html"
       }
-    ],
-    "headers": [
-      {
-        "source": "**/*.@(js|css|png|jpg|jpeg|gif|svg|webp|woff|woff2)",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "public,max-age=31536000,immutable"
-          }
-        ]
-      }
     ]
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "majalisna-discussions-20260629",
+          "appId": "1:163358763366:android:58f3d9fb87c957f97580a7",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "majalisna-discussions-20260629",
+          "appId": "1:163358763366:ios:5f8054f56e8783f87580a7",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "majalisna-discussions-20260629",
+          "configurations": {
+            "android": "1:163358763366:android:58f3d9fb87c957f97580a7",
+            "ios": "1:163358763366:ios:5f8054f56e8783f87580a7",
+            "web": "1:163358763366:web:f8e565cc5504a3ca7580a7"
+          }
+        }
+      }
+    }
   }
 }

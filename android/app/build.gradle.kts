@@ -1,57 +1,65 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
-    id("com.google.gms.google-services") // Firebase
+}
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
-    // 👇 عدّل إلى حزمة تطبيقك الفعلية (وطابقها مع google-services.json)
-    namespace = "sa.ejarzpro.owner"
-
+    namespace = "com.forsapro.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_11.toString()
+    }
+
     defaultConfig {
-        applicationId = "sa.ejarzpro.owner" // 👈 طابقها مع Firebase
+        applicationId = "com.forsapro.app"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
-    // Java 17 + تفعيل desugaring
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-        isCoreLibraryDesugaringEnabled = true
-    }
-    kotlinOptions {
-        jvmTarget = "17"
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
     }
 
     buildTypes {
         release {
-            // مبدئيًا استخدم توقيع debug؛ بدّله لاحقًا بتوقيع الإصدار
-            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = if (keystorePropertiesFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
-        debug { }
     }
 }
 
 flutter {
     source = "../.."
-}
-
-dependencies {
-    // ✅ الحل الجذري: حدّث desugar_jdk_libs إلى 2.1.4 أو أحدث
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
-
-    // (اختياري) Firebase BoM وبعض الخدمات
-    implementation(platform("com.google.firebase:firebase-bom:34.1.0"))
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("com.google.firebase:firebase-analytics")
-    implementation("com.google.firebase:firebase-firestore")
-    implementation("com.google.firebase:firebase-auth")
-    // لا حاجة لإضافة messaging يدويًا لأن FlutterFire يسحبه تلقائيًا
 }

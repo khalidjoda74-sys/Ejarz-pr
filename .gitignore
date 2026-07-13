@@ -11,6 +11,14 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+.agents/
+.codex/
+.firebase/
+.git.empty.backup/
+tmp/
+tmp_*.jpg
+release/
+majlisna_admin_dashboard/
 
 # IntelliJ related
 *.iml
@@ -32,6 +40,7 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+**/node_modules/
 
 # Symbolication related
 app.*.symbols
@@ -43,3 +52,5 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/key.properties
+/android/.kotlin/

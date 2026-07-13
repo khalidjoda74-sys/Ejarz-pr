@@ -1,35 +1,35 @@
 {
-    "name": "Ejarz Pro",
-    "short_name": "Ejarz Pro",
-    "start_url": ".",
-    "display": "standalone",
-    "background_color": "#FFFFFF",
-    "theme_color": "#FFFFFF",
-    "description": "Ù…Ù†ØµØ© Ejarz Pro Ù„Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ø£Ù…Ù„Ø§Ùƒ ÙˆØ§Ù„Ø¹Ù‚ÙˆØ¯ ÙˆØ§Ù„ØªØ­ØµÙŠÙ„ ÙˆØ§Ù„ØµÙŠØ§Ù†Ø© ÙˆØ§Ù„ØªÙ‚Ø§Ø±ÙŠØ±.",
-    "orientation": "portrait-primary",
-    "prefer_related_applications": false,
-    "icons": [
-        {
-            "src": "icons/Icon-192.png",
-            "sizes": "192x192",
-            "type": "image/png"
-        },
-        {
-            "src": "icons/Icon-512.png",
-            "sizes": "512x512",
-            "type": "image/png"
-        },
-        {
-            "src": "icons/Icon-maskable-192.png",
-            "sizes": "192x192",
-            "type": "image/png",
-            "purpose": "maskable"
-        },
-        {
-            "src": "icons/Icon-maskable-512.png",
-            "sizes": "512x512",
-            "type": "image/png",
-            "purpose": "maskable"
-        }
-    ]
+  "name": "Forsa Pro",
+  "short_name": "Forsa Pro",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#F8F4EC",
+  "theme_color": "#0F4A35",
+  "description": "تطبيق اجتماعي سعودي للنقاشات والتصويت اليومي.",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icons/Icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/Icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/Icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/Icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
 }
