@@ -1,0 +1,704 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function adminPath() {
+      return /databases/$(database)/documents/admins/$(request.auth.uid);
+    }
+
+    function isActiveAdmin() {
+      return isSignedIn()
+        && exists(adminPath())
+        && get(adminPath()).data.status == 'active';
+    }
+
+    function isReadableListedCouncil(data) {
+      return data.visibility in ['public', 'linkOnly', 'link_only']
+        && data.status in ['active', 'endingSoon', 'closed', 'ended', 'votingClosed'];
+    }
+
+    function canReadCouncil(data) {
+      return isReadableListedCouncil(data)
+        || isOwner(data.createdBy)
+        || isOwner(data.ownerId)
+        || isActiveAdmin();
+    }
+
+    function isRealSignedIn() {
+      return isSignedIn()
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function conversationPath(conversationId) {
+      return /databases/$(database)/documents/conversations/$(conversationId);
+    }
+
+    function councilPath(councilId) {
+      return /databases/$(database)/documents/councils/$(councilId);
+    }
+
+    function isConversationParticipant(data) {
+      return isSignedIn()
+        && data.participantIds is list
+        && data.participantIds.hasAny([request.auth.uid]);
+    }
+
+    function canReadConversation(conversationId) {
+      return isActiveAdmin()
+        || (
+          exists(conversationPath(conversationId))
+          && isConversationParticipant(get(conversationPath(conversationId)).data)
+        );
+    }
+
+    function conversationCouncilIsActive() {
+      return exists(councilPath(request.resource.data.councilId))
+        && get(councilPath(request.resource.data.councilId)).data.status == 'active'
+        && get(councilPath(request.resource.data.councilId)).data.isSeedContent != true
+        && (
+          get(councilPath(request.resource.data.councilId)).data.createdBy
+            == request.resource.data.ownerId
+          || get(councilPath(request.resource.data.councilId)).data.ownerId
+            == request.resource.data.ownerId
+        );
+    }
+
+    function conversationNotBlocked(conversationId) {
+      return !get(conversationPath(conversationId)).data.keys().hasAny(['blockedBy'])
+        || get(conversationPath(conversationId)).data.blockedBy.size() == 0;
+    }
+
+    function validConversationMessage() {
+      return request.resource.data.keys().hasOnly([
+          'senderId',
+          'text',
+          'createdAt',
+          'status',
+          'readBy',
+          'type',
+          'imageUrl',
+          'imagePath'
+        ])
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.status == 'sent'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.readBy == [request.auth.uid]
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 1
+        && request.resource.data.text.size() <= 1000
+        && (
+          (
+            request.resource.data.type == 'text'
+            && !request.resource.data.keys().hasAny(['imageUrl', 'imagePath'])
+          )
+          || (
+            request.resource.data.type == 'image'
+            && request.resource.data.imageUrl is string
+            && request.resource.data.imageUrl.size() > 0
+            && request.resource.data.imagePath is string
+            && request.resource.data.imagePath.size() > 0
+          )
+        );
+    }
+
+    function optionalReportText(fieldName) {
+      return !request.resource.data.keys().hasAny([fieldName])
+        || (
+          request.resource.data[fieldName] is string
+          && request.resource.data[fieldName].size() <= 500
+        );
+    }
+
+    function validConversationReportCreate() {
+      return isRealSignedIn()
+        && request.resource.data.keys().hasOnly([
+          'targetType',
+          'targetId',
+          'targetPreview',
+          'conversationId',
+          'councilId',
+          'reason',
+          'description',
+          'details',
+          'reportedBy',
+          'reporterId',
+          'status',
+          'priority',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.targetType == 'conversation'
+        && request.resource.data.conversationId is string
+        && request.resource.data.targetId == request.resource.data.conversationId
+        && exists(conversationPath(request.resource.data.conversationId))
+        && isConversationParticipant(
+          get(conversationPath(request.resource.data.conversationId)).data
+        )
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() >= 2
+        && request.resource.data.reason.size() <= 120
+        && optionalReportText('targetPreview')
+        && (
+          !request.resource.data.keys().hasAny(['councilId'])
+          || request.resource.data.councilId is string
+        )
+        && optionalReportText('description')
+        && optionalReportText('details')
+        && request.resource.data.reportedBy == request.auth.uid
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && (
+          !request.resource.data.keys().hasAny(['priority'])
+          || request.resource.data.priority in ['normal', 'medium', 'high']
+        )
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function validVoteCounts(counts) {
+      return counts is map
+        && counts.keys().hasOnly(['support', 'against', 'neutral', 'yes', 'no'])
+        && (!('support' in counts) || counts.support == 0)
+        && (!('against' in counts) || counts.against == 0)
+        && (!('neutral' in counts) || counts.neutral == 0)
+        && (!('yes' in counts) || counts.yes == 0)
+        && (!('no' in counts) || counts.no == 0);
+    }
+
+    function protectedCouncilKeys() {
+      return [
+        'voteCounts',
+        'votesCount',
+        'participantsCount',
+        'commentsCount',
+        'viewsCount',
+        'sharesCount',
+        'reportsCount',
+        'isCouncilOfDay',
+        'isPinned',
+        'pinnedUntil',
+        'sponsorId',
+        'bestCommentId',
+        'createdBy',
+        'ownerId',
+        'createdAt'
+      ];
+    }
+
+    function userAfter(uid) {
+      return getAfter(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function nicknameKeyChanged() {
+      return request.resource.data.nicknameKey != resource.data.nicknameKey;
+    }
+
+    function hasExistingNicknameKey() {
+      return resource.data.keys().hasAny(['nicknameKey'])
+        && resource.data.nicknameKey is string
+        && resource.data.nicknameKey.size() > 0;
+    }
+
+    function nicknameLocked() {
+      return resource.data.keys().hasAny(['nicknameLocked'])
+        && resource.data.nicknameLocked == true;
+    }
+
+    function nicknameLockWeakened() {
+      return nicknameLocked() && request.resource.data.nicknameLocked != true;
+    }
+
+    function identityCompletedBefore() {
+      return resource.data.keys().hasAny(['identityCompleted'])
+        && resource.data.identityCompleted == true;
+    }
+
+    function nicknameFieldsKeptAfterSetup() {
+      return !identityCompletedBefore()
+        || (
+          request.resource.data.displayName == resource.data.displayName
+          && request.resource.data.nickname == resource.data.nickname
+          && request.resource.data.name == resource.data.name
+          && request.resource.data.username == resource.data.username
+        );
+    }
+
+    function validNicknameFieldsForChange() {
+      return request.resource.data.nickname is string
+        && request.resource.data.nickname.size() >= 2
+        && request.resource.data.nickname.size() <= 24
+        && request.resource.data.displayName == request.resource.data.nickname
+        && request.resource.data.name == request.resource.data.nickname;
+    }
+
+    function roleKeptOrInitialized() {
+      return resource.data.keys().hasAny(['role'])
+        ? request.resource.data.role == resource.data.role
+        : (
+          !request.resource.data.keys().hasAny(['role'])
+          || request.resource.data.role == 'user'
+        );
+    }
+
+    function statusKeptOrInitialized() {
+      return resource.data.keys().hasAny(['status'])
+        ? request.resource.data.status == resource.data.status
+        : (
+          !request.resource.data.keys().hasAny(['status'])
+          || request.resource.data.status == 'active'
+        );
+    }
+
+    function ownerUserCreateKeys() {
+      return [
+        'uid',
+        'id',
+        'displayName',
+        'nickname',
+        'name',
+        'username',
+        'email',
+        'photoUrl',
+        'avatarEmoji',
+        'avatar',
+        'providerIds',
+        'nicknameKey',
+        'nicknameLocked',
+        'identityCompleted',
+        'role',
+        'status',
+        'badge',
+        'subscriptionType',
+        'points',
+        'councilsCount',
+        'commentsCount',
+        'reportsCount',
+        'badges',
+        'fcmTokens',
+        'stats',
+        'notificationPrefs',
+        'createdAt',
+        'lastSignInAt',
+        'lastActiveAt',
+        'updatedAt'
+      ];
+    }
+
+    function ownerUserUpdateKeys() {
+      return [
+        'displayName',
+        'nickname',
+        'name',
+        'username',
+        'email',
+        'photoUrl',
+        'avatarEmoji',
+        'avatar',
+        'providerIds',
+        'nicknameKey',
+        'nicknameLocked',
+        'identityCompleted',
+        'nicknameChangedAt',
+        'nicknameLockedAt',
+        'notificationPrefs',
+        'fcmTokens',
+        'lastSignInAt',
+        'lastActiveAt',
+        'updatedAt'
+      ];
+    }
+
+    function newUserCountersAreZero() {
+      return (!request.resource.data.keys().hasAny(['points'])
+          || request.resource.data.points == 0)
+        && (!request.resource.data.keys().hasAny(['councilsCount'])
+          || request.resource.data.councilsCount == 0)
+        && (!request.resource.data.keys().hasAny(['commentsCount'])
+          || request.resource.data.commentsCount == 0)
+        && (!request.resource.data.keys().hasAny(['reportsCount'])
+          || request.resource.data.reportsCount == 0)
+        && (
+          !request.resource.data.keys().hasAny(['stats'])
+          || (
+            request.resource.data.stats is map
+            && (!request.resource.data.stats.keys().hasAny(['points'])
+              || request.resource.data.stats.points == 0)
+            && (!request.resource.data.stats.keys().hasAny(['commentsCount'])
+              || request.resource.data.stats.commentsCount == 0)
+            && (!request.resource.data.stats.keys().hasAny(['councilsCount'])
+              || request.resource.data.stats.councilsCount == 0)
+            && (!request.resource.data.stats.keys().hasAny(['votesCount'])
+              || request.resource.data.stats.votesCount == 0)
+          )
+        );
+    }
+
+    function validOwnerUserCreate(uid) {
+      return request.resource.data.keys().hasOnly(ownerUserCreateKeys())
+        && (!request.resource.data.keys().hasAny(['uid'])
+          || request.resource.data.uid == uid)
+        && (!request.resource.data.keys().hasAny(['id'])
+          || request.resource.data.id == uid)
+        && request.resource.data.role == 'user'
+        && request.resource.data.status == 'active'
+        && (!request.resource.data.keys().hasAny(['subscriptionType'])
+          || request.resource.data.subscriptionType == 'free')
+        && (!request.resource.data.keys().hasAny(['badges'])
+          || (request.resource.data.badges is list
+            && request.resource.data.badges.size() == 0))
+        && (!request.resource.data.keys().hasAny(['fcmTokens'])
+          || (request.resource.data.fcmTokens is list
+            && request.resource.data.fcmTokens.size() == 0))
+        && newUserCountersAreZero();
+    }
+
+    function validNicknameChange() {
+      return (
+          !nicknameKeyChanged()
+          && !nicknameLockWeakened()
+          && nicknameFieldsKeptAfterSetup()
+        )
+        || (
+          !nicknameLocked()
+          && validNicknameFieldsForChange()
+          && (
+            !hasExistingNicknameKey()
+            || request.resource.data.nicknameLocked == true
+          )
+        );
+    }
+
+    match /admins/{adminId} {
+      allow read: if isOwner(adminId) || isActiveAdmin();
+      allow create, update, delete: if isActiveAdmin();
+    }
+
+    match /roles/{roleId} {
+      allow read, write: if isActiveAdmin();
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isActiveAdmin();
+      allow create: if isActiveAdmin()
+        || (
+          isOwner(uid)
+          && validOwnerUserCreate(uid)
+        );
+      allow update: if isActiveAdmin()
+        || (
+          isOwner(uid)
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(ownerUserUpdateKeys())
+          && roleKeptOrInitialized()
+          && statusKeptOrInitialized()
+          && validNicknameChange()
+        );
+      allow delete: if isActiveAdmin();
+
+      match /fcmTokens/{tokenId} {
+        allow read: if isOwner(uid) || isActiveAdmin();
+        allow create, update, delete: if isOwner(uid) || isActiveAdmin();
+      }
+
+      match /notifications/{notificationId} {
+        allow read, update, delete: if isOwner(uid) || isActiveAdmin();
+        allow create: if isActiveAdmin();
+      }
+
+      match /blockedUsers/{blockedUid} {
+        allow read: if isOwner(uid) || isActiveAdmin();
+        allow create, update: if isOwner(uid)
+          && request.resource.data.uid == blockedUid;
+        allow delete: if isOwner(uid) || isActiveAdmin();
+      }
+    }
+
+    match /nicknames/{nicknameKey} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && !exists(/databases/$(database)/documents/nicknames/$(nicknameKey))
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.key == nicknameKey
+        && request.resource.data.nickname is string
+        && request.resource.data.nickname.size() >= 2
+        && request.resource.data.nickname.size() <= 24
+        && userAfter(request.auth.uid).data.identityCompleted == true
+        && userAfter(request.auth.uid).data.nicknameKey == nicknameKey;
+      allow update: if isActiveAdmin()
+        || (
+          isSignedIn()
+          && resource.data.uid == request.auth.uid
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.key == nicknameKey
+          && request.resource.data.nickname is string
+          && request.resource.data.nickname.size() >= 2
+          && request.resource.data.nickname.size() <= 24
+          && userAfter(request.auth.uid).data.identityCompleted == true
+          && userAfter(request.auth.uid).data.nicknameKey == nicknameKey
+        );
+      allow delete: if isActiveAdmin()
+        || (
+          isSignedIn()
+          && resource.data.uid == request.auth.uid
+          && userAfter(request.auth.uid).data.nicknameKey != nicknameKey
+        );
+    }
+
+    match /categories/{categoryId} {
+      allow read: if resource.data.isActive == true || isActiveAdmin();
+      allow write: if isActiveAdmin();
+    }
+
+
+    function isCouncilOwner() {
+      return isOwner(resource.data.createdBy) || isOwner(resource.data.ownerId);
+    }
+
+    function refreshDelayPassed() {
+      return (
+          !resource.data.keys().hasAny(['lastVisibilityRefreshAt'])
+          && !resource.data.keys().hasAny(['visibilityUpdatedAt'])
+        )
+        || (
+          resource.data.keys().hasAny(['lastVisibilityRefreshAt'])
+          && resource.data.lastVisibilityRefreshAt <= request.time - duration.value(24, 'h')
+        )
+        || (
+          !resource.data.keys().hasAny(['lastVisibilityRefreshAt'])
+          && resource.data.keys().hasAny(['visibilityUpdatedAt'])
+          && resource.data.visibilityUpdatedAt <= request.time - duration.value(24, 'h')
+        );
+    }
+
+    function canRefreshCouncilVisibility() {
+      return isCouncilOwner()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['createdAt', 'visibilityUpdatedAt', 'lastVisibilityRefreshAt', 'updatedAt'])
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.visibilityUpdatedAt == request.time
+        && request.resource.data.lastVisibilityRefreshAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && refreshDelayPassed();
+    }
+
+    function canSoftDeleteCouncil() {
+      return isCouncilOwner()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'visibility', 'deletedAt', 'updatedAt'])
+        && request.resource.data.status == 'deleted'
+        && request.resource.data.visibility == 'deleted'
+        && request.resource.data.deletedAt == request.time
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    match /councils/{councilId} {
+      allow read: if canReadCouncil(resource.data);
+      allow create: if isActiveAdmin()
+        || (
+          isSignedIn()
+          && (request.resource.data.createdBy == request.auth.uid
+            || request.resource.data.ownerId == request.auth.uid)
+          && request.resource.data.title is string
+          && request.resource.data.title.size() >= 2
+          && request.resource.data.title.size() <= 140
+          && request.resource.data.city is string
+          && request.resource.data.city.size() >= 2
+          && request.resource.data.city.size() <= 40
+          && request.resource.data.countryCode == 'SA'
+          && request.resource.data.countryName == 'المملكة العربية السعودية'
+          && request.resource.data.status in ['active', 'draft']
+          && request.resource.data.isCouncilOfDay == false
+          && request.resource.data.isPinned == false
+          && request.resource.data.sponsorId == null
+          && validVoteCounts(request.resource.data.voteCounts)
+        );
+      allow update: if isActiveAdmin()
+        || canRefreshCouncilVisibility()
+        || canSoftDeleteCouncil()
+        || (
+          (isOwner(resource.data.createdBy) || isOwner(resource.data.ownerId))
+          && !request.resource.data.diff(resource.data).changedKeys()
+            .hasAny(protectedCouncilKeys())
+        );
+      allow delete: if isActiveAdmin();
+
+      match /votes/{uid} {
+        allow read: if isOwner(uid)
+          || (isSignedIn() && resource.data.uid == request.auth.uid)
+          || isActiveAdmin();
+        allow create: if false;
+        allow update, delete: if false;
+      }
+    }
+
+    match /{path=**}/votes/{uid} {
+      allow read: if isOwner(uid)
+        || (isSignedIn() && resource.data.uid == request.auth.uid)
+        || isActiveAdmin();
+    }
+
+    match /conversations/{conversationId} {
+      allow read: if isActiveAdmin() || isConversationParticipant(resource.data);
+      allow create: if isRealSignedIn()
+        && request.resource.data.keys().hasOnly([
+          'councilId',
+          'councilTitle',
+          'ownerId',
+          'requesterId',
+          'participantIds',
+          'participantSnapshots',
+          'createdAt',
+          'updatedAt',
+          'lastMessageText',
+          'lastMessageAt',
+          'lastSenderId',
+          'unreadCounts',
+          'lastReadAt',
+          'status',
+          'blockedBy',
+          'archivedBy',
+          'deletedBy',
+          'reportCount'
+        ])
+        && request.resource.data.requesterId == request.auth.uid
+        && request.resource.data.participantIds is list
+        && request.resource.data.participantIds.size() == 2
+        && request.resource.data.participantIds.hasAny([request.auth.uid])
+        && request.resource.data.participantIds.hasAny([request.resource.data.ownerId])
+        && request.resource.data.participantIds.hasAny([request.resource.data.requesterId])
+        && request.resource.data.ownerId != request.resource.data.requesterId
+        && request.resource.data.councilId is string
+        && request.resource.data.councilTitle is string
+        && request.resource.data.status == 'active'
+        && request.resource.data.blockedBy is list
+        && request.resource.data.archivedBy is list
+        && request.resource.data.deletedBy is list
+        && request.resource.data.participantSnapshots is map
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.lastMessageText == ''
+        && request.resource.data.lastMessageAt == null
+        && request.resource.data.lastSenderId == null
+        && request.resource.data.unreadCounts is map
+        && request.resource.data.unreadCounts[request.resource.data.ownerId] == 0
+        && request.resource.data.unreadCounts[request.resource.data.requesterId] == 0
+        && request.resource.data.lastReadAt is map
+        && request.resource.data.reportCount == 0
+        && conversationCouncilIsActive();
+      allow update: if isConversationParticipant(resource.data)
+        && request.resource.data.participantIds == resource.data.participantIds
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.requesterId == resource.data.requesterId
+        && request.resource.data.councilId == resource.data.councilId
+        && request.resource.data.councilTitle == resource.data.councilTitle
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'lastMessageText',
+          'lastMessageAt',
+          'lastSenderId',
+          'updatedAt',
+          'unreadCounts',
+          'lastReadAt',
+          'blockedBy',
+          'archivedBy',
+          'deletedBy',
+          'reportCount',
+          'lastReportedAt'
+        ]);
+      allow delete: if isActiveAdmin();
+
+      match /messages/{messageId} {
+        allow read: if canReadConversation(conversationId);
+        allow create: if isRealSignedIn()
+          && canReadConversation(conversationId)
+          && get(conversationPath(conversationId)).data.status == 'active'
+          && conversationNotBlocked(conversationId)
+          && validConversationMessage();
+        allow update, delete: if false;
+      }
+    }
+    match /comments/{commentId} {
+      allow read: if resource.data.status == 'visible' || isActiveAdmin();
+      allow create: if isActiveAdmin();
+      allow update, delete: if isActiveAdmin();
+
+      match /convincingVotes/{uid} {
+        allow read: if isOwner(uid) || isActiveAdmin();
+        allow create, delete: if false;
+        allow update: if false;
+      }
+    }
+
+    match /reports/{reportId} {
+      allow create: if validConversationReportCreate();
+      allow read, update, delete: if isActiveAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read, write: if isActiveAdmin();
+    }
+
+    match /sponsorships/{sponsorshipId} {
+      allow read: if resource.data.status == 'active' || isActiveAdmin();
+      allow write: if isActiveAdmin();
+    }
+
+    match /adProducts/{productId} {
+      allow read: if resource.data.status == 'active' || isActiveAdmin();
+      allow write: if isActiveAdmin();
+    }
+
+    match /adPackages/{packageId} {
+      allow read: if resource.data.status == 'active' || isActiveAdmin();
+      allow write: if isActiveAdmin();
+    }
+
+    match /boosts/{boostId} {
+      allow read, write: if isActiveAdmin();
+    }
+
+    match /subscriptions/{subscriptionId} {
+      allow read, write: if isActiveAdmin();
+    }
+
+    match /companyPolls/{pollId} {
+      allow read: if resource.data.status == 'active' || isActiveAdmin();
+      allow write: if isActiveAdmin();
+    }
+
+    match /appSettings/{settingsId} {
+      allow read: if settingsId == 'main';
+      allow write: if isActiveAdmin();
+    }
+
+    match /auditLogs/{logId} {
+      allow read, write: if isActiveAdmin();
+    }
+
+    match /analyticsDaily/{dayId} {
+      allow read, write: if isActiveAdmin();
+    }
+
+    match /councilResults/{resultId} {
+      allow read: if true;
+      allow write: if isActiveAdmin();
+    }
+
+    match /sponsorshipRequests/{requestId} {
+      allow create: if isActiveAdmin();
+      allow read, update, delete: if isActiveAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

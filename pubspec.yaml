@@ -1,0 +1,51 @@
+name: majalisna
+version: 1.0.0+1
+description: تطبيق أعمال عربي لاكتشاف ومناقشة الفرص التجارية.
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  firebase_core: ^3.15.2
+  firebase_auth: ^5.7.0
+  cloud_firestore: ^5.6.12
+  cloud_firestore_web: ^4.4.12
+  cloud_functions: ^5.6.2
+  cloud_functions_web: ^4.11.5
+  firebase_messaging: ^15.2.10
+  firebase_messaging_web: ^3.10.10
+  firebase_storage: ^12.4.10
+  firebase_storage_web: ^3.10.17
+  google_sign_in: ^6.3.0
+  sign_in_with_apple: ^6.1.4
+  url_launcher: ^6.3.1
+  image_picker: ^1.1.2
+  crypto: ^3.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icons/
+    - assets/images/
+  fonts:
+    - family: Dubai
+      fonts:
+        - asset: assets/fonts/Dubai-Light.ttf
+          weight: 300
+        - asset: assets/fonts/Dubai-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Dubai-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Dubai-Bold.ttf
+          weight: 700

@@ -1,0 +1,62 @@
+{
+    "project_info":  {
+                         "project_number":  "163358763366",
+                         "project_id":  "majalisna-discussions-20260629",
+                         "storage_bucket":  "majalisna-discussions-20260629.firebasestorage.app"
+                     },
+    "client":  [
+                   {
+                       "client_info":  {
+                                           "mobilesdk_app_id":  "1:163358763366:android:0489f03761abbd797580a7",
+                                           "android_client_info":  {
+                                                                       "package_name":  "com.forsapro.app"
+                                                                   }
+                                       },
+                       "oauth_client":  [
+                                            {
+                                                "client_id":  "163358763366-bhcci4mif8p4jq1eboef124vhalvq746.apps.googleusercontent.com",
+                                                "client_type":  1,
+                                                "android_info":  {
+                                                                     "package_name":  "com.forsapro.app",
+                                                                     "certificate_hash":  "49a0be7f28bc608423e23e885a233bea91967bfd"
+                                                                 }
+                                            },
+                                            {
+                                                "client_id":  "163358763366-gruceg2kf9knmldtpbsqi0i2am33ja9p.apps.googleusercontent.com",
+                                                "client_type":  1,
+                                                "android_info":  {
+                                                                     "package_name":  "com.forsapro.app",
+                                                                     "certificate_hash":  "a9932e64d7cf2c981e5df2ddcd2413a3226aa597"
+                                                                 }
+                                            },
+                                            {
+                                                "client_id":  "163358763366-8gua3ioi72g63qrkrss3jlboq0cj2s34.apps.googleusercontent.com",
+                                                "client_type":  3
+                                            }
+                                        ],
+                       "api_key":  [
+                                       {
+                                           "current_key":  "AIzaSyB8QNJP7kNwiQLrDSNTZ6iPvp6rDRzMRyI"
+                                       }
+                                   ],
+                       "services":  {
+                                        "appinvite_service":  {
+                                                                  "other_platform_oauth_client":  [
+                                                                                                      {
+                                                                                                          "client_id":  "163358763366-8gua3ioi72g63qrkrss3jlboq0cj2s34.apps.googleusercontent.com",
+                                                                                                          "client_type":  3
+                                                                                                      },
+                                                                                                      {
+                                                                                                          "client_id":  "163358763366-ooooamp4lkcd1ie1b185bl0gba2tsm7b.apps.googleusercontent.com",
+                                                                                                          "client_type":  2,
+                                                                                                          "ios_info":  {
+                                                                                                                           "bundle_id":  "com.forsapro.app"
+                                                                                                                       }
+                                                                                                      }
+                                                                                                  ]
+                                                              }
+                                    }
+                   }
+               ],
+    "configuration_version":  "1"
+}
