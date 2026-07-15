@@ -37,6 +37,8 @@
 	<string>نحتاج الوصول إلى الصور لإرفاقها بالرسائل والمنشورات داخل التطبيق.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>UIRequiresFullScreen</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
