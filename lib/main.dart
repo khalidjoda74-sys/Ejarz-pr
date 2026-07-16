@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'app.dart';
 import 'core/auth/auth_controller.dart';
@@ -59,6 +60,10 @@ class _StartupGateState extends State<_StartupGate> {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     ).timeout(const Duration(seconds: 20));
+
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+    );
 
     await _runNonCriticalStartupTask(NotificationService.instance.initialize());
     await _runNonCriticalStartupTask(AuthController.instance.initialize());

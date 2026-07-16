@@ -77,6 +77,7 @@ class FirebaseUserRepository {
   FirebaseUserRepository._();
 
   static final FirebaseUserRepository instance = FirebaseUserRepository._();
+  static const Duration _identityReadTimeout = Duration(seconds: 4);
 
   final FirestoreService _firestore = FirestoreService.instance;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -163,7 +164,8 @@ class FirebaseUserRepository {
   }
 
   Future<bool> hasCompletedIdentity(String uid) async {
-    final snapshot = await _firestore.user(uid).get();
+    final snapshot =
+        await _firestore.user(uid).get().timeout(_identityReadTimeout);
     return hasCompletedIdentityData(snapshot.data());
   }
 

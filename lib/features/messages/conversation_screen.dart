@@ -9,6 +9,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/custom_app_bar.dart';
+import '../../core/widgets/optimized_network_image.dart';
 import '../../core/widgets/premium_background.dart';
 import '../../core/widgets/avatar_badge.dart';
 import '../../data/models/conversation_model.dart';
@@ -749,9 +750,12 @@ class _MessageBubble extends StatelessWidget {
                   child: SizedBox(
                     width: maxWidth - 10,
                     height: 190,
-                    child: Image.network(
-                      message.imageUrl!,
+                    child: OptimizedNetworkImage(
+                      url: message.imageUrl!,
+                      width: maxWidth - 10,
+                      height: 190,
                       fit: BoxFit.cover,
+                      quality: OptimizedImageQuality.medium,
                       loadingBuilder: (context, child, progress) {
                         if (progress == null) return child;
                         return Container(

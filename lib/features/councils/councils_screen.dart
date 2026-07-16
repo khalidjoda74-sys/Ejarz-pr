@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/widgets/connection_status_banner.dart';
 import '../../core/widgets/custom_app_bar.dart';
 import '../../core/widgets/discussion_card.dart';
 import '../../core/widgets/empty_state.dart';
@@ -134,6 +135,13 @@ class _CouncilsScreenState extends State<CouncilsScreen> {
                       if (categoryHint != null) ...[
                         const SizedBox(height: 8),
                         _CategoryHint(text: categoryHint),
+                      ],
+                      if (repo.hasConnectionIssue) ...[
+                        const SizedBox(height: 10),
+                        ConnectionStatusBanner(
+                          lastUpdatedAt: repo.lastRemoteSyncAt,
+                          onRetry: repo.retryFirestoreSync,
+                        ),
                       ],
                       const SizedBox(height: 14),
                       Row(

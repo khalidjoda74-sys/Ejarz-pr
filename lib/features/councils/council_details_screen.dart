@@ -12,6 +12,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/opportunity_vote_copy.dart';
 import '../../core/widgets/avatar_badge.dart';
 import '../../core/widgets/custom_app_bar.dart';
+import '../../core/widgets/optimized_network_image.dart';
 import '../../core/widgets/premium_background.dart';
 import '../../core/widgets/result_bar.dart';
 import '../../core/widgets/relative_time_text.dart';
@@ -125,7 +126,7 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
                       _QuestionPanel(council: council),
                       if (council.imageUrls.isNotEmpty) ...[
                         const SizedBox(height: 8),
-                        _CouncilImagesGrid(imageUrls: council.imageUrls),
+                        _CouncilImagesGrid(council: council),
                       ],
                       if (_canContactOwner(council) || isOwner) ...[
                         const SizedBox(height: 8),
@@ -1125,9 +1126,12 @@ class _CouncilSponsorLogo extends StatelessWidget {
         border: Border.all(color: AppColors.borderBeige),
       ),
       child: validImageUrl
-          ? Image.network(
-              url,
+          ? OptimizedNetworkImage(
+              url: url,
+              width: 38,
+              height: 38,
               fit: BoxFit.cover,
+              quality: OptimizedImageQuality.thumbnail,
               errorBuilder: (_, __, ___) => const Icon(
                 Icons.storefront_rounded,
                 color: AppColors.primaryDarkGreen,
@@ -1412,14 +1416,15 @@ class _CouncilActionIcon extends StatelessWidget {
   }
 }
 class _CouncilImagesGrid extends StatelessWidget {
-  const _CouncilImagesGrid({required this.imageUrls});
+  const _CouncilImagesGrid({required this.council});
 
-  final List<String> imageUrls;
+  final CouncilModel council;
 
   @override
   Widget build(BuildContext context) {
-    final urls = imageUrls.take(10).toList(growable: false);
-    if (urls.isEmpty) return const SizedBox.shrink();
+    final originals = council.imageUrls.take(10).toList(growable: false);
+    if (originals.isEmpty) return const SizedBox.shrink();
+    final thumbnails = council.thumbnailImageUrls.take(10).toList(growable: false);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1428,11 +1433,11 @@ class _CouncilImagesGrid extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            for (var index = 0; index < urls.length; index++)
+            for (var index = 0; index < originals.length; index++)
               _CouncilImageThumb(
-                url: urls[index],
+                url: index < thumbnails.length ? thumbnails[index] : originals[index],
                 size: itemSize,
-                onTap: () => _openImageViewer(context, urls, index),
+                onTap: () => _openImageViewer(context, originals, index),
               ),
           ],
         );
@@ -1480,11 +1485,12 @@ class _CouncilImageThumb extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: AppColors.borderBeige),
         ),
-        child: Image.network(
-          url,
+        child: OptimizedNetworkImage(
+          url: url,
+          width: size,
+          height: size,
           fit: BoxFit.cover,
-          gaplessPlayback: true,
-          filterQuality: FilterQuality.medium,
+          quality: OptimizedImageQuality.thumbnail,
           errorBuilder: (_, __, ___) => const Icon(
             Icons.image_not_supported_outlined,
             color: AppColors.textGray,
@@ -1553,11 +1559,10 @@ class _CouncilImageViewerState extends State<_CouncilImageViewer> {
                 minScale: 1,
                 maxScale: 3,
                 child: Center(
-                  child: Image.network(
-                    widget.imageUrls[index],
+                  child: OptimizedNetworkImage(
+                    url: widget.imageUrls[index],
                     fit: BoxFit.contain,
-                    gaplessPlayback: true,
-                    filterQuality: FilterQuality.medium,
+                    quality: OptimizedImageQuality.original,
                     errorBuilder: (_, __, ___) => const Icon(
                       Icons.image_not_supported_outlined,
                       color: AppColors.cardWhite,

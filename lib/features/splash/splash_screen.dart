@@ -19,6 +19,10 @@ class _SplashScreenState extends State<SplashScreen>
   late final Animation<double> _fade;
   late final Animation<double> _scale;
   Timer? _navTimer;
+  bool _didNavigate = false;
+
+  static const _minimumSplashTime = Duration(milliseconds: 1600);
+  static const _routeDecisionTimeout = Duration(milliseconds: 2800);
 
   @override
   void initState() {
@@ -32,13 +36,21 @@ class _SplashScreenState extends State<SplashScreen>
       CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
     );
     _controller.forward();
-    _navTimer = Timer(const Duration(milliseconds: 2000), _openNextScreen);
+    _navTimer = Timer(_minimumSplashTime, () {
+      unawaited(_openNextScreen());
+    });
   }
 
   Future<void> _openNextScreen() async {
-    final route = await _nextRoute();
-    if (!mounted) return;
+    if (_didNavigate) return;
 
+    final route = await _nextRoute().timeout(
+      _routeDecisionTimeout,
+      onTimeout: () => AppRoutes.main,
+    );
+    if (!mounted || _didNavigate) return;
+
+    _didNavigate = true;
     Navigator.of(context).pushReplacementNamed(route);
   }
 

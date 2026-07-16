@@ -29,6 +29,28 @@ class CommentedCouncilActivity {
   final CommentModel comment;
 }
 
+class CouncilPage {
+  const CouncilPage({
+    required this.items,
+    required this.nextCursor,
+    required this.hasMore,
+  });
+
+  final List<CouncilModel> items;
+  final DocumentSnapshot<Map<String, dynamic>>? nextCursor;
+  final bool hasMore;
+}
+
+class CouncilListSnapshot {
+  const CouncilListSnapshot({
+    required this.councils,
+    required this.isFromCache,
+  });
+
+  final List<CouncilModel> councils;
+  final bool isFromCache;
+}
+
 class FirebaseCouncilRepository {
   FirebaseCouncilRepository._();
 
@@ -40,6 +62,18 @@ class FirebaseCouncilRepository {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   Stream<List<CouncilModel>> watchCouncils({
+    CouncilStatus? status,
+    String? category,
+    int limit = 50,
+  }) {
+    return watchCouncilSnapshots(
+      status: status,
+      category: category,
+      limit: limit,
+    ).map((snapshot) => snapshot.councils);
+  }
+
+  Stream<CouncilListSnapshot> watchCouncilSnapshots({
     CouncilStatus? status,
     String? category,
     int limit = 50,
@@ -63,8 +97,9 @@ class FirebaseCouncilRepository {
     }
 
     return query
+        .orderBy('createdAt', descending: true)
         .limit(limit)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
           final councils = snapshot.docs
               .map(CouncilModel.fromFirestore)
@@ -89,8 +124,48 @@ class FirebaseCouncilRepository {
             if (bCreatedAt == null) return -1;
             return bCreatedAt.compareTo(aCreatedAt);
           });
-          return councils;
+          return CouncilListSnapshot(
+            councils: councils,
+            isFromCache: snapshot.metadata.isFromCache,
+          );
         });
+  }
+
+  Future<CouncilPage> fetchCouncilsPage({
+    CouncilStatus? status,
+    String? category,
+    int pageSize = 30,
+    DocumentSnapshot<Map<String, dynamic>>? cursor,
+  }) async {
+    final safePageSize = pageSize.clamp(1, 50);
+    Query<Map<String, dynamic>> query = _firestore.councils.where(
+      'visibility',
+      isEqualTo: 'public',
+    );
+
+    if (status != null) {
+      query = query.where(
+        'status',
+        isEqualTo: councilStatusToFirestore(status),
+      );
+    } else {
+      query = query.where('status', isEqualTo: 'active');
+    }
+
+    if (category != null && category.isNotEmpty && category != 'Ø§Ù„ÙƒÙ„') {
+      query = query.where('categoryId', isEqualTo: category);
+    }
+
+    query = query.orderBy('createdAt', descending: true);
+    if (cursor != null) query = query.startAfterDocument(cursor);
+
+    final snapshot = await query.limit(safePageSize + 1).get();
+    final visibleDocs = snapshot.docs.take(safePageSize).toList(growable: false);
+    return CouncilPage(
+      items: visibleDocs.map(CouncilModel.fromFirestore).toList(growable: false),
+      nextCursor: visibleDocs.isEmpty ? cursor : visibleDocs.last,
+      hasMore: snapshot.docs.length > safePageSize,
+    );
   }
 
   Stream<List<CouncilModel>> watchActiveCouncils({int limit = 50}) {
@@ -108,6 +183,7 @@ class FirebaseCouncilRepository {
   }) {
     return _firestore.councils
         .where('createdBy', isEqualTo: uid)
+        .orderBy('createdAt', descending: true)
         .limit(limit)
         .snapshots()
         .map((snapshot) {
@@ -244,12 +320,16 @@ class FirebaseCouncilRepository {
     }
 
     final councils = <CouncilModel>[];
-    for (final id in uniqueIds) {
+    for (var index = 0; index < uniqueIds.length; index += 10) {
+      final chunk = uniqueIds
+          .skip(index)
+          .take(10)
+          .toList(growable: false);
       try {
-        final snapshot = await _firestore.council(id).get();
-        if (snapshot.exists) {
-          councils.add(CouncilModel.fromFirestore(snapshot));
-        }
+        final snapshot = await _firestore.councils
+            .where(FieldPath.documentId, whereIn: chunk)
+            .get();
+        councils.addAll(snapshot.docs.map(CouncilModel.fromFirestore));
       } catch (_) {
         // A hidden/deleted council should not break the whole activity screen.
       }
@@ -302,6 +382,7 @@ class FirebaseCouncilRepository {
     return _firestore.comments
         .where('councilId', isEqualTo: councilId)
         .where('status', isEqualTo: 'visible')
+        .orderBy('createdAt', descending: true)
         .limit(limit)
         .snapshots()
         .map((snapshot) {
@@ -332,6 +413,7 @@ class FirebaseCouncilRepository {
     return _firestore.comments
         .where('authorId', isEqualTo: uid)
         .where('status', isEqualTo: 'visible')
+        .orderBy('createdAt', descending: true)
         .limit(limit)
         .snapshots()
         .map((snapshot) {
@@ -402,7 +484,11 @@ class FirebaseCouncilRepository {
       'sponsorId': null,
       'bestCommentId': null,
       'coverImageUrl': null,
+      'coverThumbnailUrl': null,
+      'coverMediumUrl': null,
       'imageUrls': const <String>[],
+      'thumbnailUrls': const <String>[],
+      'mediumImageUrls': const <String>[],
       'imagesCount': 0,
       'options': const ['support', 'against', 'neutral'],
       'voteOptions': const [
@@ -444,7 +530,11 @@ class FirebaseCouncilRepository {
         if (imageUrls.isNotEmpty) {
           await doc.update({
             'coverImageUrl': imageUrls.first,
+            'coverThumbnailUrl': imageUrls.first,
+            'coverMediumUrl': imageUrls.first,
             'imageUrls': imageUrls,
+            'thumbnailUrls': imageUrls,
+            'mediumImageUrls': imageUrls,
             'imagesCount': imageUrls.length,
             'updatedAt': FieldValue.serverTimestamp(),
           });

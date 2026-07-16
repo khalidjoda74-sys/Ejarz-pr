@@ -32,7 +32,7 @@ class CouncilRepository extends ChangeNotifier {
   late List<CouncilModel> _councils;
   List<CouncilResultModel> _results = [];
   late List<NotificationModel> _notifications;
-  StreamSubscription<List<CouncilModel>>? _councilsSubscription;
+  StreamSubscription<CouncilListSnapshot>? _councilsSubscription;
   StreamSubscription<List<CouncilResultModel>>? _resultsSubscription;
   StreamSubscription<User?>? _authSubscription;
   StreamSubscription<UserModel?>? _userSubscription;
@@ -48,6 +48,10 @@ class CouncilRepository extends ChangeNotifier {
   final Set<String> _demoOpportunitySeededUsers = {};
   final Map<String, List<CommentModel>> _privateDemoComments = {};
   Object? _firestoreError;
+  Timer? _councilSyncWatchdog;
+  bool _receivedServerCouncilSnapshot = false;
+  bool _remoteSyncDelayed = false;
+  DateTime? _lastRemoteSyncAt;
   bool _usingFirestore = false;
   final Map<String, VoteOption> _selectedVotes = {};
 
@@ -69,6 +73,8 @@ class CouncilRepository extends ChangeNotifier {
 
   bool get usingFirestore => _usingFirestore;
   Object? get firestoreError => _firestoreError;
+  bool get hasConnectionIssue => _firestoreError != null || _remoteSyncDelayed;
+  DateTime? get lastRemoteSyncAt => _lastRemoteSyncAt;
 
   bool hasConvincingVote(String councilId, String commentId) {
     return _convincingVotes.contains('$councilId/$commentId');
@@ -534,13 +540,32 @@ class CouncilRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  void retryFirestoreSync() {
+    _startFirestoreSync();
+  }
+
   void _startFirestoreSync() {
     _councilsSubscription?.cancel();
+    _firestoreError = null;
+    _receivedServerCouncilSnapshot = false;
+    _remoteSyncDelayed = false;
+    _startCouncilSyncWatchdog();
+    notifyListeners();
+
     _startResultsSync();
     _councilsSubscription =
-        FirebaseCouncilRepository.instance.watchCouncils(limit: 200).listen(
-      (firestoreCouncils) {
-        _firestoreError = null;
+        FirebaseCouncilRepository.instance.watchCouncilSnapshots(limit: 80).listen(
+      (snapshot) {
+        final firestoreCouncils = snapshot.councils;
+        if (!snapshot.isFromCache) {
+          _receivedServerCouncilSnapshot = true;
+          _remoteSyncDelayed = false;
+          _firestoreError = null;
+          _lastRemoteSyncAt = DateTime.now();
+          _councilSyncWatchdog?.cancel();
+          _councilSyncWatchdog = null;
+        }
+
         if (firestoreCouncils.isEmpty) {
           _usingFirestore = false;
           _councils = List<CouncilModel>.from(_mockCouncils);
@@ -553,6 +578,9 @@ class CouncilRepository extends ChangeNotifier {
       },
       onError: (Object error) {
         _firestoreError = error;
+        _remoteSyncDelayed = true;
+        _councilSyncWatchdog?.cancel();
+        _councilSyncWatchdog = null;
         _usingFirestore = false;
         _councils = List<CouncilModel>.from(_mockCouncils);
         notifyListeners();
@@ -611,6 +639,16 @@ class CouncilRepository extends ChangeNotifier {
     );
     _ensureDemoOpportunity(firebaseUser);
   }
+
+  void _startCouncilSyncWatchdog() {
+    _councilSyncWatchdog?.cancel();
+    _councilSyncWatchdog = Timer(const Duration(seconds: 7), () {
+      if (_receivedServerCouncilSnapshot) return;
+      _remoteSyncDelayed = true;
+      notifyListeners();
+    });
+  }
+
   void _ensureDemoOpportunity(User firebaseUser, {bool force = false}) {
     if (!force && !_demoOpportunitySeededUsers.add(firebaseUser.uid)) return;
     _demoOpportunitySeededUsers.add(firebaseUser.uid);
@@ -895,6 +933,7 @@ class CouncilRepository extends ChangeNotifier {
     _authSubscription?.cancel();
     _userSubscription?.cancel();
     _blockedUsersSubscription?.cancel();
+    _councilSyncWatchdog?.cancel();
     for (final subscription in _commentSubscriptions.values) {
       subscription.cancel();
     }

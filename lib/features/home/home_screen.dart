@@ -8,6 +8,7 @@ import '../../core/auth/auth_guard.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/widgets/connection_status_banner.dart';
 import '../../core/widgets/discussion_card.dart';
 import '../../core/widgets/majlis_card.dart';
 import '../../core/widgets/premium_background.dart';
@@ -232,6 +233,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   _HomeAdSlot(onOpenCouncil: widget.onOpenCouncil),
+                  if (repo.hasConnectionIssue) ...[
+                    const SizedBox(height: 12),
+                    ConnectionStatusBanner(
+                      lastUpdatedAt: repo.lastRemoteSyncAt,
+                      onRetry: repo.retryFirestoreSync,
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   SectionHeader(
                     title: 'أكثر الفرص تفاعلًا',
@@ -323,7 +331,11 @@ class _HomeScreenState extends State<HomeScreen> {
       createdByName: council.createdByName,
       createdAt: council.createdAt,
       coverImageUrl: council.coverImageUrl,
+      coverThumbnailUrl: council.coverThumbnailUrl,
+      coverMediumUrl: council.coverMediumUrl,
       imageUrls: council.imageUrls,
+      thumbnailUrls: council.thumbnailUrls,
+      mediumImageUrls: council.mediumImageUrls,
       hasVoted: council.hasVoted,
       selectedOption: council.selectedOption,
     );

@@ -35,7 +35,12 @@ workflows:
         script: xcode-project use-profiles
 
       - name: Build signed iOS IPA
-        script: flutter build ipa --release --build-name=1.0 --build-number=$BUILD_NUMBER --export-options-plist=/Users/builder/export_options.plist
+        script: |
+          IOS_BUILD_NUMBER=${BUILD_NUMBER:-9}
+          if [ "$IOS_BUILD_NUMBER" -lt 9 ]; then
+            IOS_BUILD_NUMBER=9
+          fi
+          flutter build ipa --release --build-name=1.0 --build-number=$IOS_BUILD_NUMBER --export-options-plist=/Users/builder/export_options.plist
 
     artifacts:
       - build/ios/ipa/*.ipa

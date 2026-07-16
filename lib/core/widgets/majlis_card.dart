@@ -5,6 +5,7 @@ import '../../data/models/sponsorship_campaign.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../utils/opportunity_vote_copy.dart';
+import 'optimized_network_image.dart';
 import 'result_bar.dart';
 import 'vote_button.dart';
 
@@ -489,9 +490,12 @@ class _SponsorLogo extends StatelessWidget {
         border: Border.all(color: AppColors.gold.withValues(alpha: .40)),
       ),
       child: validImageUrl
-          ? Image.network(
-              url,
+          ? OptimizedNetworkImage(
+              url: url,
+              width: 32,
+              height: 32,
               fit: BoxFit.cover,
+              quality: OptimizedImageQuality.thumbnail,
               errorBuilder: (_, __, ___) => const Icon(
                 Icons.storefront_rounded,
                 color: AppColors.primaryDarkGreen,

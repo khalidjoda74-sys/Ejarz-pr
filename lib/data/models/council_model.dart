@@ -89,7 +89,11 @@ class CouncilModel {
     this.createdByName,
     this.createdAt,
     this.coverImageUrl,
+    this.coverThumbnailUrl,
+    this.coverMediumUrl,
     this.imageUrls = const [],
+    this.thumbnailUrls = const [],
+    this.mediumImageUrls = const [],
     this.hasVoted = false,
     this.selectedOption,
   });
@@ -118,11 +122,27 @@ class CouncilModel {
   String? createdByName;
   DateTime? createdAt;
   String? coverImageUrl;
+  String? coverThumbnailUrl;
+  String? coverMediumUrl;
   List<String> imageUrls;
+  List<String> thumbnailUrls;
+  List<String> mediumImageUrls;
   bool hasVoted;
   VoteOption? selectedOption;
 
   bool get isVotingClosed => status == CouncilStatus.closed;
+
+  String? get thumbnailCoverUrl =>
+      coverThumbnailUrl ?? coverMediumUrl ?? coverImageUrl;
+
+  String? get mediumCoverUrl =>
+      coverMediumUrl ?? coverThumbnailUrl ?? coverImageUrl;
+
+  List<String> get thumbnailImageUrls =>
+      thumbnailUrls.isNotEmpty ? thumbnailUrls : imageUrls;
+
+  List<String> get mediumDisplayImageUrls =>
+      mediumImageUrls.isNotEmpty ? mediumImageUrls : imageUrls;
 
   factory CouncilModel.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> snapshot,
@@ -145,7 +165,11 @@ class CouncilModel {
     final countedVotes = supportCount + againstCount + neutralCount;
     final totalVotes = _intValue(data['votesCount'], fallback: countedVotes);
     final imageUrls = _stringListValue(data['imageUrls']);
+    final thumbnailUrls = _stringListValue(data['thumbnailUrls']);
+    final mediumImageUrls = _stringListValue(data['mediumImageUrls']);
     final coverImageUrl = _stringValue(data['coverImageUrl']);
+    final coverThumbnailUrl = _stringValue(data['coverThumbnailUrl']);
+    final coverMediumUrl = _stringValue(data['coverMediumUrl']);
 
     return CouncilModel(
       id: id,
@@ -213,9 +237,17 @@ class CouncilModel {
       coverImageUrl: coverImageUrl.isNotEmpty
           ? coverImageUrl
           : (imageUrls.isNotEmpty ? imageUrls.first : null),
+      coverThumbnailUrl: coverThumbnailUrl.isNotEmpty
+          ? coverThumbnailUrl
+          : (thumbnailUrls.isNotEmpty ? thumbnailUrls.first : null),
+      coverMediumUrl: coverMediumUrl.isNotEmpty
+          ? coverMediumUrl
+          : (mediumImageUrls.isNotEmpty ? mediumImageUrls.first : null),
       imageUrls: imageUrls.isNotEmpty
           ? imageUrls
           : (coverImageUrl.isNotEmpty ? [coverImageUrl] : const []),
+      thumbnailUrls: thumbnailUrls,
+      mediumImageUrls: mediumImageUrls,
       hasVoted: _boolValue(data['hasVoted'], fallback: false),
       selectedOption: voteOptionFromFirestore(data['selectedOption']),
     );
@@ -257,7 +289,11 @@ class CouncilModel {
       'isCouncilOfDay': isCouncilOfDay,
       'isPinned': isPinned,
       'coverImageUrl': coverImageUrl,
+      if (coverThumbnailUrl != null) 'coverThumbnailUrl': coverThumbnailUrl,
+      if (coverMediumUrl != null) 'coverMediumUrl': coverMediumUrl,
       'imageUrls': imageUrls,
+      if (thumbnailUrls.isNotEmpty) 'thumbnailUrls': thumbnailUrls,
+      if (mediumImageUrls.isNotEmpty) 'mediumImageUrls': mediumImageUrls,
       'imagesCount': imageUrls.length,
       'updatedAt': FieldValue.serverTimestamp(),
     };
