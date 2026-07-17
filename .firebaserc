@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "ejarz-pro-20260624"
+  },
+  "targets": {
+    "ejarz-pro-20260624": {
+      "storage": {
+        "main": [
+          "ejarz-pro-20260624.firebasestorage.app"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

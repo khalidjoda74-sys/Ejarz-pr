@@ -1,0 +1,27 @@
+.dart_tool/
+.packages
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.idea/
+.vscode/
+*.iml
+android/.gradle/
+android/local.properties
+android/key.properties
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+macos/Pods/
+firebase-debug.log
+tmp_web_server*.log
+
+# Dependency and generated web caches
+node_modules/
+.next/
+out/
+dist/
+.firebase/

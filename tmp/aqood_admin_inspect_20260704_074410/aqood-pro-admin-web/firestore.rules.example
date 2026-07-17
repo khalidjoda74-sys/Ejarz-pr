@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isActiveAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.active == true;
+    }
+
+    function adminRole() {
+      return get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.role;
+    }
+
+    function isOwner() {
+      return isActiveAdmin() && adminRole() == 'owner';
+    }
+
+    match /adminUsers/{uid} {
+      allow read: if isActiveAdmin();
+      allow create, update: if isOwner();
+      allow delete: if false;
+    }
+
+    match /users/{uid} {
+      allow read, update: if isActiveAdmin() || (isSignedIn() && request.auth.uid == uid);
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow delete: if false;
+      match /fcmTokens/{tokenId} {
+        allow read: if isActiveAdmin() || (isSignedIn() && request.auth.uid == uid);
+        allow create, update: if isSignedIn() && request.auth.uid == uid;
+        allow delete: if isActiveAdmin() || (isSignedIn() && request.auth.uid == uid);
+      }
+    }
+
+    match /contracts/{contractId} {
+      allow read, update: if isActiveAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn();
+      allow delete: if false;
+      match /files/{fileId} {
+        allow read: if isActiveAdmin() || isSignedIn();
+        allow write: if isActiveAdmin();
+      }
+    }
+
+    match /properties/{propertyId} {
+      allow read, update: if isActiveAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn();
+      allow delete: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isActiveAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create, update: if isActiveAdmin();
+      allow delete: if false;
+    }
+
+    match /supportTickets/{ticketId} {
+      allow read, update: if isActiveAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn();
+      allow delete: if false;
+    }
+
+    match /appContent/{docId} {
+      allow read: if true;
+      allow write: if isActiveAdmin();
+    }
+
+    match /payments/{paymentId} {
+      allow read, write: if isActiveAdmin();
+      allow delete: if false;
+    }
+
+    match /invoices/{invoiceId} {
+      allow read, write: if isActiveAdmin();
+      allow delete: if false;
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isActiveAdmin();
+      allow create: if isActiveAdmin();
+      allow update, delete: if false;
+    }
+  }
+}

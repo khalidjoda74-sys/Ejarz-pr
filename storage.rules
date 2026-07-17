@@ -1,0 +1,50 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() &&
+        firestore.exists(/databases/(default)/documents/adminUsers/$(request.auth.uid)) &&
+        firestore.get(/databases/(default)/documents/adminUsers/$(request.auth.uid)).data.active == true;
+    }
+
+    function isContractOwner(contractId) {
+      return signedIn() &&
+        firestore.exists(/databases/(default)/documents/contracts/$(contractId)) &&
+        firestore.get(/databases/(default)/documents/contracts/$(contractId)).data.uid == request.auth.uid;
+    }
+
+    function isSafeContractFile() {
+      return request.resource.size <= 20 * 1024 * 1024 &&
+        request.resource.contentType.matches('application/pdf|image/.*');
+    }
+
+    match /contracts/{contractId}/final/{fileName=**} {
+      allow read: if isAdmin() || isContractOwner(contractId);
+      allow create, update: if isAdmin() &&
+        request.resource.size <= 20 * 1024 * 1024 &&
+        request.resource.contentType == 'application/pdf';
+      allow delete: if isAdmin();
+    }
+
+    match /contracts/{contractId}/attachments/{fileName=**} {
+      allow read: if isAdmin() || isContractOwner(contractId);
+      allow create, update: if (isAdmin() || isContractOwner(contractId)) &&
+        isSafeContractFile();
+      allow delete: if isAdmin();
+    }
+
+    match /contracts/{contractId}/{allPaths=**} {
+      allow read: if isAdmin() || isContractOwner(contractId);
+      allow write: if false;
+    }
+
+    match /users/{uid}/{allPaths=**} {
+      allow read, write: if isAdmin() || (signedIn() && request.auth.uid == uid);
+    }
+  }
+}

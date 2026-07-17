@@ -1,0 +1,26 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isActiveAdmin() {
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/adminUsers/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/adminUsers/$(request.auth.uid)).data.active == true;
+    }
+
+    match /contracts/{contractId}/final/{fileName} {
+      allow read: if isActiveAdmin() || isSignedIn();
+      allow write: if isActiveAdmin()
+        && request.resource.size < 20 * 1024 * 1024
+        && request.resource.contentType == 'application/pdf';
+    }
+
+    match /contracts/{contractId}/{allPaths=**} {
+      allow read: if isActiveAdmin() || isSignedIn();
+      allow write: if isActiveAdmin();
+    }
+  }
+}

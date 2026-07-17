@@ -1,0 +1,237 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function adminDoc() {
+      return get(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid)) &&
+        adminDoc().data.active == true;
+    }
+
+    function ownsUid(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+    function isDemoUserProfileCreate(uid) {
+      return ownsUid(uid) &&
+        request.auth.token.firebase.sign_in_provider == 'anonymous' &&
+        request.resource.data.isDemoUser == true &&
+        request.resource.data.role == 'customer' &&
+        request.resource.data.status == 'active';
+    }
+
+    function hasNoSensitiveCardData() {
+      return !request.resource.data.keys()
+        .hasAny(['cardNumber', 'cvv', 'expiry', 'expiryDate']);
+    }
+
+    function isDemoPaymentCreate() {
+      return signedIn() &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.isDemo == true &&
+        request.resource.data.provider == 'demo' &&
+        request.resource.data.amount == 398 &&
+        request.resource.data.currency == 'SAR' &&
+        request.resource.data.ejarPlatformFee == 299 &&
+        request.resource.data.serviceFee == 99 &&
+        request.resource.data.status in ['paid', 'failed'] &&
+        request.resource.data.keys().hasAll([
+          'uid',
+          'contractId',
+          'amount',
+          'currency',
+          'method',
+          'provider',
+          'providerReference',
+          'status',
+          'isDemo',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        hasNoSensitiveCardData();
+    }
+
+    function isDemoInvoiceCreate() {
+      return signedIn() &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.isDemo == true &&
+        request.resource.data.amount == 398 &&
+        request.resource.data.currency == 'SAR' &&
+        request.resource.data.status == 'paid' &&
+        request.resource.data.keys().hasAll([
+          'uid',
+          'contractId',
+          'invoiceNumber',
+          'amount',
+          'currency',
+          'status',
+          'paymentId',
+          'isDemo',
+          'createdAt',
+          'updatedAt'
+        ]);
+    }
+
+    function isDemoPaymentContractUpdate() {
+      return signedIn() &&
+        resource.data.uid == request.auth.uid &&
+        request.resource.data.uid == request.auth.uid &&
+        resource.data.status == 'awaitingPayment' &&
+        request.resource.data.status == 'authenticated' &&
+        request.resource.data.paymentStatus == 'paid' &&
+        request.resource.data.isDemoPayment == true &&
+        request.resource.data.finalPdfUrl == 'https://ejarz-pro-20260624.web.app/demo/ejarz-demo-contract.pdf' &&
+        request.resource.data.finalPdfFileName == 'ejarz-demo-contract.pdf' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'paymentStatus',
+          'paidAt',
+          'totalFees',
+          'totalPayable',
+          'ejarPlatformFee',
+          'serviceFee',
+          'paymentId',
+          'invoiceId',
+          'invoiceNumber',
+          'paymentMethod',
+          'paymentProvider',
+          'paymentProviderReference',
+          'cardBrand',
+          'cardLast4',
+          'isDemoPayment',
+          'finalPdfUrl',
+          'finalPdfFileName',
+          'finalPdfUploadedAt',
+          'completedAt',
+          'customerVisibleNote',
+          'updatedAt',
+          'timeline'
+        ]);
+    }
+
+    function isCustomerPaymentNotificationCreate() {
+      return signedIn() &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.type == 'payment' &&
+        request.resource.data.read == false &&
+        request.resource.data.actionType == 'contractDetails' &&
+        request.resource.data.channels.inApp == true &&
+        request.resource.data.channels.push == true &&
+        request.resource.data.delivery.pushStatus == 'pending';
+    }
+
+    match /adminUsers/{uid} {
+      allow read: if ownsUid(uid) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /users/{uid} {
+      allow read: if ownsUid(uid) || isAdmin();
+      allow create: if isDemoUserProfileCreate(uid);
+      allow update: if isAdmin() ||
+        (ownsUid(uid) &&
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['status', 'role', 'notesFromAdmin', 'stats']));
+
+      match /fcmTokens/{tokenId} {
+        allow read, create, update, delete: if ownsUid(uid) || isAdmin();
+      }
+    }
+
+    match /contracts/{contractId} {
+      allow read: if isAdmin() || ownsUid(resource.data.uid);
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin() ||
+        isDemoPaymentContractUpdate() ||
+        (signedIn() &&
+          resource.data.uid == request.auth.uid &&
+          request.resource.data.uid == request.auth.uid &&
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny([
+              'status',
+              'adminAssignedTo',
+              'adminInternalNotes',
+              'customerVisibleNote',
+              'missingRequirements',
+              'finalPdfUrl',
+              'finalPdfFileName',
+              'finalPdfUploadedAt',
+              'completedAt'
+            ]));
+      allow delete: if isAdmin();
+
+      match /files/{fileId} {
+        allow read: if isAdmin() ||
+          ownsUid(get(/databases/$(database)/documents/contracts/$(contractId)).data.uid);
+        allow write: if isAdmin();
+      }
+
+      match /missingResponses/{responseId} {
+        allow read: if isAdmin() ||
+          ownsUid(get(/databases/$(database)/documents/contracts/$(contractId)).data.uid);
+        allow create: if signedIn() &&
+          get(/databases/$(database)/documents/contracts/$(contractId)).data.uid == request.auth.uid &&
+          request.resource.data.uid == request.auth.uid &&
+          request.resource.data.contractId == contractId;
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAdmin() || ownsUid(resource.data.uid);
+      allow create: if isAdmin() || isCustomerPaymentNotificationCreate();
+      allow update: if isAdmin() ||
+        (signedIn() &&
+          resource.data.uid == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['read', 'readAt']));
+      allow delete: if isAdmin();
+    }
+
+    match /properties/{propertyId} {
+      allow read: if isAdmin() || ownsUid(resource.data.uid);
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin() ||
+        (signedIn() && resource.data.uid == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    match /supportTickets/{ticketId} {
+      allow read: if isAdmin() || ownsUid(resource.data.uid);
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isAdmin() || ownsUid(resource.data.uid);
+      allow create: if isAdmin() || isDemoPaymentCreate();
+      allow update, delete: if isAdmin();
+    }
+
+    match /invoices/{invoiceId} {
+      allow read: if isAdmin() || ownsUid(resource.data.uid);
+      allow create: if isAdmin() || isDemoInvoiceCreate();
+      allow update, delete: if isAdmin();
+    }
+
+    match /appContent/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /auditLogs/{logId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+  }
+}

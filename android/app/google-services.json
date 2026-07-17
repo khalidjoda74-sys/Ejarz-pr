@@ -1,0 +1,57 @@
+{
+  "project_info": {
+    "project_number": "475770424762",
+    "project_id": "ejarz-pro-20260624",
+    "storage_bucket": "ejarz-pro-20260624.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:475770424762:android:cb21cf45e21c593a5ea183",
+        "android_client_info": {
+          "package_name": "sa.aqoodpro.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "475770424762-m9tbeu4mdfjp54eh3pqn6pvks5c219fk.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "sa.aqoodpro.app",
+            "certificate_hash": "49a0be7f28bc608423e23e885a233bea91967bfd"
+          }
+        },
+        {
+          "client_id": "475770424762-v9bjhhqenn52q64n74p98ovnqcqf5bik.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCvt6D6Th7WCK6AUEOHy2AyGj8UngcHO4Y"
+        },
+        {
+          "current_key": "AIzaSyBJfM2oqTT6LZNARLypgD9BltK0arLhShw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "475770424762-v9bjhhqenn52q64n74p98ovnqcqf5bik.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "475770424762-m05t50ar04bgo83apfnbu60tvvqcbf4m.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "sa.aqoodpro.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

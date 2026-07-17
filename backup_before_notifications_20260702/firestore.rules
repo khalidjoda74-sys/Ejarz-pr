@@ -1,0 +1,103 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function adminDoc() {
+      return get(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid)) &&
+        adminDoc().data.active == true;
+    }
+
+    function ownsUid(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    match /adminUsers/{uid} {
+      allow read: if ownsUid(uid) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /users/{uid} {
+      allow read: if ownsUid(uid) || isAdmin();
+      allow create: if ownsUid(uid);
+      allow update: if isAdmin() ||
+        (ownsUid(uid) &&
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['status', 'role', 'notesFromAdmin', 'stats']));
+    }
+
+    match /contracts/{contractId} {
+      allow read: if isAdmin() || ownsUid(resource.data.uid);
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin() ||
+        (signedIn() &&
+          resource.data.uid == request.auth.uid &&
+          request.resource.data.uid == request.auth.uid &&
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny([
+              'status',
+              'adminAssignedTo',
+              'adminInternalNotes',
+              'customerVisibleNote',
+              'missingRequirements',
+              'finalPdfUrl',
+              'finalPdfFileName',
+              'finalPdfUploadedAt',
+              'completedAt'
+            ]));
+      allow delete: if isAdmin();
+
+      match /files/{fileId} {
+        allow read: if isAdmin() ||
+          ownsUid(get(/databases/$(database)/documents/contracts/$(contractId)).data.uid);
+        allow write: if isAdmin();
+      }
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAdmin() || ownsUid(resource.data.uid);
+      allow create: if isAdmin() ||
+        (signedIn() && request.resource.data.uid == request.auth.uid);
+      allow update: if isAdmin() ||
+        (signedIn() &&
+          resource.data.uid == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['read']));
+      allow delete: if isAdmin();
+    }
+
+    match /properties/{propertyId} {
+      allow read: if isAdmin() || ownsUid(resource.data.uid);
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin() ||
+        (signedIn() && resource.data.uid == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    match /supportTickets/{ticketId} {
+      allow read: if isAdmin() || ownsUid(resource.data.uid);
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin() ||
+        (signedIn() && resource.data.uid == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    match /appContent/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /auditLogs/{logId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+  }
+}
