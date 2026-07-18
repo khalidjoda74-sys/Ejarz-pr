@@ -41,11 +41,12 @@ class CouncilRepository extends ChangeNotifier {
   final Set<String> _blockedUserIds = <String>{};
   final Map<String, StreamSubscription<List<CommentModel>>>
       _commentSubscriptions = {};
-  final Map<String, StreamSubscription<bool>>
-      _convincingVoteSubscriptions = {};
+  final Map<String, StreamSubscription<bool>> _convincingVoteSubscriptions = {};
   final Set<String> _requestedCommentWatches = {};
   final Set<String> _convincingVotes = {};
-  final Set<String> _demoOpportunitySeededUsers = {};
+  bool _demoOpportunityRequested = false;
+  final Map<String, List<CommentModel>> _remoteCommentsByCouncilId = {};
+  final Map<String, List<CommentModel>> _localCommentOverlays = {};
   final Map<String, List<CommentModel>> _privateDemoComments = {};
   Object? _firestoreError;
   Timer? _councilSyncWatchdog;
@@ -161,6 +162,10 @@ class CouncilRepository extends ChangeNotifier {
     }
 
     final council = councilById(councilId);
+    if (_isDemoCouncil(council)) {
+      throw StateError('Demo opportunities are read-only.');
+    }
+
     final previousParticipants = council.participants;
     final previousHasVoted = council.hasVoted;
     final previousSelectedOption = council.selectedOption;
@@ -208,11 +213,8 @@ class CouncilRepository extends ChangeNotifier {
   void watchCouncilComments(String councilId) {
     if (councilId.trim().isEmpty) return;
     _requestedCommentWatches.add(councilId);
-    final firebaseUser = FirebaseAuth.instance.currentUser;
-    if (councilId.startsWith('demo_laundry_') &&
-        firebaseUser != null &&
-        !firebaseUser.isAnonymous) {
-      _ensureDemoOpportunity(firebaseUser, force: true);
+    if (councilId.startsWith('demo_laundry_')) {
+      _ensureDemoOpportunity(force: true);
     }
     if (_usingFirestore) _startCommentsSubscription(councilId);
   }
@@ -224,6 +226,12 @@ class CouncilRepository extends ChangeNotifier {
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
+
+    final council = councilById(councilId);
+    if (_isDemoCouncil(council)) {
+      throw StateError('Demo opportunities are read-only.');
+    }
+
     ContentModeration.ensureAllowed(<String>[trimmed]);
 
     final firebaseUser = FirebaseAuth.instance.currentUser;
@@ -235,7 +243,6 @@ class CouncilRepository extends ChangeNotifier {
       );
     }
 
-    final council = councilById(councilId);
     if (!council.allowComments) {
       throw FirebaseException(
         plugin: 'majlisna',
@@ -244,8 +251,7 @@ class CouncilRepository extends ChangeNotifier {
       );
     }
 
-    final localCommentId =
-        'local_${DateTime.now().microsecondsSinceEpoch}';
+    final localCommentId = 'local_${DateTime.now().microsecondsSinceEpoch}';
     CommentModel? parentComment;
     if (parentId != null) {
       for (final comment in council.comments) {
@@ -263,6 +269,7 @@ class CouncilRepository extends ChangeNotifier {
       avatarEmoji: _user.avatarEmoji,
       text: trimmed,
       minutesAgo: 1,
+      createdAt: DateTime.now().toUtc(),
       convincingCount: 0,
       repliesCount: 0,
       parentId: parentId,
@@ -275,6 +282,10 @@ class CouncilRepository extends ChangeNotifier {
       _privateDemoComments
           .putIfAbsent(councilId, () => <CommentModel>[])
           .insert(0, optimisticComment);
+    } else {
+      _localCommentOverlays
+          .putIfAbsent(councilId, () => <CommentModel>[])
+          .insert(0, optimisticComment);
     }
     council.commentsCount += 1;
     _user.comments += 1;
@@ -282,25 +293,41 @@ class CouncilRepository extends ChangeNotifier {
 
     try {
       if (_usingFirestore && !isDemoCouncil) {
-        await FirebaseCouncilRepository.instance.addComment(
+        final serverCommentId =
+            await FirebaseCouncilRepository.instance.addComment(
           councilId: councilId,
           text: trimmed,
           parentId: parentId,
         );
+        if (serverCommentId != null && serverCommentId.isNotEmpty) {
+          _replaceLocalCommentId(
+            councilId: councilId,
+            localCommentId: localCommentId,
+            serverCommentId: serverCommentId,
+          );
+        }
       }
     } catch (_) {
       final beforeLength = council.comments.length;
       council.comments.removeWhere((comment) => comment.id == localCommentId);
+      _removeVisibleComment(councilId, localCommentId);
       if (isDemoCouncil) {
         _privateDemoComments[councilId]
             ?.removeWhere((comment) => comment.id == localCommentId);
+      } else {
+        _localCommentOverlays[councilId]
+            ?.removeWhere((comment) => comment.id == localCommentId);
+        if (_localCommentOverlays[councilId]?.isEmpty == true) {
+          _localCommentOverlays.remove(councilId);
+        }
       }
       final removed = beforeLength - council.comments.length;
       if (removed > 0) {
         council.commentsCount = council.commentsCount > removed
             ? council.commentsCount - removed
             : 0;
-        _user.comments = _user.comments > removed ? _user.comments - removed : 0;
+        _user.comments =
+            _user.comments > removed ? _user.comments - removed : 0;
       }
       if (parentComment != null && parentComment.repliesCount > 0) {
         parentComment.repliesCount -= 1;
@@ -313,6 +340,10 @@ class CouncilRepository extends ChangeNotifier {
   Future<void> addConvincingVote(String councilId, String commentId) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final council = councilById(councilId);
+    if (_isDemoCouncil(council)) {
+      throw StateError('Demo opportunities are read-only.');
+    }
+
     CommentModel? targetComment;
     for (final comment in council.comments) {
       if (comment.id == commentId) {
@@ -419,6 +450,7 @@ class CouncilRepository extends ChangeNotifier {
     _mockCouncils.removeWhere((item) => item.id == councilId);
     notifyListeners();
   }
+
   Future<CouncilModel> createCouncil({
     required String title,
     required String description,
@@ -443,7 +475,8 @@ class CouncilRepository extends ChangeNotifier {
         ? firebaseUser.displayName!.trim()
         : _user.name;
     final ownerPhotoUrl = firebaseUser.photoURL;
-    final councilId = await FirebaseCouncilRepository.instance.createCouncil(
+    final createdCouncil =
+        await FirebaseCouncilRepository.instance.createCouncil(
       title: titleText,
       description: descriptionText,
       category: category,
@@ -459,7 +492,7 @@ class CouncilRepository extends ChangeNotifier {
     );
 
     final council = CouncilModel(
-      id: councilId,
+      id: createdCouncil.id,
       title: titleText,
       description: descriptionText,
       categoryId: _categoryId(category),
@@ -479,6 +512,18 @@ class CouncilRepository extends ChangeNotifier {
       createdBy: firebaseUser.uid,
       createdByName: ownerName,
       createdAt: DateTime.now().toUtc(),
+      coverImageUrl: createdCouncil.imageUrls.isNotEmpty
+          ? createdCouncil.imageUrls.first
+          : null,
+      coverThumbnailUrl: createdCouncil.thumbnailUrls.isNotEmpty
+          ? createdCouncil.thumbnailUrls.first
+          : null,
+      coverMediumUrl: createdCouncil.mediumImageUrls.isNotEmpty
+          ? createdCouncil.mediumImageUrls.first
+          : null,
+      imageUrls: createdCouncil.imageUrls,
+      thumbnailUrls: createdCouncil.thumbnailUrls,
+      mediumImageUrls: createdCouncil.mediumImageUrls,
     );
     _upsertLocalCouncil(council);
     _user.councils += 1;
@@ -533,6 +578,7 @@ class CouncilRepository extends ChangeNotifier {
     notifyListeners();
     return true;
   }
+
   void syncUser(UserModel user) {
     if (_sameUser(_user, user)) return;
 
@@ -552,9 +598,11 @@ class CouncilRepository extends ChangeNotifier {
     _startCouncilSyncWatchdog();
     notifyListeners();
 
+    _ensureDemoOpportunity();
     _startResultsSync();
-    _councilsSubscription =
-        FirebaseCouncilRepository.instance.watchCouncilSnapshots(limit: 80).listen(
+    _councilsSubscription = FirebaseCouncilRepository.instance
+        .watchCouncilSnapshots(limit: 80)
+        .listen(
       (snapshot) {
         final firestoreCouncils = snapshot.councils;
         if (!snapshot.isFromCache) {
@@ -571,7 +619,10 @@ class CouncilRepository extends ChangeNotifier {
           _councils = List<CouncilModel>.from(_mockCouncils);
         } else {
           _usingFirestore = true;
-          _councils = firestoreCouncils.map(_withSessionVote).toList();
+          _councils = _withPublicDemoFallback(firestoreCouncils)
+              .map(_withSessionVote)
+              .map(_withCachedComments)
+              .toList();
           _refreshCommentSubscriptions();
         }
         notifyListeners();
@@ -626,6 +677,9 @@ class CouncilRepository extends ChangeNotifier {
         unawaited(subscription.cancel());
       }
       _commentSubscriptions.clear();
+      for (final council in _councils) {
+        _applyCachedComments(council);
+      }
       _refreshCommentSubscriptions();
       notifyListeners();
     }, onError: (_) {});
@@ -637,7 +691,7 @@ class CouncilRepository extends ChangeNotifier {
       },
       onError: (_) {},
     );
-    _ensureDemoOpportunity(firebaseUser);
+    _ensureDemoOpportunity();
   }
 
   void _startCouncilSyncWatchdog() {
@@ -649,22 +703,27 @@ class CouncilRepository extends ChangeNotifier {
     });
   }
 
-  void _ensureDemoOpportunity(User firebaseUser, {bool force = false}) {
-    if (!force && !_demoOpportunitySeededUsers.add(firebaseUser.uid)) return;
-    _demoOpportunitySeededUsers.add(firebaseUser.uid);
-    final displayName = firebaseUser.displayName?.trim();
-    FirebaseCouncilRepository.instance
-        .ensureDemoOpportunityForUser(
-          uid: firebaseUser.uid,
-          ownerName: displayName != null && displayName.isNotEmpty
-              ? displayName
-              : _user.name,
-          ownerPhotoUrl: firebaseUser.photoURL,
-          ownerAvatarEmoji: _user.avatarEmoji,
-        )
-        .catchError((_) {
-      _demoOpportunitySeededUsers.remove(firebaseUser.uid);
+  void _ensureDemoOpportunity({bool force = false}) {
+    if (!force && _demoOpportunityRequested) return;
+    _demoOpportunityRequested = true;
+    FirebaseCouncilRepository.instance.ensureDemoOpportunity().catchError((_) {
+      _demoOpportunityRequested = false;
     });
+  }
+
+  List<CouncilModel> _withPublicDemoFallback(List<CouncilModel> councils) {
+    final hasPublicDemo = councils.any(
+      (council) => council.id == FirebaseCouncilRepository.publicDemoCouncilId,
+    );
+    if (hasPublicDemo) return councils;
+
+    for (final council in _mockCouncils) {
+      if (council.id == FirebaseCouncilRepository.publicDemoCouncilId) {
+        return [council, ...councils];
+      }
+    }
+
+    return councils;
   }
 
   bool _sameUser(UserModel a, UserModel b) {
@@ -706,19 +765,120 @@ class CouncilRepository extends ChangeNotifier {
     _commentSubscriptions[councilId] = FirebaseCouncilRepository.instance
         .watchComments(councilId)
         .listen((comments) {
-      final index = _councils.indexWhere((item) => item.id == councilId);
-      if (index == -1) return;
-
-      final council = _councils[index];
-      final baseComments = comments
-          .where((comment) => !_blockedUserIds.contains(comment.authorId))
-          .toList(growable: false);
-      final visibleComments = _withPrivateDemoComments(councilId, baseComments);
-      council.comments = visibleComments;
-      council.commentsCount = visibleComments.length;
-      _refreshConvincingVoteSubscriptions(councilId, visibleComments);
-      notifyListeners();
+      _remoteCommentsByCouncilId[councilId] = comments;
+      _pruneLocalCommentOverlay(councilId, comments);
+      if (_applyCachedCommentsToCouncil(councilId)) notifyListeners();
     }, onError: (_) {});
+  }
+
+  CouncilModel _withCachedComments(CouncilModel council) {
+    _applyCachedComments(council);
+    return council;
+  }
+
+  bool _applyCachedCommentsToCouncil(String councilId) {
+    final index = _councils.indexWhere((item) => item.id == councilId);
+    if (index == -1) return false;
+
+    _applyCachedComments(_councils[index]);
+    return true;
+  }
+
+  void _applyCachedComments(CouncilModel council) {
+    final remoteComments = _remoteCommentsByCouncilId[council.id];
+    final hasLocalComments =
+        _localCommentOverlays[council.id]?.isNotEmpty == true ||
+            _privateDemoComments[council.id]?.isNotEmpty == true;
+    if (remoteComments == null && !hasLocalComments) return;
+    final sourceComments = remoteComments == null ||
+            (remoteComments.isEmpty &&
+                council.id == FirebaseCouncilRepository.publicDemoCouncilId)
+        ? council.comments
+        : remoteComments;
+
+    final visibleComments = _visibleCommentsForCouncil(
+      council.id,
+      sourceComments,
+    );
+    council.comments = visibleComments;
+    council.commentsCount = visibleComments.length;
+    _refreshConvincingVoteSubscriptions(council.id, visibleComments);
+  }
+
+  List<CommentModel> _visibleCommentsForCouncil(
+    String councilId,
+    List<CommentModel> remoteComments,
+  ) {
+    final remoteIds = remoteComments.map((comment) => comment.id).toSet();
+    final localComments = _localCommentOverlays[councilId] ?? const [];
+    final mergedComments = <CommentModel>[
+      for (final comment in localComments)
+        if (!remoteIds.contains(comment.id)) comment,
+      ...remoteComments,
+    ];
+    final baseComments = mergedComments
+        .where((comment) => !_blockedUserIds.contains(comment.authorId))
+        .toList(growable: false);
+    final visibleComments = _withPrivateDemoComments(councilId, baseComments);
+    visibleComments.sort(_compareCommentsNewestFirst);
+    return visibleComments;
+  }
+
+  void _replaceLocalCommentId({
+    required String councilId,
+    required String localCommentId,
+    required String serverCommentId,
+  }) {
+    final comments = _localCommentOverlays[councilId];
+    if (comments == null || comments.isEmpty) return;
+
+    final index =
+        comments.indexWhere((comment) => comment.id == localCommentId);
+    if (index == -1) return;
+
+    comments[index] = comments[index].copyWith(id: serverCommentId);
+    _pruneLocalCommentOverlay(
+      councilId,
+      _remoteCommentsByCouncilId[councilId] ?? const <CommentModel>[],
+    );
+    if (_applyCachedCommentsToCouncil(councilId)) notifyListeners();
+  }
+
+  void _removeVisibleComment(String councilId, String commentId) {
+    final index = _councils.indexWhere((item) => item.id == councilId);
+    if (index == -1) return;
+
+    final council = _councils[index];
+    final beforeLength = council.comments.length;
+    council.comments.removeWhere((comment) => comment.id == commentId);
+    final removed = beforeLength - council.comments.length;
+    if (removed > 0) {
+      council.commentsCount =
+          council.commentsCount > removed ? council.commentsCount - removed : 0;
+    }
+  }
+
+  void _pruneLocalCommentOverlay(
+    String councilId,
+    List<CommentModel> remoteComments,
+  ) {
+    final comments = _localCommentOverlays[councilId];
+    if (comments == null || comments.isEmpty) return;
+
+    final remoteIds = remoteComments.map((comment) => comment.id).toSet();
+    comments.removeWhere((comment) => remoteIds.contains(comment.id));
+    if (comments.isEmpty) _localCommentOverlays.remove(councilId);
+  }
+
+  int _compareCommentsNewestFirst(CommentModel a, CommentModel b) {
+    final aCreatedAt = a.createdAt;
+    final bCreatedAt = b.createdAt;
+    if (aCreatedAt != null && bCreatedAt != null) {
+      return bCreatedAt.compareTo(aCreatedAt);
+    }
+    if (aCreatedAt != null) return -1;
+    if (bCreatedAt != null) return 1;
+    return a.minutesAgo.compareTo(b.minutesAgo);
   }
 
   void _refreshConvincingVoteSubscriptions(
@@ -738,21 +898,22 @@ class CouncilRepository extends ChangeNotifier {
         () => FirebaseCouncilRepository.instance
             .watchConvincingVote(commentId: comment.id, uid: firebaseUser.uid)
             .listen(
-              (selected) {
-                if (selected) {
-                  _convincingVotes.add(key);
-                } else {
-                  _convincingVotes.remove(key);
-                }
-                notifyListeners();
-              },
-              onError: (_) {},
-            ),
+          (selected) {
+            if (selected) {
+              _convincingVotes.add(key);
+            } else {
+              _convincingVotes.remove(key);
+            }
+            notifyListeners();
+          },
+          onError: (_) {},
+        ),
       );
     }
 
     final staleKeys = _convincingVoteSubscriptions.keys
-        .where((key) => key.startsWith('$councilId/') && !activeKeys.contains(key))
+        .where(
+            (key) => key.startsWith('$councilId/') && !activeKeys.contains(key))
         .toList(growable: false);
     for (final key in staleKeys) {
       unawaited(_convincingVoteSubscriptions.remove(key)?.cancel());
@@ -791,6 +952,7 @@ class CouncilRepository extends ChangeNotifier {
     final ownerId = council.createdBy?.trim();
     return ownerId != null && _blockedUserIds.contains(ownerId);
   }
+
   CouncilModel? _findCouncilById(String id) {
     for (final council in _councils) {
       if (council.id == id) return council;
@@ -818,7 +980,8 @@ class CouncilRepository extends ChangeNotifier {
       final counts = _estimatedVoteCounts(council);
       counts[option] = (counts[option] ?? 0) - 1;
       if ((counts[option] ?? 0) < 0) counts[option] = 0;
-      council.participants = council.participants > 0 ? council.participants - 1 : 0;
+      council.participants =
+          council.participants > 0 ? council.participants - 1 : 0;
       council.hasVoted = false;
       council.selectedOption = null;
       council.votesCount =

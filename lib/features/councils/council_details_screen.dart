@@ -94,7 +94,7 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
             ),
           );
         }
-        _precacheCouncilImages(council.imageUrls);
+        _precacheCouncilImages(council.thumbnailImageUrls);
         final voteCopy = OpportunityVoteCopy.forCouncil(council);
         final isOwner = repo.isCouncilOwner(council);
         final commentThreads = _threadComments(council.comments);
@@ -253,13 +253,23 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
                               ),
                             ),
                           ),
-                          onConvince: () => AuthGuard.requireAuth(
-                            context,
-                            () => _convince(council, comment),
+                          onConvince: () => _runAfterDemoCheck(
+                            council,
+                            () async {
+                              await AuthGuard.requireAuth(
+                                context,
+                                () => _convince(council, comment),
+                              );
+                            },
                           ),
-                          onReply: () => AuthGuard.requireAuth(
-                            context,
-                            () => _startReply(council, comment),
+                          onReply: () => _runAfterDemoCheck(
+                            council,
+                            () async {
+                              await AuthGuard.requireAuth(
+                                context,
+                                () => _startReply(council, comment),
+                              );
+                            },
                           ),
                         );
                       }),
@@ -271,6 +281,8 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
                     controller: commentController,
                     focusNode: commentFocusNode,
                     replyingToName: _replyingTo?.authorName,
+                    readOnly: _isDemoCouncil(council),
+                    onReadOnlyTap: () => unawaited(_showEditorialNotice()),
                     onCancelReply: _cancelReply,
                     onSend: () => _send(council),
                   )
@@ -310,7 +322,7 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
         content: Text(
           account
               ? 'هذا حساب تجريبي مرتبط بمحتوى تعريفي، وليس حساب عضو حقيقي. أُضيف لعرض أمثلة مفيدة، لذلك لا تتوفر له صفحة شخصية أو مراسلة.'
-              : 'هذا المنشور أعدّه فريق فرصة برو كمثال توعوي مفيد، وليس عرضًا حقيقيًا أو طلبًا قائمًا. لذلك لا يوجد صاحب فعلي يمكن مراسلته.',
+              : 'هذا المنشور أعدّه فريق فرصة برو كنموذج توضيحي داخل التطبيق، وليس منشورًا حقيقيًا. لذلك لا يوجد عضو حقيقي يمكن التواصل أو التفاعل معه.',
           textAlign: TextAlign.center,
           style: AppTextStyles.body.copyWith(fontSize: 12.5, height: 1.55),
         ),
@@ -325,15 +337,33 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
     );
   }
 
+  bool _isDemoCouncil(CouncilModel council) {
+    return council.isSeedContent || council.id.startsWith('demo_');
+  }
+
+  Future<void> _runAfterDemoCheck(
+    CouncilModel council,
+    FutureOr<void> Function() action,
+  ) async {
+    if (_isDemoCouncil(council)) {
+      await _showEditorialNotice();
+      return;
+    }
+    await action();
+  }
+
   void _precacheCouncilImages(List<String> urls) {
     for (final url in urls.take(10)) {
       final uri = Uri.tryParse(url);
-      if (uri == null || !uri.hasScheme || !_precachedImageUrls.add(url)) continue;
+      if (uri == null || !uri.hasScheme || !_precachedImageUrls.add(url)) {
+        continue;
+      }
       unawaited(precacheImage(NetworkImage(url), context));
     }
   }
 
   bool _canContactOwner(CouncilModel council) {
+    if (council.isSeedContent) return false;
     final ownerId = council.createdBy?.trim() ?? '';
     return ownerId.isNotEmpty &&
         council.status == CouncilStatus.active &&
@@ -353,6 +383,7 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
       );
     });
   }
+
   Future<void> _openConversation(CouncilModel council) async {
     if (council.isSeedContent) {
       await _showEditorialNotice();
@@ -365,8 +396,8 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
       () async {
         setState(() => _openingConversation = true);
         try {
-          final conversation =
-              await MessagingRepository.instance.getOrCreateConversation(council);
+          final conversation = await MessagingRepository.instance
+              .getOrCreateConversation(council);
           if (!mounted) return;
           await Navigator.of(context).push(
             MaterialPageRoute<void>(
@@ -391,6 +422,7 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
       allowAnonymous: false,
     );
   }
+
   // ignore: unused_element
   Future<void> _showCouncilActions(CouncilModel council) async {
     await showModalBottomSheet<void>(
@@ -442,7 +474,8 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
         DateTime.now().difference(createdAt) < const Duration(hours: 24)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('تحديث الظهور متاح بعد مرور 24 ساعة من نشر الفرصة أو آخر تحديث لها.'),
+          content: Text(
+              'تحديث الظهور متاح بعد مرور 24 ساعة من نشر الفرصة أو آخر تحديث لها.'),
         ),
       );
       return;
@@ -452,7 +485,8 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
       await repo.refreshCouncilVisibility(council.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم تحديث الظهور. ستظهر الفرصة أعلى القائمة الآن.')),
+        const SnackBar(
+            content: Text('تم تحديث الظهور. ستظهر الفرصة أعلى القائمة الآن.')),
       );
     } catch (error) {
       if (!mounted) return;
@@ -567,11 +601,18 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
       );
     }
   }
+
   Future<void> _vote(CouncilModel council, VoteOption option) async {
+    if (_isDemoCouncil(council)) {
+      await _showEditorialNotice();
+      return;
+    }
+
     if (repo.isCouncilOwner(council)) {
       final messenger = ScaffoldMessenger.of(context)..clearSnackBars();
       messenger.showSnackBar(
-        const SnackBar(content: Text('لا يمكن لصاحب الفرصة إضافة رأي سريع على فرصته.')),
+        const SnackBar(
+            content: Text('لا يمكن لصاحب الفرصة إضافة رأي سريع على فرصته.')),
       );
       return;
     }
@@ -606,6 +647,11 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
   }
 
   Future<void> _send(CouncilModel council) async {
+    if (_isDemoCouncil(council)) {
+      await _showEditorialNotice();
+      return;
+    }
+
     final text = commentController.text.trim();
     if (text.isEmpty) return;
     if (!council.allowComments) {
@@ -693,6 +739,11 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
   }
 
   Future<void> _convince(CouncilModel council, CommentModel comment) async {
+    if (_isDemoCouncil(council)) {
+      await _showEditorialNotice();
+      return;
+    }
+
     if (_isOwnComment(comment)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('لا يمكن تقييم تعليقك الشخصي.')),
@@ -715,6 +766,11 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
   }
 
   void _startReply(CouncilModel council, CommentModel comment) {
+    if (_isDemoCouncil(council)) {
+      unawaited(_showEditorialNotice());
+      return;
+    }
+
     if (!council.allowComments) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('التعليقات مغلقة لهذه الفرصة.')),
@@ -838,7 +894,8 @@ class _CouncilSponsorSlotState extends State<_CouncilSponsorSlot> {
     try {
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => SponsorshipScreen(initialCategory: widget.council.category),
+          builder: (_) =>
+              SponsorshipScreen(initialCategory: widget.council.category),
         ),
       );
     } finally {
@@ -1239,7 +1296,9 @@ class _QuestionPanel extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               Text(
-                council.votesCount <= 0 ? 'كن أول من يبدي رأيه' : '${council.votesCount} رأي',
+                council.votesCount <= 0
+                    ? 'كن أول من يبدي رأيه'
+                    : '${council.votesCount} رأي',
                 style: AppTextStyles.caption.copyWith(fontSize: 11),
               ),
             ],
@@ -1415,6 +1474,7 @@ class _CouncilActionIcon extends StatelessWidget {
     );
   }
 }
+
 class _CouncilImagesGrid extends StatelessWidget {
   const _CouncilImagesGrid({required this.council});
 
@@ -1424,7 +1484,8 @@ class _CouncilImagesGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final originals = council.imageUrls.take(10).toList(growable: false);
     if (originals.isEmpty) return const SizedBox.shrink();
-    final thumbnails = council.thumbnailImageUrls.take(10).toList(growable: false);
+    final thumbnails =
+        council.thumbnailImageUrls.take(10).toList(growable: false);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1435,7 +1496,9 @@ class _CouncilImagesGrid extends StatelessWidget {
           children: [
             for (var index = 0; index < originals.length; index++)
               _CouncilImageThumb(
-                url: index < thumbnails.length ? thumbnails[index] : originals[index],
+                url: index < thumbnails.length
+                    ? thumbnails[index]
+                    : originals[index],
                 size: itemSize,
                 onTap: () => _openImageViewer(context, originals, index),
               ),
@@ -1623,6 +1686,7 @@ class _CouncilImageViewerState extends State<_CouncilImageViewer> {
     );
   }
 }
+
 class _ResultsPanel extends StatelessWidget {
   const _ResultsPanel({required this.council, required this.isOwner});
   final CouncilModel council;
@@ -1647,8 +1711,8 @@ class _ResultsPanel extends StatelessWidget {
             isOwner && council.votesCount <= 0
                 ? 'لم تصل آراء بعد'
                 : isOwner || council.hasVoted
-                ? 'نتيجة الرأي السريع'
-                : 'اختر رأيك السريع لرؤية النتائج',
+                    ? 'نتيجة الرأي السريع'
+                    : 'اختر رأيك السريع لرؤية النتائج',
             style: AppTextStyles.cardTitle.copyWith(fontSize: 14),
           ),
           const SizedBox(height: 7),
@@ -1702,7 +1766,8 @@ class _CommentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visibleReplies = replies.take(visibleReplyLimit).toList(growable: false);
+    final visibleReplies =
+        replies.take(visibleReplyLimit).toList(growable: false);
     final remainingReplies = replies.length - visibleReplies.length;
 
     return Container(
@@ -1845,7 +1910,8 @@ class _CommentReplies extends StatelessWidget {
       padding: const EdgeInsetsDirectional.only(start: 10),
       decoration: BoxDecoration(
         border: BorderDirectional(
-          start: BorderSide(color: AppColors.borderBeige.withValues(alpha: .85)),
+          start:
+              BorderSide(color: AppColors.borderBeige.withValues(alpha: .85)),
         ),
       ),
       child: Column(
@@ -1866,7 +1932,8 @@ class _CommentReplies extends StatelessWidget {
                   foregroundColor: AppColors.primaryDarkGreen,
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
                   textStyle: AppTextStyles.caption.copyWith(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
@@ -2035,6 +2102,8 @@ class _CommentInput extends StatelessWidget {
     required this.replyingToName,
     required this.onCancelReply,
     required this.onSend,
+    this.readOnly = false,
+    this.onReadOnlyTap,
   });
 
   final TextEditingController controller;
@@ -2042,6 +2111,8 @@ class _CommentInput extends StatelessWidget {
   final String? replyingToName;
   final VoidCallback onCancelReply;
   final VoidCallback onSend;
+  final bool readOnly;
+  final VoidCallback? onReadOnlyTap;
 
   @override
   Widget build(BuildContext context) {
@@ -2066,7 +2137,8 @@ class _CommentInput extends StatelessWidget {
                   ? Container(
                       key: ValueKey(replyingToName),
                       margin: const EdgeInsets.only(bottom: 7),
-                      padding: const EdgeInsetsDirectional.fromSTEB(10, 5, 4, 5),
+                      padding:
+                          const EdgeInsetsDirectional.fromSTEB(10, 5, 4, 5),
                       decoration: BoxDecoration(
                         color: AppColors.primaryGreen.withValues(alpha: .08),
                         borderRadius: BorderRadius.circular(10),
@@ -2123,16 +2195,17 @@ class _CommentInput extends StatelessWidget {
                     child: TextField(
                       controller: controller,
                       focusNode: focusNode,
+                      readOnly: readOnly,
                       minLines: 1,
                       maxLines: 1,
                       textInputAction: TextInputAction.send,
+                      onTap: readOnly ? onReadOnlyTap : null,
                       onSubmitted: (_) => onSend(),
                       textAlign: TextAlign.right,
                       style: AppTextStyles.body.copyWith(fontSize: 12.5),
                       decoration: InputDecoration(
                         hintText: isReplying ? 'اكتب ردك...' : 'اكتب تعليقك...',
-                        hintStyle:
-                            AppTextStyles.caption.copyWith(fontSize: 11),
+                        hintStyle: AppTextStyles.caption.copyWith(fontSize: 11),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 13,
                           vertical: 11,

@@ -10,12 +10,16 @@ import 'features/auth/nickname_screen.dart';
 import 'features/councils/council_details_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
 import 'features/results/result_details_screen.dart';
-import 'features/splash/splash_screen.dart';
 import 'navigation/app_routes.dart';
 import 'navigation/main_shell.dart';
 
 class MajalisnaApp extends StatelessWidget {
-  const MajalisnaApp({super.key});
+  const MajalisnaApp({
+    super.key,
+    this.initialRoute = AppRoutes.main,
+  });
+
+  final String initialRoute;
 
   @override
   Widget build(BuildContext context) {
@@ -42,9 +46,8 @@ class MajalisnaApp extends StatelessWidget {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        initialRoute: AppRoutes.splash,
+        home: _initialHome(),
         routes: {
-          AppRoutes.splash: (_) => const SplashScreen(),
           AppRoutes.onboarding: (_) => const OnboardingScreen(),
           AppRoutes.nickname: (_) => const NicknameScreen(),
           AppRoutes.main: (_) => const MainShell(),
@@ -70,6 +73,14 @@ class MajalisnaApp extends StatelessWidget {
         },
       ),
     );
+  }
+
+  Widget _initialHome() {
+    return switch (initialRoute) {
+      AppRoutes.nickname => const NicknameScreen(),
+      AppRoutes.onboarding => const OnboardingScreen(),
+      _ => const MainShell(),
+    };
   }
 }
 

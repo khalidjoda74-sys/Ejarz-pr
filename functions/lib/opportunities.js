@@ -4,12 +4,9 @@ exports.ensureDemoOpportunity = void 0;
 const firestore_1 = require("firebase-admin/firestore");
 const https_1 = require("firebase-functions/v2/https");
 const db = (0, firestore_1.getFirestore)();
-const cleanText = (value, fallback, max) => {
-    if (typeof value !== "string")
-        return fallback;
-    const text = value.trim();
-    return text ? text.slice(0, max) : fallback;
-};
+const demoCouncilId = "demo_laundry_public";
+const demoOwnerId = "forsa_demo_editorial";
+const categoryName = "فرص للتقبيل";
 const demoTitle = "مغسلة ملابس للتقبيل بكامل التجهيزات";
 const demoDescription = "فرصة تقبيل لمغسلة ملابس قائمة وجاهزة للتشغيل في موقع تجاري نشط داخل حي سكني. " +
     "تشمل غسالات ومجففات ومكابس كوي وطاولات فرز وتغليف ونظام استقبال وفواتير مع ديكورات مكتملة. " +
@@ -46,34 +43,6 @@ const demoReplies = [
     [1, "مهتم من جدة", "business:storefront", "إذا الموقع داخل حي سكني نشط فخدمة الاشتراكات الشهرية قد ترفع الدخل."],
     [2, "صاحب نشاط سابق", "business:experience", "لا تنسوا مراجعة عقد الإيجار وإمكانية نقل الرخصة قبل دفع العربون."],
 ];
-const ensureDemoNotifications = async (uid, councilId) => {
-    const collection = db.collection("users").doc(uid).collection("notifications");
-    const definitions = [
-        ["demo_welcome", "owner_activity", "مرحبًا بك في Forsa Pro", "أضفنا إلى فرصك نموذجًا متكاملًا يمكنك تعديله أو حذفه والتعرف من خلاله على أدوات التطبيق."],
-        ["demo_reply", "reply", "رد جديد على فرصتك", "وصل رأي جديد حول فرصة المغسلة المضافة إلى حسابك."],
-        ["demo_featured", "discussion", "فرص أعمال مميزة بانتظار رأيك", "تصفح فرص التقبيل والشراكات والفرص المطلوبة وشارك خبرتك."],
-    ];
-    const snapshots = await Promise.all(definitions.map(([id]) => collection.doc(id).get()));
-    const batch = db.batch();
-    definitions.forEach(([id, type, title, body], index) => {
-        if (snapshots[index].exists)
-            return;
-        batch.set(collection.doc(id), {
-            type,
-            title,
-            body,
-            message: body,
-            councilId,
-            targetRoute: `/council/${councilId}`,
-            read: false,
-            createdAt: firestore_1.FieldValue.serverTimestamp(),
-            updatedAt: firestore_1.FieldValue.serverTimestamp(),
-        });
-    });
-    const legacy = await collection.where("type", "==", "best_comment").get();
-    legacy.docs.forEach((doc) => batch.delete(doc.ref));
-    await batch.commit();
-};
 const seedDemoComments = async (councilId) => {
     const refs = demoComments.map((_, index) => db.collection("comments").doc(`${councilId}_seed_${index + 1}`));
     const replyRefs = demoReplies.map((_, index) => db.collection("comments").doc(`${councilId}_reply_${index + 1}`));
@@ -154,32 +123,28 @@ const seedDemoComments = async (councilId) => {
     await batch.commit();
     return created;
 };
-exports.ensureDemoOpportunity = (0, https_1.onCall)({ region: "us-central1" }, async (request) => {
-    const uid = request.auth?.uid;
-    const provider = request.auth?.token.firebase?.sign_in_provider;
-    if (!uid || provider === "anonymous") {
-        throw new https_1.HttpsError("unauthenticated", "سجل الدخول لإضافة الفرصة التجريبية.");
-    }
-    const ownerName = cleanText(request.data?.ownerName, "عضو Forsa Pro", 60);
-    const ownerPhotoUrl = cleanText(request.data?.ownerPhotoUrl, "", 500);
-    const ownerAvatarEmoji = cleanText(request.data?.ownerAvatarEmoji, "business:person_growth", 80);
-    const councilId = `demo_laundry_${uid}`;
-    const councilRef = db.collection("councils").doc(councilId);
+exports.ensureDemoOpportunity = (0, https_1.onCall)({ region: "us-central1" }, async () => {
+    const councilRef = db.collection("councils").doc(demoCouncilId);
     const existing = await councilRef.get();
     const baseCouncilData = {
         title: demoTitle,
         description: demoDescription,
-        categoryId: "فرص للتقبيل",
-        categoryName: "فرص للتقبيل",
+        categoryId: categoryName,
+        categoryName,
+        category: categoryName,
         city: "الرياض",
         countryCode: "SA",
         countryName: "المملكة العربية السعودية",
-        createdBy: uid,
-        createdByName: ownerName,
-        ownerId: uid,
-        ownerSnapshot: { displayName: ownerName, photoUrl: ownerPhotoUrl || null, avatarEmoji: ownerAvatarEmoji },
+        createdBy: demoOwnerId,
+        createdByName: "Forsa Pro",
+        ownerId: demoOwnerId,
+        ownerSnapshot: {
+            displayName: "Forsa Pro",
+            photoUrl: null,
+            avatarEmoji: "business:verified",
+        },
         visibility: "public",
-        shareCode: councilId,
+        shareCode: demoCouncilId,
         status: "active",
         type: "public",
         allowComments: true,
@@ -190,7 +155,11 @@ exports.ensureDemoOpportunity = (0, https_1.onCall)({ region: "us-central1" }, a
         sponsorId: null,
         bestCommentId: null,
         coverImageUrl: laundryImages[0],
+        coverThumbnailUrl: laundryImages[0],
+        coverMediumUrl: laundryImages[0],
         imageUrls: laundryImages,
+        thumbnailUrls: laundryImages,
+        mediumImageUrls: laundryImages,
         imagesCount: laundryImages.length,
         options: ["support", "against", "neutral"],
         voteOptions: [
@@ -207,7 +176,7 @@ exports.ensureDemoOpportunity = (0, https_1.onCall)({ region: "us-central1" }, a
         sharesCount: 86,
         reportsCount: 0,
         isDemoSeedOpportunity: true,
-        isSeedContent: false,
+        isSeedContent: true,
         visibilityUpdatedAt: firestore_1.FieldValue.serverTimestamp(),
         updatedAt: firestore_1.FieldValue.serverTimestamp(),
     };
@@ -218,15 +187,9 @@ exports.ensureDemoOpportunity = (0, https_1.onCall)({ region: "us-central1" }, a
         });
     }
     else {
-        const data = existing.data() ?? {};
-        if (data.status !== "deleted" && data.visibility !== "deleted") {
-            await councilRef.set(baseCouncilData, { merge: true });
-        }
+        await councilRef.set(baseCouncilData, { merge: true });
     }
-    if (!existing.exists || existing.data()?.status !== "deleted") {
-        await seedDemoComments(councilId);
-        await ensureDemoNotifications(uid, councilId);
-    }
-    return { councilId, created: !existing.exists };
+    await seedDemoComments(demoCouncilId);
+    return { councilId: demoCouncilId, created: !existing.exists };
 });
 //# sourceMappingURL=opportunities.js.map

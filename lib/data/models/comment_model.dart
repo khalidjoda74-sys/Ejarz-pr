@@ -9,6 +9,7 @@ class CommentModel {
     required this.minutesAgo,
     required this.convincingCount,
     required this.repliesCount,
+    this.createdAt,
     this.authorId,
     this.parentId,
     this.isBest = false,
@@ -22,6 +23,7 @@ class CommentModel {
   final String avatarEmoji;
   final String text;
   final int minutesAgo;
+  final DateTime? createdAt;
   int convincingCount;
   int repliesCount;
   bool isBest;
@@ -53,11 +55,13 @@ class CommentModel {
         authorSnapshot['avatarEmoji'],
         fallback: _stringValue(
           data['userAvatar'],
-          fallback: _stringValue(data['avatarEmoji'], fallback: 'business:person_growth'),
+          fallback: _stringValue(data['avatarEmoji'],
+              fallback: 'business:person_growth'),
         ),
       ),
       text: _stringValue(data['text']),
       parentId: _nullableStringValue(data['parentId']),
+      createdAt: _dateTimeValue(data['createdAt']),
       minutesAgo: _minutesAgo(data['createdAt']),
       convincingCount: _intValue(
         data['convincingVotesCount'],
@@ -102,6 +106,36 @@ class CommentModel {
     };
   }
 
+  CommentModel copyWith({
+    String? id,
+    String? authorId,
+    String? parentId,
+    String? authorName,
+    String? avatarEmoji,
+    String? text,
+    int? minutesAgo,
+    DateTime? createdAt,
+    int? convincingCount,
+    int? repliesCount,
+    bool? isBest,
+    bool? isSeedContent,
+  }) {
+    return CommentModel(
+      id: id ?? this.id,
+      authorId: authorId ?? this.authorId,
+      parentId: parentId ?? this.parentId,
+      authorName: authorName ?? this.authorName,
+      avatarEmoji: avatarEmoji ?? this.avatarEmoji,
+      text: text ?? this.text,
+      minutesAgo: minutesAgo ?? this.minutesAgo,
+      createdAt: createdAt ?? this.createdAt,
+      convincingCount: convincingCount ?? this.convincingCount,
+      repliesCount: repliesCount ?? this.repliesCount,
+      isBest: isBest ?? this.isBest,
+      isSeedContent: isSeedContent ?? this.isSeedContent,
+    );
+  }
+
   String get timeLabel {
     if (minutesAgo < 60) return 'منذ $minutesAgo دقيقة';
     final hours = (minutesAgo / 60).floor();
@@ -134,6 +168,12 @@ class CommentModel {
   static bool _boolValue(Object? value, {bool fallback = false}) {
     if (value is bool) return value;
     return fallback;
+  }
+
+  static DateTime? _dateTimeValue(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
   }
 
   static int _minutesAgo(Object? value) {

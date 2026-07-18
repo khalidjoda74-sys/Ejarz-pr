@@ -1,16 +1,12 @@
 import {FieldValue, Timestamp, getFirestore} from "firebase-admin/firestore";
-import {HttpsError, onCall} from "firebase-functions/v2/https";
+import {onCall} from "firebase-functions/v2/https";
 
 const db = getFirestore();
 
-const cleanText = (value: unknown, fallback: string, max: number): string => {
-  if (typeof value !== "string") return fallback;
-  const text = value.trim();
-  return text ? text.slice(0, max) : fallback;
-};
-
+const demoCouncilId = "demo_laundry_public";
+const demoOwnerId = "forsa_demo_editorial";
+const categoryName = "فرص للتقبيل";
 const demoTitle = "مغسلة ملابس للتقبيل بكامل التجهيزات";
-
 const demoDescription =
   "فرصة تقبيل لمغسلة ملابس قائمة وجاهزة للتشغيل في موقع تجاري نشط داخل حي سكني. " +
   "تشمل غسالات ومجففات ومكابس كوي وطاولات فرز وتغليف ونظام استقبال وفواتير مع ديكورات مكتملة. " +
@@ -22,7 +18,7 @@ const laundryImages = [
   "https://images.unsplash.com/photo-1677785078383-af0ac5cd0422?auto=format&fit=crop&w=1200&q=80",
   "https://images.unsplash.com/photo-1755657722450-26f64fbcddbd?auto=format&fit=crop&w=1200&q=80",
   "https://images.unsplash.com/photo-1532916697008-5bc24f95592a?auto=format&fit=crop&w=1200&q=80",
-];
+] as const;
 
 const demoComments = [
   ["مستشار تشغيل", "business:briefcase", "الفرصة تبدو جيدة إذا كانت المعدات تعمل يوميًا بدون أعطال متكررة. قبل الاتفاق اطلب تقرير صيانة مختصر وفواتير الكهرباء والمياه لآخر ستة أشهر.", 41],
@@ -50,34 +46,6 @@ const demoReplies = [
   [1, "مهتم من جدة", "business:storefront", "إذا الموقع داخل حي سكني نشط فخدمة الاشتراكات الشهرية قد ترفع الدخل."],
   [2, "صاحب نشاط سابق", "business:experience", "لا تنسوا مراجعة عقد الإيجار وإمكانية نقل الرخصة قبل دفع العربون."],
 ] as const;
-
-const ensureDemoNotifications = async (uid: string, councilId: string): Promise<void> => {
-  const collection = db.collection("users").doc(uid).collection("notifications");
-  const definitions = [
-    ["demo_welcome", "owner_activity", "مرحبًا بك في Forsa Pro", "أضفنا إلى فرصك نموذجًا متكاملًا يمكنك تعديله أو حذفه والتعرف من خلاله على أدوات التطبيق."],
-    ["demo_reply", "reply", "رد جديد على فرصتك", "وصل رأي جديد حول فرصة المغسلة المضافة إلى حسابك."],
-    ["demo_featured", "discussion", "فرص أعمال مميزة بانتظار رأيك", "تصفح فرص التقبيل والشراكات والفرص المطلوبة وشارك خبرتك."],
-  ] as const;
-  const snapshots = await Promise.all(definitions.map(([id]) => collection.doc(id).get()));
-  const batch = db.batch();
-  definitions.forEach(([id, type, title, body], index) => {
-    if (snapshots[index].exists) return;
-    batch.set(collection.doc(id), {
-      type,
-      title,
-      body,
-      message: body,
-      councilId,
-      targetRoute: `/council/${councilId}`,
-      read: false,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-  });
-  const legacy = await collection.where("type", "==", "best_comment").get();
-  legacy.docs.forEach((doc) => batch.delete(doc.ref));
-  await batch.commit();
-};
 
 const seedDemoComments = async (councilId: string): Promise<number> => {
   const refs = demoComments.map((_, index) =>
@@ -176,34 +144,29 @@ const seedDemoComments = async (councilId: string): Promise<number> => {
 
 export const ensureDemoOpportunity = onCall(
   {region: "us-central1"},
-  async (request) => {
-    const uid = request.auth?.uid;
-    const provider = request.auth?.token.firebase?.sign_in_provider;
-    if (!uid || provider === "anonymous") {
-      throw new HttpsError("unauthenticated", "سجل الدخول لإضافة الفرصة التجريبية.");
-    }
-
-    const ownerName = cleanText(request.data?.ownerName, "عضو Forsa Pro", 60);
-    const ownerPhotoUrl = cleanText(request.data?.ownerPhotoUrl, "", 500);
-    const ownerAvatarEmoji = cleanText(request.data?.ownerAvatarEmoji, "business:person_growth", 80);
-    const councilId = `demo_laundry_${uid}`;
-    const councilRef = db.collection("councils").doc(councilId);
+  async () => {
+    const councilRef = db.collection("councils").doc(demoCouncilId);
     const existing = await councilRef.get();
 
     const baseCouncilData = {
       title: demoTitle,
       description: demoDescription,
-      categoryId: "فرص للتقبيل",
-      categoryName: "فرص للتقبيل",
+      categoryId: categoryName,
+      categoryName,
+      category: categoryName,
       city: "الرياض",
       countryCode: "SA",
       countryName: "المملكة العربية السعودية",
-      createdBy: uid,
-      createdByName: ownerName,
-      ownerId: uid,
-      ownerSnapshot: {displayName: ownerName, photoUrl: ownerPhotoUrl || null, avatarEmoji: ownerAvatarEmoji},
+      createdBy: demoOwnerId,
+      createdByName: "Forsa Pro",
+      ownerId: demoOwnerId,
+      ownerSnapshot: {
+        displayName: "Forsa Pro",
+        photoUrl: null,
+        avatarEmoji: "business:verified",
+      },
       visibility: "public",
-      shareCode: councilId,
+      shareCode: demoCouncilId,
       status: "active",
       type: "public",
       allowComments: true,
@@ -214,7 +177,11 @@ export const ensureDemoOpportunity = onCall(
       sponsorId: null,
       bestCommentId: null,
       coverImageUrl: laundryImages[0],
+      coverThumbnailUrl: laundryImages[0],
+      coverMediumUrl: laundryImages[0],
       imageUrls: laundryImages,
+      thumbnailUrls: laundryImages,
+      mediumImageUrls: laundryImages,
       imagesCount: laundryImages.length,
       options: ["support", "against", "neutral"],
       voteOptions: [
@@ -231,7 +198,7 @@ export const ensureDemoOpportunity = onCall(
       sharesCount: 86,
       reportsCount: 0,
       isDemoSeedOpportunity: true,
-      isSeedContent: false,
+      isSeedContent: true,
       visibilityUpdatedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     };
@@ -242,17 +209,11 @@ export const ensureDemoOpportunity = onCall(
         createdAt: FieldValue.serverTimestamp(),
       });
     } else {
-      const data = existing.data() ?? {};
-      if (data.status !== "deleted" && data.visibility !== "deleted") {
-        await councilRef.set(baseCouncilData, {merge: true});
-      }
+      await councilRef.set(baseCouncilData, {merge: true});
     }
 
-    if (!existing.exists || existing.data()?.status !== "deleted") {
-      await seedDemoComments(councilId);
-      await ensureDemoNotifications(uid, councilId);
-    }
+    await seedDemoComments(demoCouncilId);
 
-    return {councilId, created: !existing.exists};
+    return {councilId: demoCouncilId, created: !existing.exists};
   },
 );

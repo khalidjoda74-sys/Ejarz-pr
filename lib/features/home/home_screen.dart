@@ -78,7 +78,6 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context, _) {
         final sizes = AppSizes.of(context);
         final featuredCouncil = _homeFeaturedCouncil(repo);
-        final featuredDisplayCouncil = _homeFeaturedDisplayCouncil(featuredCouncil);
         final active = _mostInteractiveCouncils(
           repo.activeCouncils,
           featuredCouncilId: featuredCouncil.id,
@@ -191,7 +190,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     activeIndex: _featuredPage,
                     onPageChanged: (value) =>
                         setState(() => _featuredPage = value),
-                    council: featuredDisplayCouncil,
+                    council: featuredCouncil,
                     onVote: (option) {
                       if (featuredCouncil.isVotingClosed) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -303,42 +302,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (council.title.contains('مغسلة')) return council;
     }
     return repo.todayCouncil;
-  }
-
-  CouncilModel _homeFeaturedDisplayCouncil(CouncilModel council) {
-    return CouncilModel(
-      id: council.id,
-      title: 'مغسلة ملابس للتقبيل وجاهز للتشغيل',
-      description: council.description,
-      category: council.category,
-      status: council.status,
-      participants: council.participants,
-      commentsCount: council.commentsCount,
-      votesCount: council.votesCount,
-      supportPercent: council.supportPercent,
-      againstPercent: council.againstPercent,
-      neutralPercent: council.neutralPercent,
-      endsIn: council.endsIn,
-      comments: council.comments,
-      isPrivate: council.isPrivate,
-      allowComments: council.allowComments,
-      categoryId: council.categoryId,
-      city: council.city,
-      isSeedContent: council.isSeedContent,
-      isCouncilOfDay: council.isCouncilOfDay,
-      isPinned: council.isPinned,
-      createdBy: council.createdBy,
-      createdByName: council.createdByName,
-      createdAt: council.createdAt,
-      coverImageUrl: council.coverImageUrl,
-      coverThumbnailUrl: council.coverThumbnailUrl,
-      coverMediumUrl: council.coverMediumUrl,
-      imageUrls: council.imageUrls,
-      thumbnailUrls: council.thumbnailUrls,
-      mediumImageUrls: council.mediumImageUrls,
-      hasVoted: council.hasVoted,
-      selectedOption: council.selectedOption,
-    );
   }
 }
 

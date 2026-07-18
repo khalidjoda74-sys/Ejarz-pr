@@ -1,3 +1,7 @@
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -51,11 +55,38 @@ class CouncilListSnapshot {
   final bool isFromCache;
 }
 
+class CreatedCouncilResult {
+  const CreatedCouncilResult({
+    required this.id,
+    required this.imageUrls,
+    required this.thumbnailUrls,
+    required this.mediumImageUrls,
+  });
+
+  final String id;
+  final List<String> imageUrls;
+  final List<String> thumbnailUrls;
+  final List<String> mediumImageUrls;
+}
+
+class _CouncilImageUploadResult {
+  const _CouncilImageUploadResult({
+    required this.imageUrls,
+    required this.thumbnailUrls,
+    required this.mediumImageUrls,
+  });
+
+  final List<String> imageUrls;
+  final List<String> thumbnailUrls;
+  final List<String> mediumImageUrls;
+}
+
 class FirebaseCouncilRepository {
   FirebaseCouncilRepository._();
 
   static final FirebaseCouncilRepository instance =
       FirebaseCouncilRepository._();
+  static const publicDemoCouncilId = 'demo_laundry_public';
 
   final FirestoreService _firestore = FirestoreService.instance;
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
@@ -101,34 +132,36 @@ class FirebaseCouncilRepository {
         .limit(limit)
         .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
-          final councils = snapshot.docs
-              .map(CouncilModel.fromFirestore)
-              .where(
-                (council) => status == CouncilStatus.closed ||
-                    council.status != CouncilStatus.closed,
-              )
-              .where((council) {
-                final uid = _auth.currentUser?.uid;
-                if (!council.id.startsWith('demo_laundry_')) return true;
-                return uid != null && council.createdBy == uid;
-              })
-              .toList(growable: false);
-          councils.sort((a, b) {
-            final aDemo = a.id.startsWith('demo_laundry_');
-            final bDemo = b.id.startsWith('demo_laundry_');
-            if (aDemo != bDemo) return aDemo ? -1 : 1;
-            final aCreatedAt = a.createdAt;
-            final bCreatedAt = b.createdAt;
-            if (aCreatedAt == null && bCreatedAt == null) return 0;
-            if (aCreatedAt == null) return 1;
-            if (bCreatedAt == null) return -1;
-            return bCreatedAt.compareTo(aCreatedAt);
-          });
-          return CouncilListSnapshot(
-            councils: councils,
-            isFromCache: snapshot.metadata.isFromCache,
-          );
-        });
+      final councils = snapshot.docs
+          .map(CouncilModel.fromFirestore)
+          .where(
+            (council) =>
+                status == CouncilStatus.closed ||
+                council.status != CouncilStatus.closed,
+          )
+          .where(_isVisiblePublicCouncil)
+          .toList(growable: false);
+      councils.sort((a, b) {
+        final aDemo = a.id.startsWith('demo_laundry_');
+        final bDemo = b.id.startsWith('demo_laundry_');
+        if (aDemo != bDemo) return aDemo ? -1 : 1;
+        final aCreatedAt = a.createdAt;
+        final bCreatedAt = b.createdAt;
+        if (aCreatedAt == null && bCreatedAt == null) return 0;
+        if (aCreatedAt == null) return 1;
+        if (bCreatedAt == null) return -1;
+        return bCreatedAt.compareTo(aCreatedAt);
+      });
+      return CouncilListSnapshot(
+        councils: councils,
+        isFromCache: snapshot.metadata.isFromCache,
+      );
+    });
+  }
+
+  bool _isVisiblePublicCouncil(CouncilModel council) {
+    final id = council.id;
+    return !id.startsWith('demo_laundry_') || id == publicDemoCouncilId;
   }
 
   Future<CouncilPage> fetchCouncilsPage({
@@ -152,7 +185,7 @@ class FirebaseCouncilRepository {
       query = query.where('status', isEqualTo: 'active');
     }
 
-    if (category != null && category.isNotEmpty && category != 'Ø§Ù„ÙƒÙ„') {
+    if (category != null && category.isNotEmpty && category != 'الكل') {
       query = query.where('categoryId', isEqualTo: category);
     }
 
@@ -160,9 +193,13 @@ class FirebaseCouncilRepository {
     if (cursor != null) query = query.startAfterDocument(cursor);
 
     final snapshot = await query.limit(safePageSize + 1).get();
-    final visibleDocs = snapshot.docs.take(safePageSize).toList(growable: false);
+    final visibleDocs =
+        snapshot.docs.take(safePageSize).toList(growable: false);
     return CouncilPage(
-      items: visibleDocs.map(CouncilModel.fromFirestore).toList(growable: false),
+      items: visibleDocs
+          .map(CouncilModel.fromFirestore)
+          .where(_isVisiblePublicCouncil)
+          .toList(growable: false),
       nextCursor: visibleDocs.isEmpty ? cursor : visibleDocs.last,
       hasMore: snapshot.docs.length > safePageSize,
     );
@@ -190,6 +227,7 @@ class FirebaseCouncilRepository {
       final councils = snapshot.docs
           .map(CouncilModel.fromFirestore)
           .where((council) => council.status != CouncilStatus.closed)
+          .where(_isVisiblePublicCouncil)
           .where((council) => !privateOnly || council.isPrivate)
           .toList(growable: false);
       councils.sort((a, b) {
@@ -288,8 +326,8 @@ class FirebaseCouncilRepository {
       }
       ids.sort(
         (a, b) => commentsByCouncilId[a]!.minutesAgo.compareTo(
-          commentsByCouncilId[b]!.minutesAgo,
-        ),
+              commentsByCouncilId[b]!.minutesAgo,
+            ),
       );
 
       final councils = await _fetchCouncilsByIds(ids);
@@ -321,10 +359,7 @@ class FirebaseCouncilRepository {
 
     final councils = <CouncilModel>[];
     for (var index = 0; index < uniqueIds.length; index += 10) {
-      final chunk = uniqueIds
-          .skip(index)
-          .take(10)
-          .toList(growable: false);
+      final chunk = uniqueIds.skip(index).take(10).toList(growable: false);
       try {
         final snapshot = await _firestore.councils
             .where(FieldPath.documentId, whereIn: chunk)
@@ -339,59 +374,44 @@ class FirebaseCouncilRepository {
     return uniqueIds
         .map((id) => byId[id])
         .whereType<CouncilModel>()
+        .where(_isVisiblePublicCouncil)
         .toList(growable: false);
   }
 
   Stream<CouncilModel?> watchCouncil(String councilId) {
     return _firestore.council(councilId).snapshots().map((snapshot) {
       if (!snapshot.exists) return null;
-      return CouncilModel.fromFirestore(snapshot);
+      final council = CouncilModel.fromFirestore(snapshot);
+      return _isVisiblePublicCouncil(council) ? council : null;
     });
   }
 
   Future<CouncilModel?> fetchCouncil(String councilId) async {
     final snapshot = await _firestore.council(councilId).get();
     if (!snapshot.exists) return null;
-    return CouncilModel.fromFirestore(snapshot);
+    final council = CouncilModel.fromFirestore(snapshot);
+    return _isVisiblePublicCouncil(council) ? council : null;
   }
 
-  Future<void> ensureDemoOpportunityForUser({
-    required String uid,
-    required String ownerName,
-    String? ownerPhotoUrl,
-    String ownerAvatarEmoji = 'business:person_growth',
-  }) async {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null || currentUser.isAnonymous || currentUser.uid != uid) {
-      return;
-    }
-
+  Future<void> ensureDemoOpportunity() async {
     final callable = FirebaseFunctions.instance.httpsCallable(
       'ensureDemoOpportunity',
     );
-    await callable.call<Object?>({
-      'ownerName': ownerName.trim(),
-      'ownerPhotoUrl': ownerPhotoUrl?.trim(),
-      'ownerAvatarEmoji': ownerAvatarEmoji.trim(),
-    });
+    await callable.call<Object?>();
   }
-  Stream<List<CommentModel>> watchComments(
-    String councilId, {
-    int limit = 50,
-  }) {
+
+  Stream<List<CommentModel>> watchComments(String councilId) {
     return _firestore.comments
         .where('councilId', isEqualTo: councilId)
         .where('status', isEqualTo: 'visible')
         .orderBy('createdAt', descending: true)
-        .limit(limit)
         .snapshots()
         .map((snapshot) {
-          final comments = snapshot.docs
-              .map(CommentModel.fromFirestore)
-              .toList(growable: false);
-          comments.sort((a, b) => a.minutesAgo.compareTo(b.minutesAgo));
-          return comments;
-        });
+      final comments =
+          snapshot.docs.map(CommentModel.fromFirestore).toList(growable: false);
+      comments.sort(_compareCommentsNewestFirst);
+      return comments;
+    });
   }
 
   Stream<bool> watchConvincingVote({
@@ -438,7 +458,7 @@ class FirebaseCouncilRepository {
     });
   }
 
-  Future<String> createCouncil({
+  Future<CreatedCouncilResult> createCouncil({
     required String title,
     required String description,
     required String category,
@@ -522,40 +542,59 @@ class FirebaseCouncilRepository {
 
     if (pendingImageFiles.isNotEmpty) {
       try {
-        final imageUrls = await _uploadCouncilImages(
+        final uploadResult = await _uploadCouncilImages(
           councilId: doc.id,
           ownerId: ownerId,
           imageFiles: pendingImageFiles,
         );
-        if (imageUrls.isNotEmpty) {
+        if (uploadResult.imageUrls.isNotEmpty) {
           await doc.update({
-            'coverImageUrl': imageUrls.first,
-            'coverThumbnailUrl': imageUrls.first,
-            'coverMediumUrl': imageUrls.first,
-            'imageUrls': imageUrls,
-            'thumbnailUrls': imageUrls,
-            'mediumImageUrls': imageUrls,
-            'imagesCount': imageUrls.length,
+            'coverImageUrl': uploadResult.imageUrls.first,
+            'coverThumbnailUrl': uploadResult.thumbnailUrls.first,
+            'coverMediumUrl': uploadResult.mediumImageUrls.first,
+            'imageUrls': uploadResult.imageUrls,
+            'thumbnailUrls': uploadResult.thumbnailUrls,
+            'mediumImageUrls': uploadResult.mediumImageUrls,
+            'imagesCount': uploadResult.imageUrls.length,
             'updatedAt': FieldValue.serverTimestamp(),
           });
         }
+        return CreatedCouncilResult(
+          id: doc.id,
+          imageUrls: uploadResult.imageUrls,
+          thumbnailUrls: uploadResult.thumbnailUrls,
+          mediumImageUrls: uploadResult.mediumImageUrls,
+        );
       } catch (_) {
         await doc.delete();
         rethrow;
       }
     }
 
-    return doc.id;
+    return CreatedCouncilResult(
+      id: doc.id,
+      imageUrls: const <String>[],
+      thumbnailUrls: const <String>[],
+      mediumImageUrls: const <String>[],
+    );
   }
 
-  Future<List<String>> _uploadCouncilImages({
+  Future<_CouncilImageUploadResult> _uploadCouncilImages({
     required String councilId,
     required String ownerId,
     required List<XFile> imageFiles,
   }) async {
-    if (imageFiles.isEmpty) return const [];
+    if (imageFiles.isEmpty) {
+      return const _CouncilImageUploadResult(
+        imageUrls: <String>[],
+        thumbnailUrls: <String>[],
+        mediumImageUrls: <String>[],
+      );
+    }
 
     final urls = <String>[];
+    final thumbnailUrls = <String>[];
+    final mediumUrls = <String>[];
     final limitedFiles = imageFiles.take(10).toList(growable: false);
     for (var index = 0; index < limitedFiles.length; index++) {
       final image = limitedFiles[index];
@@ -570,18 +609,82 @@ class FirebaseCouncilRepository {
       }
 
       final extension = _imageExtension(image.name, image.mimeType);
-      final fileName = '${DateTime.now().microsecondsSinceEpoch}_$index.$extension';
+      final fileName =
+          '${DateTime.now().microsecondsSinceEpoch}_$index.$extension';
       final ref = _firestore.councilImageRef(councilId, ownerId, fileName);
-      await ref.putData(
-        bytes,
-        SettableMetadata(
-          contentType: image.mimeType ?? _contentTypeForExtension(extension),
-        ),
-      );
-      urls.add(await ref.getDownloadURL());
+      final thumbnailBytes = await _resizedPngBytes(bytes, maxLongSide: 360);
+      final thumbnailRef = thumbnailBytes == null
+          ? null
+          : _firestore.councilImageRef(
+              councilId,
+              ownerId,
+              'thumb_${DateTime.now().microsecondsSinceEpoch}_$index.png',
+            );
+      final originalUpload = ref
+          .putData(
+            bytes,
+            SettableMetadata(
+              contentType:
+                  image.mimeType ?? _contentTypeForExtension(extension),
+            ),
+          )
+          .then((_) => ref.getDownloadURL());
+      final thumbnailUpload = thumbnailBytes != null && thumbnailRef != null
+          ? thumbnailRef
+              .putData(
+                thumbnailBytes,
+                SettableMetadata(contentType: 'image/png'),
+              )
+              .then((_) => thumbnailRef.getDownloadURL())
+          : Future<String?>.value();
+      final uploadedUrls = await Future.wait<String?>([
+        originalUpload,
+        thumbnailUpload,
+      ]);
+      final imageUrl = uploadedUrls[0]!;
+      urls.add(imageUrl);
+      mediumUrls.add(imageUrl);
+      thumbnailUrls.add(uploadedUrls[1] ?? imageUrl);
     }
 
-    return urls;
+    return _CouncilImageUploadResult(
+      imageUrls: urls,
+      thumbnailUrls: thumbnailUrls,
+      mediumImageUrls: mediumUrls,
+    );
+  }
+
+  Future<Uint8List?> _resizedPngBytes(
+    Uint8List bytes, {
+    required int maxLongSide,
+  }) async {
+    ui.Image? original;
+    ui.Image? resized;
+    try {
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      original = frame.image;
+      final sourceMaxSide = math.max(original.width, original.height);
+      if (sourceMaxSide <= maxLongSide) return null;
+
+      final scale = maxLongSide / sourceMaxSide;
+      final targetWidth = math.max(1, (original.width * scale).round());
+      final targetHeight = math.max(1, (original.height * scale).round());
+      final resizedCodec = await ui.instantiateImageCodec(
+        bytes,
+        targetWidth: targetWidth,
+        targetHeight: targetHeight,
+      );
+      final resizedFrame = await resizedCodec.getNextFrame();
+      resized = resizedFrame.image;
+      final byteData = await resized.toByteData(format: ui.ImageByteFormat.png);
+      return byteData?.buffer.asUint8List();
+    } catch (_) {
+      return null;
+    } finally {
+      original?.dispose();
+      resized?.dispose();
+    }
   }
 
   String _imageExtension(String name, String? mimeType) {
@@ -607,6 +710,18 @@ class FirebaseCouncilRepository {
         return 'image/jpeg';
     }
   }
+
+  int _compareCommentsNewestFirst(CommentModel a, CommentModel b) {
+    final aCreatedAt = a.createdAt;
+    final bCreatedAt = b.createdAt;
+    if (aCreatedAt != null && bCreatedAt != null) {
+      return bCreatedAt.compareTo(aCreatedAt);
+    }
+    if (aCreatedAt != null) return -1;
+    if (bCreatedAt != null) return 1;
+    return a.minutesAgo.compareTo(b.minutesAgo);
+  }
+
   Future<void> refreshCouncilVisibility({required String councilId}) async {
     final user = _auth.currentUser;
     if (user == null) {

@@ -11,6 +11,7 @@ import '../../core/widgets/premium_background.dart';
 import '../../core/widgets/result_bar.dart';
 import '../../core/widgets/relative_time_text.dart';
 import '../../data/models/council_model.dart';
+import '../../data/repositories/council_repository.dart';
 import '../../data/repositories/firebase_council_repository.dart';
 
 enum _ActivityFilter {
@@ -139,9 +140,8 @@ class _FilterChip extends StatelessWidget {
             color: selected ? AppColors.primaryDarkGreen : AppColors.cardWhite,
             borderRadius: BorderRadius.circular(15),
             border: Border.all(
-              color: selected
-                  ? AppColors.primaryDarkGreen
-                  : AppColors.borderBeige,
+              color:
+                  selected ? AppColors.primaryDarkGreen : AppColors.borderBeige,
             ),
           ),
           child: Row(
@@ -187,12 +187,25 @@ class _ActivityList extends StatelessWidget {
   Widget build(BuildContext context) {
     switch (filter) {
       case _ActivityFilter.created:
-        return _buildActivityStream<CouncilModel>(
-          stream: FirebaseCouncilRepository.instance.watchUserCouncils(uid: uid),
-          itemBuilder: (council) => _ActivityCouncilCard(
-            council: council,
-            onOpen: () => onOpenCouncil(council.id),
-          ),
+        return AnimatedBuilder(
+          animation: CouncilRepository.instance,
+          builder: (context, _) {
+            final localCreatedCouncils = _localCreatedCouncils(uid);
+            return _buildActivityStream<CouncilModel>(
+              stream: FirebaseCouncilRepository.instance.watchUserCouncils(
+                uid: uid,
+              ),
+              initialData: localCreatedCouncils,
+              mergeItems: (remoteCouncils) => _mergeCreatedCouncils(
+                localCreatedCouncils,
+                remoteCouncils,
+              ),
+              itemBuilder: (council) => _ActivityCouncilCard(
+                council: council,
+                onOpen: () => onOpenCouncil(council.id),
+              ),
+            );
+          },
         );
       case _ActivityFilter.voted:
         return _buildActivityStream<VotedCouncilActivity>(
@@ -226,15 +239,22 @@ class _ActivityList extends StatelessWidget {
   Widget _buildActivityStream<T>({
     required Stream<List<T>> stream,
     required Widget Function(T item) itemBuilder,
+    List<T>? initialData,
+    List<T> Function(List<T> items)? mergeItems,
   }) {
     return StreamBuilder<List<T>>(
       stream: stream,
+      initialData: initialData,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        final rawItems = snapshot.data ?? initialData ?? <T>[];
+        final items = mergeItems?.call(rawItems) ?? rawItems;
+
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            items.isEmpty) {
           return const _ActivityLoadingState();
         }
 
-        if (snapshot.hasError) {
+        if (snapshot.hasError && items.isEmpty) {
           return const _ActivityEmptyState(
             icon: Icons.error_outline_rounded,
             title: 'تعذر تحميل النشاط',
@@ -242,7 +262,6 @@ class _ActivityList extends StatelessWidget {
           );
         }
 
-        final items = snapshot.data ?? <T>[];
         if (items.isEmpty) {
           if (kDebugMode) {
             return _ActivityPreviewList(
@@ -263,7 +282,8 @@ class _ActivityList extends StatelessWidget {
             horizontalPadding,
             4,
             horizontalPadding,
-            AppSizes.of(context).bottomNavHeight + 18 +
+            AppSizes.of(context).bottomNavHeight +
+                18 +
                 MediaQuery.viewPaddingOf(context).bottom,
           ),
           itemCount: items.length,
@@ -277,6 +297,41 @@ class _ActivityList extends StatelessWidget {
 
   String _voteLabel(CouncilModel council, VoteOption option) {
     return OpportunityVoteCopy.forCouncil(council).labelFor(option);
+  }
+
+  List<CouncilModel> _localCreatedCouncils(String uid) {
+    final councils = CouncilRepository.instance.councils
+        .where((council) => council.createdBy == uid)
+        .toList(growable: false);
+    councils.sort(_compareCouncilsLatestFirst);
+    return councils;
+  }
+
+  List<CouncilModel> _mergeCreatedCouncils(
+    List<CouncilModel> localCouncils,
+    List<CouncilModel> remoteCouncils,
+  ) {
+    final byId = <String, CouncilModel>{
+      for (final council in remoteCouncils) council.id: council,
+    };
+    for (final council in localCouncils) {
+      byId.putIfAbsent(council.id, () => council);
+    }
+
+    final councils = byId.values.toList(growable: false);
+    councils.sort(_compareCouncilsLatestFirst);
+    return councils;
+  }
+
+  int _compareCouncilsLatestFirst(CouncilModel a, CouncilModel b) {
+    final aCreatedAt = a.createdAt;
+    final bCreatedAt = b.createdAt;
+    if (aCreatedAt != null && bCreatedAt != null) {
+      return bCreatedAt.compareTo(aCreatedAt);
+    }
+    if (aCreatedAt != null) return -1;
+    if (bCreatedAt != null) return 1;
+    return 0;
   }
 
   IconData get _emptyIcon {
@@ -345,7 +400,8 @@ class _ActivityPreviewList extends StatelessWidget {
           ),
           noteIcon: Icons.how_to_vote_outlined,
           noteLabel: 'رأيك',
-          noteText: OpportunityVoteCopy.forCategory('فرص للتقبيل').labelFor(VoteOption.support),
+          noteText: OpportunityVoteCopy.forCategory('فرص للتقبيل')
+              .labelFor(VoteOption.support),
           onOpen: () {},
         ),
       _ActivityFilter.commented => _ActivityCouncilCard(
@@ -368,7 +424,8 @@ class _ActivityPreviewList extends StatelessWidget {
         horizontalPadding,
         4,
         horizontalPadding,
-        AppSizes.of(context).bottomNavHeight + 18 +
+        AppSizes.of(context).bottomNavHeight +
+            18 +
             MediaQuery.viewPaddingOf(context).bottom,
       ),
       children: [card],
@@ -389,7 +446,7 @@ class _ActivityPreviewList extends StatelessWidget {
       category: 'فرص للتقبيل',
       status: CouncilStatus.active,
       participants: 64,
-      commentsCount: 12,
+      commentsCount: 0,
       votesCount: 64,
       supportPercent: support,
       againstPercent: against,

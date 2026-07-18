@@ -11,12 +11,19 @@ class AuthService {
   AuthService._();
 
   static final AuthService instance = AuthService._();
+  static const String _iosGoogleClientId =
+      '163358763366-ooooamp4lkcd1ie1b185bl0gba2tsm7b.apps.googleusercontent.com';
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   GoogleSignIn? _googleSignIn;
 
   GoogleSignIn get _nativeGoogleSignIn {
+    final usesAppleGoogleClientId =
+        defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.macOS;
+
     return _googleSignIn ??= GoogleSignIn(
+      clientId: usesAppleGoogleClientId ? _iosGoogleClientId : null,
       scopes: const ['email', 'profile'],
     );
   }
@@ -98,16 +105,39 @@ class AuthService {
 
     final rawNonce = _generateNonce();
     final nonce = _sha256ofString(rawNonce);
-    final appleCredential = await SignInWithApple.getAppleIDCredential(
-      scopes: const [
-        AppleIDAuthorizationScopes.email,
-        AppleIDAuthorizationScopes.fullName,
-      ],
-      nonce: nonce,
-    );
+    late final AuthorizationCredentialAppleID appleCredential;
+    try {
+      appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: const [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: nonce,
+      );
+    } on SignInWithAppleAuthorizationException catch (error) {
+      throw FirebaseAuthException(
+        code: error.code == AuthorizationErrorCode.canceled
+            ? 'sign-in-cancelled'
+            : 'apple-sign-in-failed',
+        message: _appleAuthorizationMessage(error.code),
+      );
+    } on SignInWithAppleException {
+      throw FirebaseAuthException(
+        code: 'apple-sign-in-failed',
+        message: 'تعذر إكمال تسجيل الدخول عبر Apple. حاول مرة أخرى.',
+      );
+    }
+
+    final identityToken = appleCredential.identityToken;
+    if (identityToken == null || identityToken.isEmpty) {
+      throw FirebaseAuthException(
+        code: 'apple-token-missing',
+        message: 'تعذر استلام رمز Apple. حاول مرة أخرى.',
+      );
+    }
 
     final oauthCredential = provider.credential(
-      idToken: appleCredential.identityToken,
+      idToken: identityToken,
       rawNonce: rawNonce,
     );
 
@@ -171,6 +201,20 @@ class AuthService {
       _auth.signOut(),
       if (!kIsWeb) _nativeGoogleSignIn.signOut(),
     ]);
+  }
+
+  String _appleAuthorizationMessage(AuthorizationErrorCode code) {
+    switch (code) {
+      case AuthorizationErrorCode.canceled:
+        return 'تم إلغاء تسجيل الدخول.';
+      case AuthorizationErrorCode.invalidResponse:
+        return 'تعذر استلام استجابة صحيحة من Apple. حاول مرة أخرى.';
+      case AuthorizationErrorCode.notHandled:
+      case AuthorizationErrorCode.notInteractive:
+      case AuthorizationErrorCode.failed:
+      case AuthorizationErrorCode.unknown:
+        return 'تعذر إكمال تسجيل الدخول عبر Apple. حاول مرة أخرى.';
+    }
   }
 
   String _generateNonce([int length = 32]) {

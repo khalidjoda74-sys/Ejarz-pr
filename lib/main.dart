@@ -9,7 +9,9 @@ import 'app.dart';
 import 'core/auth/auth_controller.dart';
 import 'core/constants/app_strings.dart';
 import 'core/notifications/notification_service.dart';
+import 'data/repositories/firebase_user_repository.dart';
 import 'firebase_options.dart';
+import 'navigation/app_routes.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,7 +46,10 @@ class _StartupGate extends StatefulWidget {
 }
 
 class _StartupGateState extends State<_StartupGate> {
-  late Future<void> _startup;
+  late Future<String> _startup;
+
+  static const _minimumStartupSplashTime = Duration(seconds: 3);
+  static const _routeDecisionTimeout = Duration(milliseconds: 2800);
 
   @override
   void initState() {
@@ -52,7 +57,24 @@ class _StartupGateState extends State<_StartupGate> {
     _startup = _initialize();
   }
 
-  Future<void> _initialize() async {
+  Future<String> _initialize() async {
+    final routeFuture = _initializeServicesAndResolveRoute();
+    await Future.wait<void>([
+      routeFuture.then<void>((_) {}),
+      Future<void>.delayed(_minimumStartupSplashTime),
+    ]);
+    return routeFuture;
+  }
+
+  Future<String> _initializeServicesAndResolveRoute() async {
+    await _initializeServices();
+    return _resolveInitialRoute().timeout(
+      _routeDecisionTimeout,
+      onTimeout: () => AppRoutes.main,
+    );
+  }
+
+  Future<void> _initializeServices() async {
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
     ]).timeout(const Duration(seconds: 2), onTimeout: () {});
@@ -67,6 +89,24 @@ class _StartupGateState extends State<_StartupGate> {
 
     await _runNonCriticalStartupTask(NotificationService.instance.initialize());
     await _runNonCriticalStartupTask(AuthController.instance.initialize());
+  }
+
+  Future<String> _resolveInitialRoute() async {
+    final auth = AuthController.instance;
+    final uid = auth.user?.uid;
+
+    if (auth.isSignedIn && uid != null) {
+      try {
+        final needsIdentity =
+            await FirebaseUserRepository.instance.needsIdentitySetup(uid);
+        if (needsIdentity) return AppRoutes.nickname;
+        auth.markIdentityReady(uid);
+      } catch (_) {
+        return AppRoutes.main;
+      }
+    }
+
+    return AppRoutes.main;
   }
 
   Future<void> _runNonCriticalStartupTask(Future<void> task) async {
@@ -85,12 +125,12 @@ class _StartupGateState extends State<_StartupGate> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<void>(
+    return FutureBuilder<String>(
       future: _startup,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.done &&
             !snapshot.hasError) {
-          return const MajalisnaApp();
+          return MajalisnaApp(initialRoute: snapshot.data ?? AppRoutes.main);
         }
 
         if (snapshot.hasError) {

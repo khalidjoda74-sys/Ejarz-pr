@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../../core/constants/app_strings.dart';
 import '../../core/auth/auth_controller.dart';
-import '../../core/theme/app_colors.dart';
 import '../../data/repositories/firebase_user_repository.dart';
 import '../../navigation/app_routes.dart';
 
@@ -13,30 +11,15 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _fade;
-  late final Animation<double> _scale;
-  Timer? _navTimer;
+class _SplashScreenState extends State<SplashScreen> {
   bool _didNavigate = false;
 
-  static const _minimumSplashTime = Duration(milliseconds: 1600);
   static const _routeDecisionTimeout = Duration(milliseconds: 2800);
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 850),
-    );
-    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
-    _scale = Tween<double>(begin: .92, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
-    );
-    _controller.forward();
-    _navTimer = Timer(_minimumSplashTime, () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_openNextScreen());
     });
   }
@@ -73,36 +56,10 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   @override
-  void dispose() {
-    _navTimer?.cancel();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final logoWidth = (screenWidth * .46).clamp(165.0, 220.0).toDouble();
-
-    return Scaffold(
-      backgroundColor: AppColors.cardWhite,
-      body: SafeArea(
-        child: Center(
-          child: FadeTransition(
-            opacity: _fade,
-            child: ScaleTransition(
-              scale: _scale,
-              child: Image.asset(
-                'assets/images/forsa_pro_logo_header.png',
-                width: logoWidth,
-                fit: BoxFit.contain,
-                filterQuality: FilterQuality.high,
-                semanticLabel: AppStrings.appName,
-              ),
-            ),
-          ),
-        ),
-      ),
+    return const Scaffold(
+      backgroundColor: Colors.white,
+      body: SizedBox.expand(),
     );
   }
 }

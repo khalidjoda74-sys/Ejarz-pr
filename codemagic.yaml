@@ -36,10 +36,15 @@ workflows:
 
       - name: Build signed iOS IPA
         script: |
-          IOS_BUILD_NUMBER=${BUILD_NUMBER:-9}
-          if [ "$IOS_BUILD_NUMBER" -lt 9 ]; then
-            IOS_BUILD_NUMBER=9
+          PUBSPEC_VERSION=$(awk '/^version:/ {print $2; exit}' pubspec.yaml)
+          IOS_BUILD_NUMBER=${PUBSPEC_VERSION##*+}
+          if [ "$IOS_BUILD_NUMBER" = "$PUBSPEC_VERSION" ] || ! [[ "$IOS_BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
+            IOS_BUILD_NUMBER=11
           fi
+          if [ "$IOS_BUILD_NUMBER" -lt 11 ]; then
+            IOS_BUILD_NUMBER=11
+          fi
+          echo "Building iOS 1.0 ($IOS_BUILD_NUMBER)"
           flutter build ipa --release --build-name=1.0 --build-number=$IOS_BUILD_NUMBER --export-options-plist=/Users/builder/export_options.plist
 
     artifacts:

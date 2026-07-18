@@ -22,6 +22,7 @@ class AuthController extends ChangeNotifier {
   bool _busy = false;
   String? _errorMessage;
   final Set<String> _identityReadyUids = <String>{};
+  final Set<String> _identityRequiredUids = <String>{};
 
   User? get user => _user;
 
@@ -42,8 +43,19 @@ class AuthController extends ChangeNotifier {
     return uid != null && uid.isNotEmpty && _identityReadyUids.contains(uid);
   }
 
+  bool isIdentityRequired(String? uid) {
+    return uid != null && uid.isNotEmpty && _identityRequiredUids.contains(uid);
+  }
+
+  void markIdentityRequired(String? uid) {
+    if (uid == null || uid.isEmpty) return;
+    _identityReadyUids.remove(uid);
+    _identityRequiredUids.add(uid);
+  }
+
   void markIdentityReady(String? uid) {
     if (uid == null || uid.isEmpty) return;
+    _identityRequiredUids.remove(uid);
     _identityReadyUids.add(uid);
   }
 
@@ -89,18 +101,23 @@ class AuthController extends ChangeNotifier {
 
   Future<void> finishAccountDeletion() async {
     final uid = _user?.uid;
-    if (uid != null) _identityReadyUids.remove(uid);
+    if (uid != null) {
+      _identityReadyUids.remove(uid);
+      _identityRequiredUids.remove(uid);
+    }
     await _service.signOut();
     _user = null;
     _errorMessage = null;
     notifyListeners();
   }
+
   Future<void> signOut() async {
     _setBusy(true);
     try {
       final uid = _user?.uid;
       if (uid != null) {
         _identityReadyUids.remove(uid);
+        _identityRequiredUids.remove(uid);
         try {
           await NotificationService.instance.disableForSignedOutUser(uid);
         } catch (_) {}
@@ -122,6 +139,9 @@ class AuthController extends ChangeNotifier {
     try {
       final credential = await signIn();
       _user = credential.user;
+      if (credential.additionalUserInfo?.isNewUser == true) {
+        markIdentityRequired(_user?.uid);
+      }
       unawaited(_syncFirestoreUser(_user));
       final uid = _user?.uid;
       if (uid != null) {
