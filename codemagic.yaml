@@ -40,6 +40,7 @@ workflows:
       - name: Build signed iOS IPA
         script: |
           PUBSPEC_VERSION=$(awk '/^version:/ {print $2; exit}' pubspec.yaml)
+          IOS_BUILD_NAME=${PUBSPEC_VERSION%%+*}
           IOS_BUILD_NUMBER=${PUBSPEC_VERSION##*+}
           if [ "$IOS_BUILD_NUMBER" = "$PUBSPEC_VERSION" ] || ! [[ "$IOS_BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
             echo "A numeric iOS build number is required in pubspec.yaml."
@@ -49,8 +50,8 @@ workflows:
             echo "Build number must be 12 or newer. Found: $IOS_BUILD_NUMBER"
             exit 1
           fi
-          echo "Building iOS 1.0 ($IOS_BUILD_NUMBER)"
-          flutter build ipa --release --build-name=1.0 --build-number=$IOS_BUILD_NUMBER --export-options-plist=/Users/builder/export_options.plist
+          echo "Building iOS $IOS_BUILD_NAME ($IOS_BUILD_NUMBER)"
+          flutter build ipa --release --build-name=$IOS_BUILD_NAME --build-number=$IOS_BUILD_NUMBER --export-options-plist=/Users/builder/export_options.plist
 
       - name: Verify Sign in with Apple entitlement
         script: |
@@ -73,6 +74,7 @@ workflows:
           fi
 
           PUBSPEC_VERSION=$(awk '/^version:/ {print $2; exit}' pubspec.yaml)
+          EXPECTED_BUILD_NAME=${PUBSPEC_VERSION%%+*}
           EXPECTED_BUILD_NUMBER=${PUBSPEC_VERSION##*+}
           SIGNED_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")
           SIGNED_BUILD_NAME=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Info.plist")
@@ -81,8 +83,8 @@ workflows:
             echo "Unexpected bundle ID: $SIGNED_BUNDLE_ID"
             exit 1
           fi
-          if [ "$SIGNED_BUILD_NAME" != "1.0" ]; then
-            echo "Unexpected App Store version: $SIGNED_BUILD_NAME"
+          if [ "$SIGNED_BUILD_NAME" != "$EXPECTED_BUILD_NAME" ]; then
+            echo "Unexpected App Store version: $SIGNED_BUILD_NAME (expected $EXPECTED_BUILD_NAME)"
             exit 1
           fi
           if [ "$SIGNED_BUILD_NUMBER" != "$EXPECTED_BUILD_NUMBER" ]; then
