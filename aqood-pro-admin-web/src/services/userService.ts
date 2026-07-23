@@ -31,6 +31,9 @@ export async function listUserProperties(uid: string) {
 }
 
 export async function setUserBlocked(admin: AdminUser, user: AppUser, blocked: boolean, reason?: string) {
+  if (blocked && !String(reason ?? '').trim()) {
+    throw new Error('اكتب سبب إيقاف الحساب ليظهر للمستخدم.');
+  }
   const payload = {
     status: blocked ? 'blocked' : 'active',
     blocked,

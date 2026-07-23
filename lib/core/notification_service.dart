@@ -31,6 +31,28 @@ class AppNotificationService {
 
   static void Function(Map<String, dynamic> data)? onNotificationTap;
   static bool _initialized = false;
+  static Map<String, dynamic>? _pendingNotificationTap;
+
+  static void deferNotificationTap(Map<String, dynamic> data) {
+    _pendingNotificationTap = Map<String, dynamic>.from(data);
+  }
+
+  static void flushPendingNotificationTap() {
+    final data = _pendingNotificationTap;
+    final handler = onNotificationTap;
+    if (data == null || handler == null) return;
+    _pendingNotificationTap = null;
+    handler(Map<String, dynamic>.from(data));
+  }
+
+  static void _dispatchNotificationTap(Map<String, dynamic> data) {
+    final handler = onNotificationTap;
+    if (handler == null) {
+      deferNotificationTap(data);
+      return;
+    }
+    handler(data);
+  }
 
   static Future<void> initialize() async {
     if (_initialized) return;
@@ -61,7 +83,7 @@ class AppNotificationService {
           try {
             final data = jsonDecode(payload);
             if (data is Map) {
-              onNotificationTap?.call(Map<String, dynamic>.from(data));
+              _dispatchNotificationTap(Map<String, dynamic>.from(data));
             }
           } catch (_) {}
         },
@@ -70,16 +92,29 @@ class AppNotificationService {
           .resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>()
           ?.createNotificationChannel(_androidChannel);
+      final launchDetails =
+          await _localNotifications.getNotificationAppLaunchDetails();
+      final launchPayload = launchDetails?.notificationResponse?.payload;
+      if (launchDetails?.didNotificationLaunchApp == true &&
+          launchPayload != null &&
+          launchPayload.trim().isNotEmpty) {
+        try {
+          final data = jsonDecode(launchPayload);
+          if (data is Map) {
+            deferNotificationTap(Map<String, dynamic>.from(data));
+          }
+        } catch (_) {}
+      }
     }
 
     FirebaseMessaging.onMessage.listen(_showForegroundMessage);
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
-      onNotificationTap?.call(_messageData(message));
+      _dispatchNotificationTap(_messageData(message));
     });
 
     try {
       final initial = await FirebaseMessaging.instance.getInitialMessage();
-      if (initial != null) onNotificationTap?.call(_messageData(initial));
+      if (initial != null) deferNotificationTap(_messageData(initial));
     } catch (_) {}
   }
 

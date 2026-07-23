@@ -42,12 +42,10 @@ class _DemoPaymentScreenState extends State<DemoPaymentScreen> {
   Widget build(BuildContext context) {
     final result = _result;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('دفع رسوم العقد'),
-        leading: IconButton(
-          onPressed: _processing ? null : () => Navigator.of(context).pop(),
-          icon: const Icon(Icons.arrow_forward_rounded),
-        ),
+      appBar: DetailAppBar(
+        title: 'دفع رسوم العقد',
+        backEnabled: !_processing,
+        onBack: _processing ? null : () => Navigator.of(context).pop(),
       ),
       body: SafeArea(
         child: ResponsiveContent(

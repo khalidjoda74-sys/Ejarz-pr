@@ -9,8 +9,8 @@ export function MobileBottomNav() {
     {open && <div className="mobile-more-backdrop" onClick={() => setOpen(false)} />}
     {open && <div className="mobile-more-panel">
       <div className="mobile-more-header">
-        <strong>?? ????? ??????</strong>
-        <button type="button" onClick={() => setOpen(false)}>?????</button>
+        <strong>كل أقسام الإدارة</strong>
+        <button type="button" onClick={() => setOpen(false)}>إغلاق</button>
       </div>
       <div className="mobile-more-grid">
         {navItems.map((item) => <NavLink key={item.to} to={item.to} onClick={() => setOpen(false)}>
@@ -25,8 +25,8 @@ export function MobileBottomNav() {
         <span>{item.label}</span>
       </NavLink>)}
       <button type="button" className={open ? 'active' : ''} onClick={() => setOpen((value) => !value)}>
-        <span>?</span>
-        <span>??????</span>
+        <span>☰</span>
+        <span>المزيد</span>
       </button>
     </nav>
   </>;

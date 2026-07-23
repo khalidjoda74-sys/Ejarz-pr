@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -15,13 +15,17 @@ import 'notification_service.dart';
 
 class _PendingContractSubmission {
   final String localId;
+  final String remoteDraftId;
   final ContractDraft draft;
   final ContractStatus status;
+  final DraftProgress progress;
 
   const _PendingContractSubmission({
     required this.localId,
+    this.remoteDraftId = '',
     required this.draft,
     required this.status,
+    this.progress = const DraftProgress(),
   });
 }
 
@@ -106,6 +110,7 @@ class AppController extends ChangeNotifier {
       <_PendingContractSubmission>[];
   final List<_PendingPropertySave> _pendingPropertySaves =
       <_PendingPropertySave>[];
+  final Map<String, String> _syncedDraftIds = <String, String>{};
   FirebaseRepository? _repository;
   StreamSubscription<User?>? _authSubscription;
   StreamSubscription<bool>? _onlineStateSubscription;
@@ -242,7 +247,7 @@ class AppController extends ChangeNotifier {
           _handleOnlineState,
           onError: (Object error) => _handleUserStreamError(
             error,
-            'أنت غير متصل. البيانات المعروضة من آخر تحديث.',
+            _serverReachabilityCheckMessage,
           ),
         );
     _contractsSubscription =
@@ -259,10 +264,11 @@ class AppController extends ChangeNotifier {
       }
       lastSyncedAt = DateTime.now();
       notifyListeners();
-    }, onError: (Object error) => _handleUserStreamError(
-              error,
-              'تعذر تحديث العقود الآن. يتم عرض آخر بيانات محفوظة.',
-            ));
+    },
+            onError: (Object error) => _handleUserStreamError(
+                  error,
+                  'تعذر تحديث العقود الآن. يتم عرض آخر بيانات محفوظة.',
+                ));
     _propertiesSubscription =
         repository.watchUserProperties(user.uid).listen((items) {
       final pendingIds =
@@ -280,10 +286,11 @@ class AppController extends ChangeNotifier {
       }
       lastSyncedAt = DateTime.now();
       notifyListeners();
-    }, onError: (Object error) => _handleUserStreamError(
-              error,
-              'تعذر تحديث العقارات الآن. يتم عرض آخر بيانات محفوظة.',
-            ));
+    },
+            onError: (Object error) => _handleUserStreamError(
+                  error,
+                  'تعذر تحديث العقارات الآن. يتم عرض آخر بيانات محفوظة.',
+                ));
     _notificationsSubscription =
         repository.watchUserNotifications(user.uid).listen((items) {
       notifications
@@ -291,10 +298,11 @@ class AppController extends ChangeNotifier {
         ..addAll(items);
       lastSyncedAt = DateTime.now();
       notifyListeners();
-    }, onError: (Object error) => _handleUserStreamError(
-              error,
-              'تعذر تحديث الإشعارات الآن. يتم عرض آخر بيانات محفوظة.',
-            ));
+    },
+            onError: (Object error) => _handleUserStreamError(
+                  error,
+                  'تعذر تحديث الإشعارات الآن. يتم عرض آخر بيانات محفوظة.',
+                ));
     _supportTicketsSubscription =
         repository.watchUserSupportTickets(user.uid).listen((items) {
       supportTickets
@@ -302,10 +310,11 @@ class AppController extends ChangeNotifier {
         ..addAll(items);
       lastSyncedAt = DateTime.now();
       notifyListeners();
-    }, onError: (Object error) => _handleUserStreamError(
-              error,
-              'تعذر تحديث الدعم الفني الآن. يتم عرض آخر بيانات محفوظة.',
-            ));
+    },
+            onError: (Object error) => _handleUserStreamError(
+                  error,
+                  'تعذر تحديث الدعم الفني الآن. يتم عرض آخر بيانات محفوظة.',
+                ));
   }
 
   void _cancelUserStreams() {
@@ -346,9 +355,9 @@ class AppController extends ChangeNotifier {
   void _handleOnlineState(bool online) {
     if (online) {
       _markOnline();
-    } else {
+    } else if (offlineMode) {
       _scheduleServerReachabilityCheck(
-        'أنت غير متصل. البيانات المعروضة من آخر تحديث.',
+        _serverReachabilityCheckMessage,
       );
     }
   }
@@ -440,7 +449,12 @@ class AppController extends ChangeNotifier {
           customerEmail: userEmail,
           draft: pending.draft,
           status: pending.status,
+          existingDraftId: pending.remoteDraftId,
+          progress: pending.progress,
         );
+        if (pending.localId != synced.id) {
+          _syncedDraftIds[pending.localId] = synced.id;
+        }
         _pendingContractSubmissions.remove(pending);
         contracts.removeWhere(
           (item) => item.id == synced.id && item.id != pending.localId,
@@ -668,22 +682,24 @@ class AppController extends ChangeNotifier {
         totalFees: 398,
         timeline: _timelineFor(ContractStatus.missingData),
         customerVisibleNote:
-            'يوجد نقص مطلوب قبل متابعة معالجة الطلب. يرجى استكمال البيانات الموضحة.',
+            'توجد ملاحظات مراجعة على بعض البيانات والمستندات. يرجى الاطلاع عليها وإرسال التصحيح المطلوب.',
         missingRequirements: const <MissingRequirement>[
           MissingRequirement(
             id: 'MR-DEMO-01',
-            title: 'إرفاق صورة السجل التجاري',
+            title: 'السجل التجاري',
             description:
-                'السجل التجاري للمستأجر غير مرفق. أرفق صورة واضحة وحديثة للسجل.',
+                'السجل التجاري المرفق غير واضح. يرجى إعادة رفع نسخة واضحة وكاملة.',
             type: 'file',
+            issueCode: 'unclear',
             fieldPath: 'tenant.company.commercialRecordImage',
           ),
           MissingRequirement(
             id: 'MR-DEMO-02',
             title: 'رقم عداد الكهرباء',
             description:
-                'رقم عداد الكهرباء للوحدة غير مكتمل، ويجب إضافته قبل التوثيق.',
+                'تعذر التحقق من رقم عداد الكهرباء. يرجى مراجعته وإدخال القيمة الصحيحة.',
             type: 'field',
+            issueCode: 'unverifiable',
             fieldPath: 'property.unit.electricityMeter',
           ),
         ],
@@ -798,6 +814,11 @@ class AppController extends ChangeNotifier {
         timeline: _timelineFor(ContractStatus.draft),
         customerVisibleNote:
             'هذه مسودة محفوظة محليًا ويمكن إكمالها لاحقًا قبل الإرسال.',
+        draftData: _demoSavedDraft(),
+        draftProgress: const DraftProgress(
+          lastStep: 2,
+          touchedSections: <String>['contract', 'property', 'parties'],
+        ),
       ),
       ContractRecord(
         id: 'EJ-DEMO-1001',
@@ -813,12 +834,12 @@ class AppController extends ChangeNotifier {
         status: ContractStatus.rejected,
         totalFees: 398,
         timeline: _timelineFor(ContractStatus.rejected),
-        customerVisibleNote:
-            'تم إغلاق هذا الطلب في النسخة التجريبية لوجود تعارض في بيانات الملكية.',
+        rejectionReason:
+            'تعذر التحقق من تطابق بيانات وثيقة الملكية مع بيانات المؤجر.',
       ),
     ].map(_withDemoDetails));
 
-    properties.addAll(const <PropertyRecord>[
+    properties.addAll(<PropertyRecord>[
       PropertyRecord(
         id: 'PROP-001',
         title: 'عمارة النرجس',
@@ -829,7 +850,7 @@ class AppController extends ChangeNotifier {
         floors: 4,
         totalUnits: 8,
         units: <UnitRecord>[
-          UnitRecord(
+          const UnitRecord(
             number: '101',
             name: 'شقة 101',
             type: 'شقة',
@@ -837,7 +858,7 @@ class AppController extends ChangeNotifier {
             area: '145 م²',
             status: 'متاحة',
           ),
-          UnitRecord(
+          const UnitRecord(
             number: '202',
             name: 'شقة 202',
             type: 'شقة',
@@ -846,6 +867,43 @@ class AppController extends ChangeNotifier {
             status: 'مؤجرة',
           ),
         ],
+        data: PropertyData(
+          propertySource: 'عقار محفوظ',
+          ownershipDocumentNumber: '310123456789',
+          ownershipDocumentType: 'صك إلكتروني',
+          ownershipDocumentDate: '2026/06/20',
+          propertyUsage: 'سكن عوائل',
+          propertyType: 'عمارة',
+          floorsCount: '4',
+          unitsPerFloor: '2',
+          totalUnits: '8',
+          city: 'الرياض',
+          district: 'حي النرجس',
+          street: 'طريق عثمان بن عفان',
+          buildingNumber: '1234',
+          additionalNumber: '5678',
+          postalCode: '13327',
+          buildingName: 'عمارة النرجس',
+          unitNumber: '101',
+          unitName: 'شقة 101',
+          unitType: 'شقة',
+          floor: '1',
+          area: '145',
+          roomsCount: '4',
+          bathroomsCount: '3',
+          hallsCount: '1',
+          maidRoom: true,
+          kitchen: true,
+          storage: true,
+          majlis: true,
+          furnishingStatus: 'غير مؤثثة',
+          acSplit: true,
+          privateParking: true,
+          electricityMeter: '700100101',
+          waterMeter: '710100101',
+          gasMeter: '720100101',
+          notes: 'مدخل مستقل وموقف مخصص للوحدة.',
+        ),
       ),
       PropertyRecord(
         id: 'PROP-002',
@@ -857,7 +915,7 @@ class AppController extends ChangeNotifier {
         floors: 2,
         totalUnits: 1,
         units: <UnitRecord>[
-          UnitRecord(
+          const UnitRecord(
             number: '1',
             name: 'الفيلا الرئيسية',
             type: 'فيلا',
@@ -866,6 +924,44 @@ class AppController extends ChangeNotifier {
             status: 'متاحة',
           ),
         ],
+        data: PropertyData(
+          propertySource: 'عقار محفوظ',
+          ownershipDocumentNumber: '310123456790',
+          ownershipDocumentType: 'صك إلكتروني',
+          ownershipDocumentDate: '2026/05/18',
+          propertyUsage: 'سكن عوائل',
+          propertyType: 'فيلا',
+          floorsCount: '2',
+          unitsPerFloor: '1',
+          totalUnits: '1',
+          city: 'الرياض',
+          district: 'حي الياسمين',
+          street: 'شارع أنس بن مالك',
+          buildingNumber: '2468',
+          additionalNumber: '1357',
+          postalCode: '13325',
+          buildingName: 'فيلا الياسمين',
+          unitNumber: '1',
+          unitName: 'الفيلا الرئيسية',
+          unitType: 'فيلا',
+          floor: 'أرضي + أول',
+          area: '420',
+          roomsCount: '5',
+          bathroomsCount: '4',
+          hallsCount: '2',
+          maidRoom: true,
+          kitchen: true,
+          storage: true,
+          majlis: true,
+          furnishingStatus: 'غير مؤثثة',
+          acSplit: true,
+          acCentral: true,
+          privateParking: true,
+          electricityMeter: '700100102',
+          waterMeter: '710100102',
+          gasMeter: '720100102',
+          notes: 'حوش خاص ومدخل سيارة مستقل.',
+        ),
       ),
       PropertyRecord(
         id: 'PROP-003',
@@ -877,7 +973,7 @@ class AppController extends ChangeNotifier {
         floors: 12,
         totalUnits: 36,
         units: <UnitRecord>[
-          UnitRecord(
+          const UnitRecord(
             number: '8A',
             name: 'مكتب 8A',
             type: 'مكتب إداري',
@@ -886,6 +982,41 @@ class AppController extends ChangeNotifier {
             status: 'متاح',
           ),
         ],
+        data: PropertyData(
+          propertySource: 'عقار محفوظ',
+          ownershipDocumentNumber: '310123456791',
+          ownershipDocumentType: 'صك إلكتروني',
+          ownershipDocumentDate: '2026/04/12',
+          propertyUsage: 'تجاري',
+          propertyType: 'برج',
+          floorsCount: '12',
+          unitsPerFloor: '3',
+          totalUnits: '36',
+          city: 'الرياض',
+          district: 'العليا',
+          street: 'طريق الملك فهد',
+          buildingNumber: '8642',
+          additionalNumber: '2468',
+          postalCode: '12214',
+          buildingName: 'مكتب العليا',
+          unitNumber: '8A',
+          unitName: 'مكتب 8A',
+          unitType: 'مكتب إداري',
+          floor: '8',
+          area: '96',
+          roomsCount: '3',
+          bathroomsCount: '2',
+          hallsCount: '1',
+          kitchen: true,
+          storage: true,
+          furnishingStatus: 'مؤثثة بأثاث جديد',
+          acCentral: true,
+          privateParking: true,
+          electricityMeter: '700100103',
+          waterMeter: '710100103',
+          gasMeter: '720100103',
+          notes: 'واجهة زجاجية ومواقف مخصصة للموظفين والعملاء.',
+        ),
       ),
     ]);
 
@@ -911,7 +1042,7 @@ class AppController extends ChangeNotifier {
         actionPayload: const <String, dynamic>{'contractId': 'EJ-DEMO-1008'},
         title: 'يوجد نقص مطلوب',
         body:
-            'يرجى إرفاق صورة السجل التجاري وإكمال رقم عداد الكهرباء لعقد مكتب العليا.',
+            'يرجى إعادة رفع السجل التجاري بصورة واضحة ومراجعة رقم عداد الكهرباء لعقد مكتب العليا.',
         time: 'منذ 24 دقيقة',
         icon: Icons.error_outline_rounded,
         color: const Color(0xFFC94B4B),
@@ -1001,6 +1132,19 @@ class AppController extends ChangeNotifier {
       propertyDetails: _demoPropertyDetails(contract),
       attachmentFiles: _demoAttachmentFiles(contract),
     );
+  }
+
+  static ContractDraft _demoSavedDraft() {
+    final draft = ContractDraft();
+    draft.property
+      ..ownershipDocumentNumber = '310123456789'
+      ..ownershipDocumentDate = '2026/06/20';
+    draft.lessor
+      ..fullName = 'عميل النسخة التجريبية'
+      ..idNumber = '1012345678'
+      ..birthDate = '1990/01/01'
+      ..mobile = '0501234567';
+    return draft;
   }
 
   static Map<String, String> _demoContractDetails(ContractRecord contract) {
@@ -1110,13 +1254,41 @@ class AppController extends ChangeNotifier {
         ),
       ];
     }
+    if (status == ContractStatus.rejected) {
+      return const <StatusTimelineItem>[
+        StatusTimelineItem(
+          title: 'تم استلام الطلب',
+          subtitle: 'تم استلام الطلب بنجاح',
+          date: '2026/06/20',
+          time: '10:30 ص',
+          completed: true,
+        ),
+        StatusTimelineItem(
+          title: 'قيد المعالجة',
+          subtitle: 'تمت مراجعة بيانات الطلب',
+          date: '2026/06/20',
+          time: '11:15 ص',
+          completed: true,
+          eventStatus: ContractStatus.processing,
+        ),
+        StatusTimelineItem(
+          title: 'تم رفض الطلب نهائيًا',
+          subtitle:
+              'سبب الرفض: تعذر التحقق من تطابق بيانات وثيقة الملكية مع بيانات المؤجر.',
+          date: '2026/06/20',
+          time: '01:10 م',
+          current: true,
+          eventStatus: ContractStatus.rejected,
+        ),
+      ];
+    }
     final currentIndex = switch (status) {
       ContractStatus.draft => -1,
       ContractStatus.awaitingPayment => -1,
       ContractStatus.processing => 0,
       ContractStatus.missingData => 0,
       ContractStatus.authenticated => 1,
-      ContractStatus.rejected => 0,
+      ContractStatus.rejected => -1,
     };
 
     final labels = <({String title, String subtitle, String time})>[
@@ -1219,6 +1391,7 @@ class AppController extends ChangeNotifier {
   void logout() {
     _pendingContractSubmissions.clear();
     _pendingPropertySaves.clear();
+    _syncedDraftIds.clear();
     offlineMode = false;
     offlineMessage = '';
     syncingPendingChanges = false;
@@ -1248,6 +1421,56 @@ class AppController extends ChangeNotifier {
     accountBlocked = false;
     mainNavigationIndex = 0;
     _cancelUserStreams();
+    notifyListeners();
+  }
+
+  Future<void> deleteOwnAccount() async {
+    if (kEjarzLocalDemoMode) {
+      return;
+    }
+    if (!FirebaseBootstrap.initialized) {
+      throw StateError('خدمة حذف الحساب غير متاحة الآن. حاول مرة أخرى لاحقًا.');
+    }
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw StateError('يلزم تسجيل الدخول قبل حذف الحساب.');
+    }
+    final callable = FirebaseFunctions.instance.httpsCallable(
+      'deleteOwnAccount',
+      options: HttpsCallableOptions(timeout: const Duration(minutes: 9)),
+    );
+    final result = await callable.call<Map<String, dynamic>>(
+      <String, Object?>{'confirmation': 'DELETE_ACCOUNT'},
+    );
+    if (result.data['deleted'] != true) {
+      throw StateError('لم يؤكد الخادم اكتمال حذف الحساب.');
+    }
+  }
+
+  Future<void> completeDeletedAccountSignOut() async {
+    _cancelUserStreams();
+    _pendingContractSubmissions.clear();
+    _pendingPropertySaves.clear();
+    _syncedDraftIds.clear();
+    contracts.clear();
+    properties.clear();
+    notifications.clear();
+    supportTickets.clear();
+    transactions.clear();
+    userName = 'عميل عقود';
+    userPhone = '';
+    userEmail = '';
+    loggedIn = false;
+    accountBlocked = false;
+    mainNavigationIndex = 0;
+    offlineMode = false;
+    offlineMessage = '';
+    syncingPendingChanges = false;
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {
+      // The server has already deleted the account; local sign-out is best effort.
+    }
     notifyListeners();
   }
 
@@ -1281,9 +1504,9 @@ class AppController extends ChangeNotifier {
     unawaited(
       repository
           .updateNotificationPrefs(
-            uid: user.uid,
-            push: pushNotificationsEnabled,
-          )
+        uid: user.uid,
+        push: pushNotificationsEnabled,
+      )
           .catchError((Object error) {
         _handleServerOperationFailure(
           error,
@@ -1325,6 +1548,27 @@ class AppController extends ChangeNotifier {
         _handleServerOperationFailure(
           error,
           'تم تعليم الإشعار محليًا وسيتم التحديث لاحقًا.',
+        );
+      }
+    }
+  }
+
+  Future<void> markNotificationReadById(String notificationId) async {
+    if (notificationId.trim().isEmpty) return;
+    for (final item in notifications) {
+      if (item.id == notificationId) {
+        await markNotificationRead(item);
+        return;
+      }
+    }
+    final repository = _repository;
+    if (repository != null) {
+      try {
+        await repository.markNotificationRead(notificationId);
+      } catch (error) {
+        _handleServerOperationFailure(
+          error,
+          'سيتم تعليم الإشعار كمقروء عند عودة الاتصال.',
         );
       }
     }
@@ -1390,22 +1634,6 @@ class AppController extends ChangeNotifier {
       );
       rethrow;
     }
-    notifications.insert(
-      0,
-      NotificationItem(
-        title: 'تم إرسال طلب الدعم',
-        body: contract == null
-            ? 'تم فتح تذكرة دعم وسيتم الرد عليك قريبًا.'
-            : 'تم فتح تذكرة دعم مرتبطة بالطلب ${contract.requestNumber}.',
-        time: 'الآن',
-        type: 'supportTicketCreated',
-        actionType: 'supportTicket',
-        actionPayload: <String, dynamic>{'ticketId': ticketId},
-        icon: Icons.support_agent_rounded,
-        color: const Color(0xFF0A7A5C),
-      ),
-    );
-    notifyListeners();
     return ticketId;
   }
 
@@ -1442,22 +1670,6 @@ class AppController extends ChangeNotifier {
       );
       rethrow;
     }
-    notifications.insert(
-      0,
-      NotificationItem(
-        id: 'NTF-MISSING-$responseId',
-        contractId: contract.id,
-        type: 'missingResponseSubmitted',
-        actionType: 'contractDetails',
-        actionPayload: <String, dynamic>{'contractId': contract.id},
-        title: 'تم استلام التصحيح',
-        body: 'استلمنا التصحيح وسيتم مراجعته من فريق عقود برو.',
-        time: 'الآن',
-        icon: Icons.task_alt_rounded,
-        color: const Color(0xFF16875E),
-      ),
-    );
-    notifyListeners();
     return responseId;
   }
 
@@ -1549,6 +1761,7 @@ class AppController extends ChangeNotifier {
           status: 'متاحة',
         ),
       ],
+      data: _clonePropertyData(data),
     );
   }
 
@@ -1878,7 +2091,12 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<ContractRecord> submitContract(ContractDraft draft) async {
+  Future<ContractRecord> submitContract(
+    ContractDraft draft, {
+    String draftId = '',
+    DraftProgress progress = const DraftProgress(),
+  }) async {
+    final effectiveDraftId = _syncedDraftIds[draftId] ?? draftId;
     final user = FirebaseBootstrap.initialized
         ? FirebaseAuth.instance.currentUser
         : null;
@@ -1892,6 +2110,8 @@ class AppController extends ChangeNotifier {
           customerEmail: userEmail,
           draft: draft,
           status: ContractStatus.awaitingPayment,
+          existingDraftId: effectiveDraftId,
+          progress: progress,
         );
         mainNavigationIndex = 1;
         _scheduleServerReachabilityCheck(
@@ -1908,30 +2128,79 @@ class AppController extends ChangeNotifier {
         return _queueContractSubmission(
           draft,
           ContractStatus.awaitingPayment,
+          existingDraftId: effectiveDraftId,
+          progress: progress,
         );
       }
     }
     if (!kEjarzLocalDemoMode) {
-      return _queueContractSubmission(draft, ContractStatus.awaitingPayment);
+      return _queueContractSubmission(
+        draft,
+        ContractStatus.awaitingPayment,
+        existingDraftId: effectiveDraftId,
+        progress: progress,
+      );
     }
-    return _submitContractLocally(draft);
+    return effectiveDraftId.isEmpty
+        ? _submitContractLocally(draft, progress: progress)
+        : _submitDraftLocally(
+            effectiveDraftId,
+            draft,
+            progress: progress,
+          );
   }
 
   ContractRecord _queueContractSubmission(
     ContractDraft draft,
-    ContractStatus status,
-  ) {
+    ContractStatus status, {
+    String existingDraftId = '',
+    DraftProgress progress = const DraftProgress(),
+  }) {
+    final existingIndex = existingDraftId.isEmpty
+        ? -1
+        : contracts.indexWhere((item) => item.id == existingDraftId);
+    var remoteDraftId = '';
+    for (final pending in _pendingContractSubmissions) {
+      if (pending.localId == existingDraftId &&
+          pending.remoteDraftId.isNotEmpty) {
+        remoteDraftId = pending.remoteDraftId;
+        break;
+      }
+    }
+    if (remoteDraftId.isEmpty &&
+        existingIndex >= 0 &&
+        !contracts[existingIndex].pendingSync) {
+      remoteDraftId = existingDraftId;
+    }
     final record = status == ContractStatus.draft
-        ? _saveDraftLocally(draft, pendingSync: true)
-        : _submitContractLocally(draft, pendingSync: true);
+        ? _saveDraftLocally(
+            draft,
+            pendingSync: true,
+            existingDraftId: existingDraftId,
+            progress: progress,
+          )
+        : existingDraftId.isNotEmpty
+            ? _submitDraftLocally(
+                existingDraftId,
+                draft,
+                pendingSync: true,
+                progress: progress,
+              )
+            : _submitContractLocally(
+                draft,
+                pendingSync: true,
+                progress: progress,
+              );
     _pendingContractSubmissions.removeWhere(
       (item) => item.localId == record.id,
     );
     _pendingContractSubmissions.add(
       _PendingContractSubmission(
         localId: record.id,
+        remoteDraftId: remoteDraftId,
         draft: _cloneDraft(draft),
         status: status,
+        progress: progress,
       ),
     );
     if (offlineMode) {
@@ -1944,6 +2213,7 @@ class AppController extends ChangeNotifier {
   ContractRecord _submitContractLocally(
     ContractDraft draft, {
     bool pendingSync = false,
+    DraftProgress progress = const DraftProgress(),
   }) {
     final now = DateTime.now();
     final serial = contracts.length + 124;
@@ -1972,10 +2242,13 @@ class AppController extends ChangeNotifier {
       propertyDetails: FirebaseRepository.propertyDetailsFromDraft(draft),
       attachmentFiles: FirebaseRepository.attachmentFilesFromDraft(draft),
       customerVisibleNote: 'تم إنشاء الطلب، يرجى دفع الرسوم للمتابعة.',
+      draftData: ContractDraft.copyOf(draft),
+      draftProgress: progress,
     );
     contracts.insert(0, record);
-    if (draft.property.buildingName.trim().isNotEmpty ||
-        draft.property.unitNumber.trim().isNotEmpty) {
+    if (draft.property.propertySource.trim() == 'إضافة عقار جديد' &&
+        (draft.property.buildingName.trim().isNotEmpty ||
+            draft.property.unitNumber.trim().isNotEmpty)) {
       properties.insert(
         0,
         PropertyRecord(
@@ -2009,6 +2282,7 @@ class AppController extends ChangeNotifier {
               status: 'متاحة',
             ),
           ],
+          data: _clonePropertyData(draft.property),
         ),
       );
     }
@@ -2021,9 +2295,7 @@ class AppController extends ChangeNotifier {
             : 'تم إنشاء طلب ${draft.title}. ادفع الرسوم للمتابعة إلى قيد المعالجة.',
         time: 'الآن',
         icon: pendingSync ? Icons.cloud_off_rounded : Icons.payments_outlined,
-        color: pendingSync
-            ? const Color(0xFFE99015)
-            : const Color(0xFF9D6C00),
+        color: pendingSync ? const Color(0xFFE99015) : const Color(0xFF9D6C00),
       ),
     );
     mainNavigationIndex = 1;
@@ -2031,7 +2303,12 @@ class AppController extends ChangeNotifier {
     return record;
   }
 
-  Future<ContractRecord> saveDraft(ContractDraft draft) async {
+  Future<ContractRecord> saveDraft(
+    ContractDraft draft, {
+    String draftId = '',
+    DraftProgress progress = const DraftProgress(),
+  }) async {
+    final effectiveDraftId = _syncedDraftIds[draftId] ?? draftId;
     final user = FirebaseBootstrap.initialized
         ? FirebaseAuth.instance.currentUser
         : null;
@@ -2045,6 +2322,8 @@ class AppController extends ChangeNotifier {
           customerEmail: userEmail,
           draft: draft,
           status: ContractStatus.draft,
+          existingDraftId: effectiveDraftId,
+          progress: progress,
         );
         _scheduleServerReachabilityCheck(
           _serverReachabilityCheckMessage,
@@ -2056,29 +2335,53 @@ class AppController extends ChangeNotifier {
           error,
           'تعذر حفظ المسودة على الخادم. تم حفظها محليًا وستتم مزامنتها لاحقًا.',
         );
-        return _queueContractSubmission(draft, ContractStatus.draft);
+        return _queueContractSubmission(
+          draft,
+          ContractStatus.draft,
+          existingDraftId: effectiveDraftId,
+          progress: progress,
+        );
       }
     }
     if (!kEjarzLocalDemoMode) {
-      return _queueContractSubmission(draft, ContractStatus.draft);
+      return _queueContractSubmission(
+        draft,
+        ContractStatus.draft,
+        existingDraftId: effectiveDraftId,
+        progress: progress,
+      );
     }
-    return _saveDraftLocally(draft);
+    return _saveDraftLocally(
+      draft,
+      existingDraftId: effectiveDraftId,
+      progress: progress,
+    );
   }
 
   ContractRecord _saveDraftLocally(
     ContractDraft draft, {
     bool pendingSync = false,
+    String existingDraftId = '',
+    DraftProgress progress = const DraftProgress(),
   }) {
     final now = DateTime.now();
     final serial = contracts.length + 124;
-    final id = 'DR-${now.year}-${serial.toString().padLeft(5, '0')}';
-    final request = 'DRAFT-${now.year}-${serial.toString().padLeft(5, '0')}';
-    final date =
+    final existingIndex = existingDraftId.isEmpty
+        ? -1
+        : contracts.indexWhere((item) => item.id == existingDraftId);
+    final existing = existingIndex < 0 ? null : contracts[existingIndex];
+    final id =
+        existing?.id ?? 'DR-${now.year}-${serial.toString().padLeft(5, '0')}';
+    final request = existing?.requestNumber ??
+        'DRAFT-${now.year}-${serial.toString().padLeft(5, '0')}';
+    final currentDate =
         '${now.year}/${now.month.toString().padLeft(2, '0')}/${now.day.toString().padLeft(2, '0')}';
+    final date = existing?.date ?? currentDate;
 
     final record = ContractRecord(
       id: id,
       requestNumber: request,
+      uid: existing?.uid ?? '',
       type: draft.type,
       role: FirebaseRepository.roleFromDraft(draft),
       title: draft.title,
@@ -2093,20 +2396,138 @@ class AppController extends ChangeNotifier {
       partyDetails: FirebaseRepository.partyDetailsFromDraft(draft),
       propertyDetails: FirebaseRepository.propertyDetailsFromDraft(draft),
       attachmentFiles: FirebaseRepository.attachmentFilesFromDraft(draft),
-      timeline: <StatusTimelineItem>[
-        StatusTimelineItem(
-          title: 'تم حفظ المسودة',
-          subtitle: pendingSync
-              ? 'محفوظة محليًا وستتم مزامنتها عند عودة الاتصال'
-              : 'لم يتم إرسال الطلب للمراجعة بعد',
-          date: date,
-          time:
-              '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
-          current: true,
-        ),
-      ],
+      timeline: existing?.timeline ??
+          <StatusTimelineItem>[
+            StatusTimelineItem(
+              title: 'تم حفظ المسودة',
+              subtitle: pendingSync
+                  ? 'محفوظة محليًا وستتم مزامنتها عند عودة الاتصال'
+                  : 'لم يتم إرسال الطلب للمراجعة بعد',
+              date: date,
+              time:
+                  '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
+              current: true,
+            ),
+          ],
+      draftData: ContractDraft.copyOf(draft),
+      draftProgress: progress,
     );
-    contracts.insert(0, record);
+    if (existingIndex < 0) {
+      contracts.insert(0, record);
+    } else {
+      contracts[existingIndex] = record;
+    }
+    notifyListeners();
+    return record;
+  }
+
+  ContractRecord _submitDraftLocally(
+    String draftId,
+    ContractDraft draft, {
+    bool pendingSync = false,
+    DraftProgress progress = const DraftProgress(),
+  }) {
+    final index = contracts.indexWhere((item) => item.id == draftId);
+    if (index < 0 || contracts[index].status != ContractStatus.draft) {
+      return _submitContractLocally(
+        draft,
+        pendingSync: pendingSync,
+        progress: progress,
+      );
+    }
+    final existing = contracts[index];
+    final now = DateTime.now();
+    final submittedEvent = StatusTimelineItem(
+      title: pendingSync ? 'بانتظار إرسال المسودة' : 'تم إرسال الطلب',
+      subtitle: pendingSync
+          ? 'سيتم إرسال الطلب تلقائيًا عند عودة الاتصال'
+          : 'أصبح الطلب جاهزًا لسداد الرسوم',
+      date:
+          '${now.year}/${now.month.toString().padLeft(2, '0')}/${now.day.toString().padLeft(2, '0')}',
+      time:
+          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
+      current: true,
+    );
+    final previousTimeline = existing.timeline
+        .map(
+          (item) => StatusTimelineItem(
+            title: item.title,
+            subtitle: item.subtitle,
+            date: item.date,
+            time: item.time,
+            completed: true,
+          ),
+        )
+        .toList();
+    final record = ContractRecord(
+      id: existing.id,
+      requestNumber: existing.requestNumber,
+      uid: existing.uid,
+      type: draft.type,
+      role: FirebaseRepository.roleFromDraft(draft),
+      title: draft.title,
+      property: draft.property.displayAddress,
+      lessorName: draft.lessor.displayName,
+      tenantName: draft.tenant.displayName,
+      date: existing.date,
+      status: ContractStatus.awaitingPayment,
+      totalFees: draft.totalPayable,
+      timeline: <StatusTimelineItem>[...previousTimeline, submittedEvent],
+      paymentStatus: 'pending',
+      pendingSync: pendingSync,
+      contractDetails: FirebaseRepository.contractDetailsFromDraft(draft),
+      partyDetails: FirebaseRepository.partyDetailsFromDraft(draft),
+      propertyDetails: FirebaseRepository.propertyDetailsFromDraft(draft),
+      attachmentFiles: FirebaseRepository.attachmentFilesFromDraft(draft),
+      customerVisibleNote: pendingSync
+          ? 'الطلب محفوظ محليًا وسيتم إرساله عند عودة الاتصال.'
+          : 'تم إنشاء الطلب، يرجى دفع الرسوم للمتابعة.',
+      draftData: ContractDraft.copyOf(draft),
+      draftProgress: progress,
+    );
+    contracts[index] = record;
+    if (draft.property.propertySource.trim() == 'إضافة عقار جديد') {
+      properties.insert(
+        0,
+        PropertyRecord(
+          id: 'PROP-${now.millisecondsSinceEpoch}',
+          title: draft.property.buildingName.trim().isEmpty
+              ? draft.property.propertyType
+              : draft.property.buildingName.trim(),
+          city: draft.property.city,
+          district: draft.property.district,
+          type: draft.property.propertyType,
+          usage: draft.property.propertyUsage,
+          floors: int.tryParse(draft.property.floorsCount) ?? 1,
+          totalUnits: int.tryParse(draft.property.totalUnits) ?? 1,
+          units: <UnitRecord>[
+            UnitRecord(
+              number: draft.property.unitNumber,
+              name: draft.property.unitName,
+              type: draft.property.unitType,
+              floor: draft.property.floor,
+              area: '${draft.property.area} م²',
+              status: 'متاحة',
+            ),
+          ],
+          data: _clonePropertyData(draft.property),
+        ),
+      );
+    }
+    mainNavigationIndex = 1;
+    if (!pendingSync) {
+      notifications.insert(
+        0,
+        NotificationItem(
+          title: 'تم استلام طلب العقد',
+          body:
+              'تم إنشاء طلب ${draft.title}. ادفع الرسوم للمتابعة إلى قيد المعالجة.',
+          time: 'الآن',
+          icon: Icons.payments_outlined,
+          color: const Color(0xFF9D6C00),
+        ),
+      );
+    }
     notifyListeners();
     return record;
   }

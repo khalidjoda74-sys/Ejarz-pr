@@ -3,7 +3,6 @@ import { db } from '@/lib/firebase';
 import { AdminUser } from '@/types/admin';
 import { SupportReply, SupportTicket, SupportTicketStatus } from '@/types/support';
 import { writeAuditLog } from './auditService';
-import { createNotification } from './notificationService';
 
 export async function listSupportTickets(count = 100) {
   const snap = await getDocs(query(collection(db, 'supportTickets'), orderBy('createdAt', 'desc'), limit(count)));
@@ -34,22 +33,6 @@ export async function addSupportReply(admin: AdminUser, ticketId: string, messag
   const patch: Record<string, unknown> = { replies: arrayUnion(reply), updatedAt: serverTimestamp() };
   if (visibility === 'customer') patch.status = 'pending';
   await updateDoc(doc(db, 'supportTickets', ticketId), patch);
-  if (visibility === 'customer') {
-    await createNotification(admin, {
-      uid,
-      contractId: ticket.contractId || undefined,
-      title: `رد جديد على تذكرة الدعم`,
-      body: message,
-      type: 'supportReply',
-      priority: 'normal',
-      actionType: 'supportTicket',
-      actionPayload: {
-        ticketId,
-        ...(ticket.contractId ? { contractId: ticket.contractId } : {}),
-      },
-      channels: { inApp: true, push: true },
-    });
-  }
   await writeAuditLog(admin, { action: 'support.reply.add', entityType: 'supportTicket', entityId: ticketId, after: reply, message: 'إضافة رد على تذكرة دعم' });
 }
 

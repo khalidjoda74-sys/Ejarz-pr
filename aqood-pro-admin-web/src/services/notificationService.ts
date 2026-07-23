@@ -1,6 +1,6 @@
-import { addDoc, collection, doc, getDoc, getDocs, limit, orderBy, query, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { AppNotification } from '@/types/notification';
+import { AdminNotification, AppNotification } from '@/types/notification';
 import { AdminUser } from '@/types/admin';
 import { writeAuditLog } from './auditService';
 import { cleanUndefined } from '@/lib/firebaseNormalizers';
@@ -20,12 +20,17 @@ export async function createNotification(admin: AdminUser, values: CreateNotific
   const uid = await resolveUid(values);
   const contractId = String(values.contractId ?? '').trim() || undefined;
   const type = String(values.type ?? '').trim() || (contractId ? 'contractMessage' : 'general');
+  const ref = doc(collection(db, 'notifications'));
   const payload = cleanUndefined({
     ...values,
     uid,
     userId: uid,
     contractId,
     type,
+    eventKey: `manual:${ref.id}`,
+    audience: 'customer',
+    entityType: contractId ? 'contract' : 'general',
+    entityId: contractId ?? uid,
     read: false,
     actionType: values.actionType ?? (contractId ? 'contractDetails' : undefined),
     actionPayload: values.actionPayload
@@ -39,7 +44,11 @@ export async function createNotification(admin: AdminUser, values: CreateNotific
     priority: values.priority ?? 'normal',
     delivery: {
       pushStatus: 'pending',
+      attempts: 0,
       error: '',
+      lastAttemptAt: null,
+      nextAttemptAt: null,
+      lockedAt: null,
       ...(values.delivery ?? {}),
     },
     readAt: null,
@@ -47,7 +56,7 @@ export async function createNotification(admin: AdminUser, values: CreateNotific
     createdBy: admin.uid,
     createdAt: serverTimestamp(),
   });
-  const ref = await addDoc(collection(db, 'notifications'), payload);
+  await setDoc(ref, payload);
   await writeAuditLog(admin, {
     action: 'notification.create',
     entityType: 'notification',
@@ -56,6 +65,56 @@ export async function createNotification(admin: AdminUser, values: CreateNotific
     message: 'إنشاء إشعار من لوحة التحكم',
   });
   return ref.id;
+}
+
+export function watchAdminNotifications(
+  recipientUid: string,
+  onData: (items: AdminNotification[]) => void,
+  onError?: (error: Error) => void,
+) {
+  const notificationsQuery = query(
+    collection(db, 'adminNotifications'),
+    where('recipientUid', '==', recipientUid),
+    orderBy('createdAt', 'desc'),
+    limit(80),
+  );
+  return onSnapshot(
+    notificationsQuery,
+    (snapshot) => onData(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as AdminNotification)),
+    (error) => onError?.(error),
+  );
+}
+
+export async function markAdminNotificationRead(notificationId: string) {
+  await updateDoc(doc(db, 'adminNotifications', notificationId), {
+    read: true,
+    readAt: serverTimestamp(),
+  });
+}
+
+export async function markAllAdminNotificationsRead(recipientUid: string) {
+  const snapshot = await getDocs(query(
+    collection(db, 'adminNotifications'),
+    where('recipientUid', '==', recipientUid),
+    where('read', '==', false),
+    limit(100),
+  ));
+  if (snapshot.empty) return;
+  const batch = writeBatch(db);
+  snapshot.docs.forEach((item) => batch.update(item.ref, {
+    read: true,
+    readAt: serverTimestamp(),
+  }));
+  await batch.commit();
+}
+
+export function adminNotificationPath(notification: AdminNotification) {
+  const payload = notification.actionPayload ?? {};
+  if (notification.actionType === 'contractDetails' && payload.contractId) return `/contracts/${payload.contractId}`;
+  if (notification.actionType === 'supportTicket' && payload.ticketId) return `/support/${payload.ticketId}`;
+  if (notification.actionType === 'paymentDetails') return '/payments';
+  if (notification.actionType === 'userDetails' && payload.uid) return `/users/${payload.uid}`;
+  return '/notifications';
 }
 
 async function resolveUid(values: CreateNotificationInput) {

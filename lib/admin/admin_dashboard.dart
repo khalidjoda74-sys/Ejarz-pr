@@ -8,6 +8,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import '../core/firebase_bootstrap.dart';
 import '../core/firebase_repository.dart';
+import '../core/missing_requirement_policy.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
 import '../widgets/common.dart';
@@ -282,41 +283,121 @@ class _AdminDashboardState extends State<AdminDashboard> {
     ContractRecord contract,
     ContractStatus status,
   ) async {
+    if (contract.status == ContractStatus.rejected) {
+      showAppSnackBar(context, 'الطلب مرفوض نهائيًا ولا يمكن تغيير حالته');
+      return;
+    }
+    if (status == contract.status) return;
+    if (status == ContractStatus.rejected &&
+        (contract.status == ContractStatus.draft ||
+            contract.status == ContractStatus.authenticated)) {
+      showAppSnackBar(context, 'لا يمكن رفض مسودة أو عقد مكتمل');
+      return;
+    }
     final note = await _askText(
-      title: 'ملاحظة تظهر للعميل',
-      label: 'اكتب ملاحظة مختصرة أو اتركها فارغة',
+      title: status == ContractStatus.rejected
+          ? 'سبب رفض الطلب'
+          : 'ملاحظة تظهر للعميل',
+      label: status == ContractStatus.rejected
+          ? 'اكتب سببًا واضحًا يظهر للعميل'
+          : 'اكتب ملاحظة مختصرة أو اتركها فارغة',
       multiline: true,
     );
     if (note == null || !mounted) return;
-    await _repository.updateContractStatus(
-      contractId: contract.id,
-      status: status,
-      adminUid: widget.user.uid,
-      customerNote: note,
-    );
-    if (mounted) showAppSnackBar(context, 'تم تحديث حالة الطلب');
+    if (status == ContractStatus.rejected && note.trim().isEmpty) {
+      showAppSnackBar(context, 'يجب كتابة سبب واضح لرفض الطلب');
+      return;
+    }
+    if (status == ContractStatus.rejected) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('رفض الطلب نهائيًا؟'),
+          content: const Text(
+            'سيصبح الطلب مرفوضًا نهائيًا، ولن يمكن تعديله أو إعادته إلى المعالجة.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.red),
+              child: const Text('رفض الطلب'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    try {
+      await _repository.updateContractStatus(
+        contractId: contract.id,
+        status: status,
+        adminUid: widget.user.uid,
+        customerNote: note,
+      );
+      if (mounted) showAppSnackBar(context, 'تم تحديث حالة الطلب');
+    } catch (error) {
+      if (mounted) showAppSnackBar(context, error.toString());
+    }
   }
 
   Future<void> _addMissingRequirement(ContractRecord contract) async {
-    final title =
-        await _askText(title: 'عنوان النقص', label: 'مثال: صورة الصك');
+    final title = await _askText(
+      title: 'البيان أو المستند محل المراجعة',
+      label: 'مثال: السجل التجاري أو رقم عداد الكهرباء',
+    );
     if (title == null || title.trim().isEmpty) return;
-    final description = await _askText(
-      title: 'وصف النقص للعميل',
-      label: 'اكتب المطلوب من العميل بوضوح',
-      multiline: true,
+    if (!mounted) return;
+    final issue = await showDialog<MissingReviewIssue>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('سبب ملاحظة المراجعة'),
+        children: MissingReviewIssue.values
+            .map(
+              (item) => SimpleDialogOption(
+                onPressed: () => Navigator.of(dialogContext).pop(item),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Text(item.label),
+                ),
+              ),
+            )
+            .toList(),
+      ),
     );
-    if (description == null || description.trim().isEmpty) return;
-    await _repository.addMissingRequirement(
-      contractId: contract.id,
-      uid: contract.uid,
-      title: title.trim(),
-      description: description.trim(),
-      type: 'field',
-      fieldPath: '',
-      adminUid: widget.user.uid,
+    if (issue == null || !mounted) return;
+    final target = title.trim();
+    final description = buildMissingReviewDescription(
+      target: target,
+      issue: issue,
     );
-    if (mounted) showAppSnackBar(context, 'تم إرسال النقص للعميل');
+    final type = switch (issue) {
+      MissingReviewIssue.unclear || MissingReviewIssue.expired => 'file',
+      MissingReviewIssue.additionalDocument ||
+      MissingReviewIssue.clarification =>
+        'clarification',
+      _ => 'field',
+    };
+    try {
+      await _repository.addMissingRequirement(
+        contractId: contract.id,
+        uid: contract.uid,
+        title: target,
+        description: description,
+        type: type,
+        issueCode: issue.code,
+        fieldPath: '',
+        adminUid: widget.user.uid,
+      );
+      if (mounted) {
+        showAppSnackBar(context, 'تم إرسال ملاحظة المراجعة للعميل');
+      }
+    } catch (error) {
+      if (mounted) showAppSnackBar(context, error.toString());
+    }
   }
 
   Future<void> _uploadFinalPdf(ContractRecord contract) async {
@@ -661,37 +742,54 @@ class _AdminContractDetail extends StatelessWidget {
           _MiniLine('المستأجر', contract.tenantName),
           if (contract.customerVisibleNote.isNotEmpty)
             _MiniLine('ملاحظة العميل', contract.customerVisibleNote),
+          if (contract.rejectionReason.isNotEmpty)
+            _MiniLine('سبب الرفض', contract.rejectionReason),
           if (contract.finalPdfUrl.isNotEmpty)
             _MiniLine('ملف العقد', contract.finalPdfFileName),
           const SizedBox(height: 10),
-          DropdownButtonFormField<ContractStatus>(
-            initialValue: contract.status,
-            decoration: const InputDecoration(labelText: 'تغيير الحالة'),
-            items: <DropdownMenuItem<ContractStatus>>[
-              for (final status in ContractStatus.values)
-                DropdownMenuItem(value: status, child: Text(status.label)),
-            ],
-            onChanged: (value) {
-              if (value != null) onChangeStatus(value);
-            },
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: <Widget>[
-              FilledButton.icon(
-                onPressed: onAddMissing,
-                icon: const Icon(Icons.rule_rounded),
-                label: const Text('إضافة نقص'),
-              ),
-              OutlinedButton.icon(
-                onPressed: onUploadPdf,
-                icon: const Icon(Icons.picture_as_pdf_outlined),
-                label: const Text('رفع PDF نهائي'),
-              ),
-            ],
-          ),
+          if (contract.status == ContractStatus.rejected)
+            const InfoBanner(
+              text:
+                  'هذا الطلب مرفوض نهائيًا. لا يمكن تغيير حالته أو إضافة نواقص أو رفع عقد نهائي.',
+              icon: Icons.cancel_outlined,
+              color: AppColors.red,
+            )
+          else ...<Widget>[
+            DropdownButtonFormField<ContractStatus>(
+              initialValue: contract.status,
+              decoration: const InputDecoration(labelText: 'تغيير الحالة'),
+              items: <DropdownMenuItem<ContractStatus>>[
+                for (final status in ContractStatus.values)
+                  DropdownMenuItem(
+                    value: status,
+                    enabled: status != ContractStatus.rejected ||
+                        (contract.status != ContractStatus.draft &&
+                            contract.status != ContractStatus.authenticated),
+                    child: Text(status.label),
+                  ),
+              ],
+              onChanged: (value) {
+                if (value != null) onChangeStatus(value);
+              },
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                FilledButton.icon(
+                  onPressed: onAddMissing,
+                  icon: const Icon(Icons.rule_rounded),
+                  label: const Text('إضافة نقص'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onUploadPdf,
+                  icon: const Icon(Icons.picture_as_pdf_outlined),
+                  label: const Text('رفع PDF نهائي'),
+                ),
+              ],
+            ),
+          ],
           if (contract.missingRequirements.isNotEmpty) ...<Widget>[
             const SizedBox(height: 12),
             Text(

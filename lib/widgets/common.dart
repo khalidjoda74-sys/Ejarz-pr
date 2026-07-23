@@ -49,6 +49,54 @@ class ResponsiveContent extends StatelessWidget {
   }
 }
 
+/// A restrained, consistent app bar for entity and transaction details.
+///
+/// The global theme supplies the transparent surface and hairline divider;
+/// this widget standardises navigation, title truncation and action spacing.
+class DetailAppBar extends StatelessWidget implements PreferredSizeWidget {
+  final String title;
+  final VoidCallback? onBack;
+  final bool backEnabled;
+  final List<Widget>? actions;
+
+  const DetailAppBar({
+    super.key,
+    required this.title,
+    this.onBack,
+    this.backEnabled = true,
+    this.actions,
+  });
+
+  @override
+  Size get preferredSize => const Size.fromHeight(52);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      automaticallyImplyLeading: backEnabled && onBack == null,
+      leading: !backEnabled
+          ? const IconButton(
+              tooltip: 'الرجوع غير متاح أثناء تنفيذ العملية',
+              onPressed: null,
+              icon: BackButtonIcon(),
+            )
+          : onBack == null
+              ? null
+              : IconButton(
+                  tooltip: 'رجوع',
+                  onPressed: onBack,
+                  icon: const BackButtonIcon(),
+                ),
+      title: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      actions: actions,
+    );
+  }
+}
+
 class BrandLogo extends StatelessWidget {
   final double markSize;
   final bool compact;
@@ -90,6 +138,7 @@ class BrandHeader extends StatelessWidget {
   final bool showLogo;
   final bool useSplashLogo;
   final IconData menuIcon;
+  final bool placeMenuAtStart;
   final Widget? trailing;
 
   const BrandHeader({
@@ -101,6 +150,7 @@ class BrandHeader extends StatelessWidget {
     this.showLogo = true,
     this.useSplashLogo = false,
     this.menuIcon = Icons.arrow_back_rounded,
+    this.placeMenuAtStart = false,
     this.trailing,
   });
 
@@ -110,32 +160,39 @@ class BrandHeader extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final controller = showNotification ? AppScope.of(context) : null;
+    final menuButton =
+        showMenu ? _HeaderIconButton(icon: menuIcon, onTap: onMenu) : null;
+    final content = <Widget>[
+      if (showNotification)
+        _HeaderIconButton(
+          icon: Icons.notifications_none_rounded,
+          onTap: onNotifications,
+          badge: controller?.unreadNotifications ?? 0,
+        ),
+      if (showMenu && !placeMenuAtStart) ...<Widget>[
+        const SizedBox(width: 6),
+        menuButton!,
+      ],
+      if (trailing != null) trailing!,
+      if (showLogo) ...<Widget>[
+        const Spacer(),
+        if (useSplashLogo)
+          Image.asset(
+            'assets/images/ejarz_splash_logo.png',
+            height: 44,
+            fit: BoxFit.contain,
+          )
+        else
+          const BrandLogo(),
+      ],
+      if (showMenu && placeMenuAtStart) ...<Widget>[
+        const Spacer(),
+        menuButton!,
+      ],
+    ];
     return Row(
       textDirection: TextDirection.ltr,
-      children: <Widget>[
-        if (showNotification)
-          _HeaderIconButton(
-            icon: Icons.notifications_none_rounded,
-            onTap: onNotifications,
-            badge: controller?.unreadNotifications ?? 0,
-          ),
-        if (showMenu) ...<Widget>[
-          const SizedBox(width: 6),
-          _HeaderIconButton(icon: menuIcon, onTap: onMenu),
-        ],
-        if (trailing != null) trailing!,
-        if (showLogo) ...<Widget>[
-          const Spacer(),
-          if (useSplashLogo)
-            Image.asset(
-              'assets/images/ejarz_splash_logo.png',
-              height: 44,
-              fit: BoxFit.contain,
-            )
-          else
-            const BrandLogo(),
-        ],
-      ],
+      children: content,
     );
   }
 }
@@ -1381,40 +1438,43 @@ class ToggleCard extends StatelessWidget {
     return AppCard(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       shadows: const <BoxShadow>[],
-      child: SwitchListTile.adaptive(
-        contentPadding: EdgeInsets.zero,
-        value: value,
-        activeThumbColor: AppColors.primary,
-        onChanged: onChanged,
-        secondary: icon == null
-            ? null
-            : Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight,
-                  borderRadius: BorderRadius.circular(12),
+      child: Material(
+        color: Colors.transparent,
+        child: SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          value: value,
+          activeThumbColor: AppColors.primary,
+          onChanged: onChanged,
+          secondary: icon == null
+              ? null
+              : Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryLight,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: AppColors.primary),
                 ),
-                child: Icon(icon, color: AppColors.primary),
-              ),
-        dense: true,
-        visualDensity: VisualDensity.compact,
-        title: Text(
-          title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w800),
+          dense: true,
+          visualDensity: VisualDensity.compact,
+          title: Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          subtitle: subtitle == null
+              ? null
+              : Text(
+                  subtitle!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: context.ejarzTheme.muted,
+                      fontSize: context.sp(10.8)),
+                ),
         ),
-        subtitle: subtitle == null
-            ? null
-            : Text(
-                subtitle!,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    color: context.ejarzTheme.muted,
-                    fontSize: context.sp(10.8)),
-              ),
       ),
     );
   }

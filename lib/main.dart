@@ -102,7 +102,14 @@ class _AqoodProAppState extends State<AqoodProApp> {
   Future<void> _handleNotificationTap(Map<String, dynamic> data) async {
     final context = AppNotificationService.navigatorKey.currentContext;
     final navigator = AppNotificationService.navigatorKey.currentState;
-    if (context == null || navigator == null) return;
+    if (context == null || navigator == null || !_controller.loggedIn) {
+      AppNotificationService.deferNotificationTap(data);
+      return;
+    }
+    final notificationId = data['notificationId']?.toString() ?? '';
+    if (notificationId.isNotEmpty) {
+      unawaited(_controller.markNotificationReadById(notificationId));
+    }
     final actionType = data['actionType']?.toString();
     final contractId = data['contractId']?.toString() ??
         (data['actionPayload'] is Map
@@ -118,6 +125,19 @@ class _AqoodProAppState extends State<AqoodProApp> {
           builder: (_) => SupportScreen(initialTicketId: ticketId),
         ),
       );
+      return;
+    }
+    if (actionType == 'payments') {
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => const WalletStandaloneScreen(),
+        ),
+      );
+      return;
+    }
+    if (actionType == 'profile') {
+      navigator.popUntil((route) => route.isFirst);
+      _controller.setNavigationIndex(3);
       return;
     }
     if (actionType != 'contractDetails' && contractId == null) return;
@@ -138,6 +158,11 @@ class _AqoodProAppState extends State<AqoodProApp> {
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
+          if (_controller.loggedIn) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              AppNotificationService.flushPendingNotificationTap();
+            });
+          }
           return MaterialApp(
             debugShowCheckedModeBanner: false,
             navigatorKey: AppNotificationService.navigatorKey,

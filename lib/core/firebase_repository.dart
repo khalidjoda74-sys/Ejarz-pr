@@ -4,9 +4,12 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
+import 'missing_requirement_policy.dart';
 import 'models.dart';
 
 class FirebaseRepository {
+  static const int _demoPropertyDataVersion = 2;
+
   FirebaseRepository({
     FirebaseFirestore? firestore,
     FirebaseStorage? storage,
@@ -334,7 +337,16 @@ class FirebaseRepository {
         .where('isDemo', isEqualTo: true)
         .limit(1)
         .get();
-    if (existing.docs.isNotEmpty) return;
+    if (existing.docs.isNotEmpty) {
+      await _upgradeExistingDemoProperties(uid);
+      await _ensureRejectedDemoContract(
+        uid: uid,
+        customerName: customerName,
+        customerPhone: customerPhone,
+        customerEmail: customerEmail,
+      );
+      return;
+    }
 
     final batch = firestore.batch();
     final demos = <_DemoContractSeed>[
@@ -366,20 +378,24 @@ class FirebaseRepository {
         ),
         status: ContractStatus.missingData,
         paymentStatus: 'paid',
-        note: 'يوجد نقص في بيانات المستأجر ومرفقات العقد.',
+        note: 'توجد ملاحظات مراجعة على بعض بيانات ومستندات العقد.',
         missingRequirements: const <MissingRequirement>[
           MissingRequirement(
             id: 'MR-DEMO-CR',
-            title: 'إرفاق صورة السجل التجاري',
-            description: 'السجل التجاري للمستأجر غير مرفق.',
+            title: 'السجل التجاري',
+            description:
+                'السجل التجاري المرفق غير واضح. يرجى إعادة رفع نسخة واضحة وكاملة.',
             type: 'file',
-            fieldPath: 'draftData.tenant.commercialRegistration',
+            issueCode: 'unclear',
+            fieldPath: 'draftData.attachments.commercial_registration',
           ),
           MissingRequirement(
             id: 'MR-DEMO-METER',
             title: 'رقم عداد الكهرباء',
-            description: 'أدخل رقم عداد الكهرباء للوحدة محل العقد.',
+            description:
+                'تعذر التحقق من رقم عداد الكهرباء. يرجى مراجعته وإدخال القيمة الصحيحة.',
             type: 'field',
+            issueCode: 'unverifiable',
             fieldPath: 'draftData.property.electricityMeter',
           ),
         ],
@@ -415,6 +431,23 @@ class FirebaseRepository {
         note: 'تم إصدار العقد النهائي وإرفاقه للتحميل.',
         finalPdf: true,
       ),
+      _DemoContractSeed(
+        draft: _demoDraft(
+          type: ContractType.commercial,
+          role: UserRole.authorized,
+          unitType: 'معرض تجاري',
+          district: 'العليا',
+          buildingName: 'معرض الرياض',
+          lessorName: 'شركة الرواد',
+          tenantName: 'مؤسسة الخليج',
+          rentValue: '72000',
+        ),
+        status: ContractStatus.rejected,
+        paymentStatus: 'notPaid',
+        note: '',
+        rejectionReason:
+            'تعذر التحقق من تطابق بيانات وثيقة الملكية مع بيانات المؤجر.',
+      ),
     ];
 
     for (var i = 0; i < demos.length; i++) {
@@ -424,8 +457,13 @@ class FirebaseRepository {
       final now = DateTime.now().subtract(Duration(days: i));
       final requestNumber =
           'REQ-DEMO-${(1000 + i + 1).toString().padLeft(4, '0')}';
-      final timeline =
-          initialTimeline(seed.status, now).map(timelineToMap).toList();
+      final timelineItems = normalizeTimelineForStatus(
+        status: seed.status,
+        items: initialTimeline(seed.status, now),
+        rejectionReason: seed.rejectionReason,
+        rejectedAt: now,
+      );
+      final timeline = timelineItems.map(timelineToMap).toList();
       final total = seed.status == ContractStatus.draft ? 0.0 : 398.0;
       batch.set(contractRef, <String, Object?>{
         'id': contractRef.id,
@@ -446,6 +484,10 @@ class FirebaseRepository {
         'district': seed.draft.property.district,
         'lessorSummary': seed.draft.lessor.displayName,
         'tenantSummary': seed.draft.tenant.displayName,
+        'contractDetails': contractDetailsFromDraft(seed.draft),
+        'partyDetails': partyDetailsFromDraft(seed.draft),
+        'propertyDetails': propertyDetailsFromDraft(seed.draft),
+        'attachmentFiles': attachmentFilesFromDraft(seed.draft),
         'draftData': draftToMap(seed.draft),
         'totalFees': total,
         'totalPayable': total,
@@ -455,6 +497,11 @@ class FirebaseRepository {
         'adminAssignedTo': '',
         'adminInternalNotes': '',
         'customerVisibleNote': seed.note,
+        if (seed.status == ContractStatus.rejected) ...<String, Object?>{
+          'rejectionReason': seed.rejectionReason,
+          'rejectedAt': FieldValue.serverTimestamp(),
+          'rejectedBy': 'demo-system',
+        },
         'missingRequirements': seed.missingRequirements
             .map((item) => missingRequirementToMap(item))
             .toList(),
@@ -479,6 +526,7 @@ class FirebaseRepository {
             data: seed.draft.property,
           ),
           'isDemo': true,
+          'demoDataVersion': _demoPropertyDataVersion,
         },
       );
       if (seed.paymentStatus == 'paid') {
@@ -528,6 +576,245 @@ class FirebaseRepository {
       }
     }
     await batch.commit();
+  }
+
+  Future<void> _ensureRejectedDemoContract({
+    required String uid,
+    required String customerName,
+    required String customerPhone,
+    required String customerEmail,
+  }) async {
+    final existing = await firestore
+        .collection('contracts')
+        .where('uid', isEqualTo: uid)
+        .get();
+    final hasRejectedDemo = existing.docs.any((doc) {
+      final data = doc.data();
+      return data['isDemo'] == true &&
+          data['status'] == ContractStatus.rejected.name;
+    });
+    if (hasRejectedDemo) return;
+
+    const reason =
+        'تعذر التحقق من تطابق بيانات وثيقة الملكية مع بيانات المؤجر.';
+    final draft = _demoDraft(
+      type: ContractType.commercial,
+      role: UserRole.authorized,
+      unitType: 'معرض تجاري',
+      district: 'العليا',
+      buildingName: 'معرض الرياض',
+      lessorName: 'شركة الرواد',
+      tenantName: 'مؤسسة الخليج',
+      rentValue: '72000',
+    );
+    final now = DateTime.now();
+    final contractRef =
+        firestore.collection('contracts').doc('demo-rejected-$uid');
+    final propertyRef =
+        firestore.collection('properties').doc('demo-rejected-$uid');
+    final suffix = uid.length <= 6 ? uid : uid.substring(uid.length - 6);
+    final timeline = normalizeTimelineForStatus(
+      status: ContractStatus.rejected,
+      items: initialTimeline(ContractStatus.rejected, now),
+      rejectionReason: reason,
+      rejectedAt: now,
+    ).map(timelineToMap).toList();
+    final batch = firestore.batch();
+    batch.set(contractRef, <String, Object?>{
+      'id': contractRef.id,
+      'requestNumber': 'REQ-DEMO-${suffix.toUpperCase()}',
+      'uid': uid,
+      'userId': uid,
+      'customerName': customerName,
+      'customerPhone': customerPhone,
+      'customerEmail': customerEmail,
+      'type': draft.type.name,
+      'role': draft.role.name,
+      'status': ContractStatus.rejected.name,
+      'title': draft.title,
+      'propertyId': propertyRef.id,
+      'propertySummary': draft.property.displayAddress,
+      'propertyTitle': draft.property.buildingName,
+      'city': draft.property.city,
+      'district': draft.property.district,
+      'lessorSummary': draft.lessor.displayName,
+      'tenantSummary': draft.tenant.displayName,
+      'contractDetails': contractDetailsFromDraft(draft),
+      'partyDetails': partyDetailsFromDraft(draft),
+      'propertyDetails': propertyDetailsFromDraft(draft),
+      'attachmentFiles': attachmentFilesFromDraft(draft),
+      'draftData': draftToMap(draft),
+      'totalFees': 398,
+      'totalPayable': 398,
+      'ejarPlatformFee': 299,
+      'serviceFee': 99,
+      'paymentStatus': 'notPaid',
+      'adminAssignedTo': '',
+      'adminInternalNotes': '',
+      'customerVisibleNote': '',
+      'rejectionReason': reason,
+      'rejectedAt': FieldValue.serverTimestamp(),
+      'rejectedBy': 'demo-system',
+      'missingRequirements': <Map<String, Object?>>[],
+      'finalPdfUrl': '',
+      'finalPdfFileName': '',
+      'timeline': timeline,
+      'isDemo': true,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'submittedAt': FieldValue.serverTimestamp(),
+    });
+    batch.set(propertyRef, <String, Object?>{
+      ...propertyDocumentData(
+        propertyId: propertyRef.id,
+        uid: uid,
+        contractId: contractRef.id,
+        data: draft.property,
+      ),
+      'isDemo': true,
+      'demoDataVersion': _demoPropertyDataVersion,
+    });
+    await batch.commit();
+  }
+
+  Future<void> _upgradeExistingDemoProperties(String uid) async {
+    final snapshot = await firestore
+        .collection('properties')
+        .where('uid', isEqualTo: uid)
+        .get();
+    final batch = firestore.batch();
+    var hasUpdates = false;
+    var demoIndex = 0;
+
+    for (final doc in snapshot.docs) {
+      final raw = doc.data();
+      if (raw['isDemo'] != true) continue;
+      final currentVersion = (raw['demoDataVersion'] as num?)?.toInt() ?? 0;
+      if (currentVersion >= _demoPropertyDataVersion) continue;
+
+      final source = propertyFromDoc(doc).data!;
+      final suffix = (demoIndex + 1).toString().padLeft(2, '0');
+      final unitNumber = _demoText(source.unitNumber, '${demoIndex + 1}');
+      final unitType = _demoText(source.unitType, 'شقة');
+      final completed = PropertyData(
+        propertySource: 'عقار محفوظ',
+        ownershipDocumentNumber: _demoText(
+          source.ownershipDocumentNumber,
+          '3101234567$suffix',
+        ),
+        ownershipDocumentType: _demoText(
+          source.ownershipDocumentType,
+          'صك إلكتروني',
+        ),
+        ownershipDocumentDate: _demoText(
+          source.ownershipDocumentDate,
+          '2026/06/20',
+        ),
+        propertyUsage: _demoText(source.propertyUsage, 'سكن عوائل'),
+        propertyType: _demoText(source.propertyType, 'عمارة'),
+        floorsCount: _demoPositiveInteger(source.floorsCount, '1'),
+        unitsPerFloor: _demoPositiveInteger(source.unitsPerFloor, '1'),
+        totalUnits: _demoPositiveInteger(source.totalUnits, '1'),
+        city: _demoText(source.city, 'الرياض'),
+        district: _demoText(source.district, 'حي النموذج'),
+        street: _demoText(source.street, 'طريق الملك فهد'),
+        buildingNumber: _demoFixedDigits(
+          source.buildingNumber,
+          4,
+          '78$suffix',
+        ),
+        additionalNumber: _demoFixedDigits(
+          source.additionalNumber,
+          4,
+          '45$suffix',
+        ),
+        postalCode: _demoFixedDigits(
+          source.postalCode,
+          5,
+          '133$suffix',
+        ),
+        buildingName: _demoText(source.buildingName, 'عقار تجريبي'),
+        unitNumber: unitNumber,
+        unitName: _demoText(source.unitName, '$unitType $unitNumber'),
+        unitType: unitType,
+        floor: _demoText(source.floor, '1'),
+        area: _demoPositiveNumber(source.area, '120'),
+        roomsCount: _demoPositiveInteger(source.roomsCount, '3'),
+        bathroomsCount: _demoPositiveInteger(source.bathroomsCount, '2'),
+        hallsCount: _demoNonNegativeInteger(source.hallsCount, '1'),
+        maidRoom: source.maidRoom,
+        kitchen: source.kitchen,
+        storage: source.storage,
+        majlis: source.majlis,
+        furnishingStatus: _demoText(
+          source.furnishingStatus,
+          'غير مؤثثة',
+        ),
+        acWindow: source.acWindow,
+        acSplit: source.acSplit || (!source.acWindow && !source.acCentral),
+        acCentral: source.acCentral,
+        privateParking: source.privateParking,
+        electricityMeter: _demoPositiveInteger(
+          source.electricityMeter,
+          '7002001$suffix',
+        ),
+        waterMeter: _demoPositiveInteger(
+          source.waterMeter,
+          '7102001$suffix',
+        ),
+        gasMeter: _demoPositiveInteger(
+          source.gasMeter,
+          '7202001$suffix',
+        ),
+        notes: _demoText(
+          source.notes,
+          'بيانات عقار مكتملة للعرض في النسخة التجريبية.',
+        ),
+      );
+      final payload = propertyDocumentData(
+        propertyId: doc.id,
+        uid: uid,
+        contractId: _textFromAny(raw['sourceContractId']),
+        data: completed,
+      )
+        ..remove('createdAt')
+        ..['isDemo'] = true
+        ..['demoDataVersion'] = _demoPropertyDataVersion;
+      batch.set(doc.reference, payload, SetOptions(merge: true));
+      hasUpdates = true;
+      demoIndex++;
+    }
+
+    if (hasUpdates) await batch.commit();
+  }
+
+  static String _demoText(String value, String fallback) {
+    final text = value.trim();
+    return text.isEmpty || text == '-' ? fallback : text;
+  }
+
+  static String _demoPositiveInteger(String value, String fallback) {
+    final parsed = int.tryParse(value.trim());
+    return parsed != null && parsed > 0 ? parsed.toString() : fallback;
+  }
+
+  static String _demoNonNegativeInteger(String value, String fallback) {
+    final parsed = int.tryParse(value.trim());
+    return parsed != null && parsed >= 0 ? parsed.toString() : fallback;
+  }
+
+  static String _demoPositiveNumber(String value, String fallback) {
+    final parsed = double.tryParse(value.trim().replaceAll(',', ''));
+    return parsed != null && parsed > 0 ? value.trim() : fallback;
+  }
+
+  static String _demoFixedDigits(
+    String value,
+    int length,
+    String fallback,
+  ) {
+    final text = value.trim();
+    return RegExp('^\\d{$length}\$').hasMatch(text) ? text : fallback;
   }
 
   Map<String, Object?> notificationData({
@@ -747,10 +1034,21 @@ class FirebaseRepository {
     required String customerEmail,
     required ContractDraft draft,
     required ContractStatus status,
+    String existingDraftId = '',
+    DraftProgress progress = const DraftProgress(),
   }) async {
+    if (existingDraftId.trim().isNotEmpty) {
+      return _updateExistingDraft(
+        contractId: existingDraftId.trim(),
+        uid: uid,
+        draft: draft,
+        status: status,
+        progress: progress,
+      );
+    }
     final now = DateTime.now();
     final doc = firestore.collection('contracts').doc();
-    final shouldCreateProperty =
+    final shouldCreateProperty = status != ContractStatus.draft &&
         draft.property.propertySource.trim() == 'إضافة عقار جديد';
     final propertyRef =
         shouldCreateProperty ? firestore.collection('properties').doc() : null;
@@ -777,6 +1075,8 @@ class FirebaseRepository {
       partyDetails: partyDetailsFromDraft(draft),
       propertyDetails: propertyDetailsFromDraft(draft),
       attachmentFiles: attachmentFilesFromDraft(draft),
+      draftData: ContractDraft.copyOf(draft),
+      draftProgress: progress,
     );
 
     final batch = firestore.batch();
@@ -805,6 +1105,7 @@ class FirebaseRepository {
       'propertyDetails': propertyDetailsFromDraft(draft),
       'attachmentFiles': attachmentFilesFromDraft(draft),
       'draftData': draftToMap(draft),
+      'draftProgress': draftProgressToMap(progress),
       'totalFees': record.totalFees,
       'adminAssignedTo': '',
       'adminInternalNotes': '',
@@ -834,6 +1135,92 @@ class FirebaseRepository {
     return record;
   }
 
+  Future<ContractRecord> _updateExistingDraft({
+    required String contractId,
+    required String uid,
+    required ContractDraft draft,
+    required ContractStatus status,
+    required DraftProgress progress,
+  }) async {
+    if (status != ContractStatus.draft &&
+        status != ContractStatus.awaitingPayment) {
+      throw ArgumentError('لا يمكن نقل المسودة إلى الحالة المطلوبة.');
+    }
+    final contractRef = firestore.collection('contracts').doc(contractId);
+    final propertyRef = status == ContractStatus.awaitingPayment &&
+            draft.property.propertySource.trim() == 'إضافة عقار جديد'
+        ? firestore.collection('properties').doc()
+        : null;
+    await firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(contractRef);
+      final current = snapshot.data();
+      if (current == null) {
+        throw StateError('المسودة غير موجودة.');
+      }
+      if ((current['uid'] as String?) != uid ||
+          (current['status'] as String?) != ContractStatus.draft.name) {
+        throw StateError('لا يمكن تعديل هذه المسودة أو أنها أُرسلت مسبقًا.');
+      }
+      final isSubmitting = status == ContractStatus.awaitingPayment;
+      final shouldCreateProperty = isSubmitting &&
+          propertyRef != null &&
+          ((current['propertyId'] as String?) ?? '').trim().isEmpty;
+      final role = roleFromDraft(draft);
+      final update = <String, Object?>{
+        'type': draft.type.name,
+        'role': role.name,
+        'title': draft.title,
+        'propertySummary': draft.property.displayAddress,
+        'propertyTitle': draft.property.buildingName.trim().isEmpty
+            ? draft.property.propertyType
+            : draft.property.buildingName.trim(),
+        'city': draft.property.city,
+        'district': draft.property.district,
+        'lessorSummary': draft.lessor.displayName,
+        'tenantSummary': draft.tenant.displayName,
+        'contractDetails': contractDetailsFromDraft(draft),
+        'partyDetails': partyDetailsFromDraft(draft),
+        'propertyDetails': propertyDetailsFromDraft(draft),
+        'attachmentFiles': attachmentFilesFromDraft(draft),
+        'draftData': draftToMap(draft),
+        'draftProgress': draftProgressToMap(progress),
+        'totalFees': isSubmitting ? draft.totalPayable : 0,
+        'updatedAt': FieldValue.serverTimestamp(),
+        if (isSubmitting) ...<String, Object?>{
+          'status': ContractStatus.awaitingPayment.name,
+          'paymentStatus': 'pending',
+          'submittedAt': FieldValue.serverTimestamp(),
+          'customerVisibleNote': '',
+          'timeline': FieldValue.arrayUnion(<Map<String, Object?>>[
+            timelineToMap(
+              timelineEventFor(
+                ContractStatus.awaitingPayment,
+                DateTime.now(),
+                'تم إرسال المسودة بنجاح وأصبح الطلب جاهزًا للدفع.',
+              ),
+            ),
+          ]),
+          if (shouldCreateProperty) 'propertyId': propertyRef.id,
+        },
+      };
+      transaction.update(contractRef, update);
+      if (shouldCreateProperty) {
+        final newPropertyRef = propertyRef;
+        transaction.set(
+          newPropertyRef,
+          propertyDocumentData(
+            propertyId: newPropertyRef.id,
+            uid: uid,
+            contractId: contractId,
+            data: draft.property,
+          ),
+        );
+      }
+    });
+    final updated = await contractRef.get();
+    return contractFromDoc(updated);
+  }
+
   Future<void> updateContractStatus({
     required String contractId,
     required ContractStatus status,
@@ -844,37 +1231,30 @@ class FirebaseRepository {
     await firestore.runTransaction((transaction) async {
       final snapshot = await transaction.get(ref);
       final data = snapshot.data() ?? <String, Object?>{};
-      final uid = (data['uid'] as String?) ?? '';
+      final currentStatus = _contractStatus((data['status'] as String?) ?? '');
+      final note = customerNote.trim();
+      validateAdminStatusTransition(
+        currentStatus: currentStatus,
+        nextStatus: status,
+        customerNote: note,
+      );
       final title = (data['title'] as String?) ?? 'طلب العقد';
-      final event = timelineEventFor(status, DateTime.now(), customerNote);
+      final event = timelineEventFor(status, DateTime.now(), note);
       transaction.update(ref, <String, Object?>{
         'status': status.name,
-        'customerVisibleNote': customerNote,
+        'customerVisibleNote': status == ContractStatus.rejected ? '' : note,
         'updatedAt': FieldValue.serverTimestamp(),
+        if (status == ContractStatus.rejected) ...<String, Object?>{
+          'rejectionReason': note,
+          'rejectedAt': FieldValue.serverTimestamp(),
+          'rejectedBy': adminUid,
+        },
         if (status == ContractStatus.authenticated)
           'completedAt': FieldValue.serverTimestamp(),
         'timeline': FieldValue.arrayUnion(<Map<String, Object?>>[
           timelineToMap(event),
         ]),
       });
-      transaction.set(
-        firestore.collection('notifications').doc(),
-        notificationData(
-          uid: uid,
-          contractId: contractId,
-          title: event.title,
-          body: status == ContractStatus.awaitingPayment
-              ? 'طلبك جاهز للدفع، إجمالي الرسوم 398 ريال.'
-              : customerNote.isEmpty
-                  ? event.subtitle
-                  : customerNote,
-          type: notificationTypeForStatus(status),
-          priority: status == ContractStatus.awaitingPayment ||
-                  status == ContractStatus.rejected
-              ? 'high'
-              : 'normal',
-        ),
-      );
       transaction.set(
         firestore.collection('auditLogs').doc(),
         <String, Object?>{
@@ -885,10 +1265,29 @@ class FirebaseRepository {
           'before': data['status'],
           'after': status.name,
           'title': title,
+          if (status == ContractStatus.rejected) 'reason': note,
           'createdAt': FieldValue.serverTimestamp(),
         },
       );
     });
+  }
+
+  static void validateAdminStatusTransition({
+    required ContractStatus currentStatus,
+    required ContractStatus nextStatus,
+    String customerNote = '',
+  }) {
+    if (currentStatus == ContractStatus.rejected) {
+      throw StateError('الطلب مرفوض نهائيًا ولا يمكن تغيير حالته.');
+    }
+    if (nextStatus != ContractStatus.rejected) return;
+    if (currentStatus == ContractStatus.draft ||
+        currentStatus == ContractStatus.authenticated) {
+      throw StateError('لا يمكن رفض مسودة أو عقد مكتمل.');
+    }
+    if (customerNote.trim().isEmpty) {
+      throw ArgumentError('يجب كتابة سبب واضح لرفض الطلب.');
+    }
   }
 
   Future<void> addMissingRequirement({
@@ -897,14 +1296,26 @@ class FirebaseRepository {
     required String title,
     required String description,
     required String type,
+    required String issueCode,
     required String fieldPath,
     required String adminUid,
   }) async {
+    await _ensureContractIsNotRejected(contractId);
+    if (title.trim().isEmpty || description.trim().isEmpty) {
+      throw ArgumentError('يجب تحديد المتطلب وصياغة ملاحظة واضحة للعميل.');
+    }
+    if (issueCode != MissingReviewIssue.additionalDocument.code &&
+        containsIllogicalMissingClaim(description)) {
+      throw ArgumentError(
+        'لا يمكن وصف متطلب إجباري بأنه غير مرفق أو غير مكتمل بعد إرسال العقد.',
+      );
+    }
     final item = <String, Object?>{
       'id': firestore.collection('_').doc().id,
       'title': title,
       'description': description,
       'type': type,
+      'issueCode': issueCode,
       'fieldPath': fieldPath,
       'required': true,
       'resolved': false,
@@ -956,6 +1367,7 @@ class FirebaseRepository {
     required Uint8List bytes,
     required String adminUid,
   }) async {
+    await _ensureContractIsNotRejected(contractId);
     final storagePath =
         'contracts/$contractId/final/${DateTime.now().millisecondsSinceEpoch}-$fileName';
     final ref = storage.ref(storagePath);
@@ -1014,12 +1426,37 @@ class FirebaseRepository {
     await batch.commit();
   }
 
+  Future<void> _ensureContractIsNotRejected(String contractId) async {
+    final snapshot =
+        await firestore.collection('contracts').doc(contractId).get();
+    final status = (snapshot.data()?['status'] as String?) ?? '';
+    if (status == ContractStatus.rejected.name) {
+      throw StateError('الطلب مرفوض نهائيًا ولا يمكن تنفيذ هذا الإجراء.');
+    }
+  }
+
   ContractRecord contractFromDoc(
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) {
     final data = doc.data() ?? <String, dynamic>{};
     final type = _contractType((data['type'] as String?) ?? '');
     final status = _contractStatus((data['status'] as String?) ?? '');
+    final customerVisibleNote = _readableText(data['customerVisibleNote'], '');
+    final rejectionReason = _readableText(
+      data['rejectionReason'],
+      status == ContractStatus.rejected ? customerVisibleNote : '',
+    );
+    final rejectedAt = _dateTimeFromAny(data['rejectedAt']);
+    final rawTimeline = ((data['timeline'] as List?) ?? const <Object?>[])
+        .whereType<Map>()
+        .map((item) => timelineFromMap(Map<String, dynamic>.from(item)))
+        .toList();
+    final timeline = normalizeTimelineForStatus(
+      status: status,
+      items: rawTimeline,
+      rejectionReason: rejectionReason,
+      rejectedAt: rejectedAt,
+    );
     final defaultTitle =
         type == ContractType.commercial ? 'طلب عقد تجاري' : 'طلب عقد سكني';
     return ContractRecord(
@@ -1035,11 +1472,11 @@ class FirebaseRepository {
       date: _dateFromAny(data['createdAt']),
       status: status,
       totalFees: ((data['totalFees'] as num?) ?? 0).toDouble(),
-      timeline: ((data['timeline'] as List?) ?? const <Object?>[])
-          .whereType<Map>()
-          .map((item) => timelineFromMap(Map<String, dynamic>.from(item)))
-          .toList(),
-      customerVisibleNote: _readableText(data['customerVisibleNote'], ''),
+      timeline: timeline,
+      customerVisibleNote: customerVisibleNote,
+      rejectionReason: rejectionReason,
+      rejectedAt: rejectedAt,
+      rejectedBy: _readableText(data['rejectedBy'], ''),
       finalPdfUrl: (data['finalPdfUrl'] as String?) ?? '',
       finalPdfFileName: _readableText(data['finalPdfFileName'], ''),
       missingRequirements:
@@ -1065,6 +1502,8 @@ class FirebaseRepository {
       partyDetails: _readableStringMap(data['partyDetails']),
       propertyDetails: _readableStringMap(data['propertyDetails']),
       attachmentFiles: _readableStringMap(data['attachmentFiles']),
+      draftData: draftFromMap(data['draftData']),
+      draftProgress: draftProgressFromMap(data['draftProgress']),
     );
   }
 
@@ -1072,10 +1511,67 @@ class FirebaseRepository {
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) {
     final data = doc.data() ?? <String, dynamic>{};
+    final address = data['address'] is Map
+        ? Map<String, dynamic>.from(data['address'] as Map)
+        : <String, dynamic>{};
+    final ownership = data['ownership'] is Map
+        ? Map<String, dynamic>.from(data['ownership'] as Map)
+        : <String, dynamic>{};
     final units = ((data['units'] as List?) ?? const <Object?>[])
         .whereType<Map>()
         .map((unit) => unitFromMap(Map<String, dynamic>.from(unit)))
         .toList();
+    final unitMaps = ((data['units'] as List?) ?? const <Object?>[])
+        .whereType<Map>()
+        .map((unit) => Map<String, dynamic>.from(unit))
+        .toList();
+    final firstUnit = unitMaps.isEmpty ? null : unitMaps.first;
+    final floors = ((data['floors'] as num?) ?? 1).toInt();
+    final unitsPerFloor = ((data['unitsPerFloor'] as num?) ?? 1).toInt();
+    final totalUnits = ((data['totalUnits'] as num?) ?? 1).toInt();
+    final details = PropertyData(
+      propertySource: 'عقار محفوظ',
+      ownershipDocumentType:
+          _readableText(ownership['documentType'], 'صك إلكتروني'),
+      ownershipDocumentNumber: _readableText(ownership['documentNumber'], ''),
+      ownershipDocumentDate: _readableText(ownership['documentDate'], ''),
+      propertyUsage: _readableText(data['usage'], 'سكن عوائل'),
+      propertyType: _readableText(data['type'], 'عمارة'),
+      floorsCount: floors.toString(),
+      unitsPerFloor: unitsPerFloor.toString(),
+      totalUnits: totalUnits.toString(),
+      city: _readableText(address['city'] ?? data['city'], 'الرياض'),
+      district: _readableText(address['district'] ?? data['district'], ''),
+      street: _readableText(address['street'], ''),
+      buildingNumber: _readableText(address['buildingNumber'], ''),
+      additionalNumber: _readableText(address['additionalNumber'], ''),
+      postalCode: _readableText(address['postalCode'], ''),
+      buildingName: _readableText(data['title'], ''),
+      unitNumber: _readableText(firstUnit?['number'], ''),
+      unitName: _readableText(firstUnit?['name'], ''),
+      unitType: _readableText(firstUnit?['type'], 'شقة'),
+      floor: _readableText(firstUnit?['floor'], ''),
+      area: _readableText(firstUnit?['area'], ''),
+      roomsCount: _readableText(firstUnit?['roomsCount'], ''),
+      bathroomsCount: _readableText(firstUnit?['bathroomsCount'], ''),
+      hallsCount: _readableText(firstUnit?['hallsCount'], ''),
+      maidRoom: firstUnit?['maidRoom'] == true,
+      kitchen: firstUnit?['kitchen'] != false,
+      storage: firstUnit?['storage'] == true,
+      majlis: firstUnit?['majlis'] == true,
+      furnishingStatus: _readableText(
+        firstUnit?['furnishingStatus'],
+        'غير مؤثثة',
+      ),
+      privateParking: firstUnit?['privateParking'] == true,
+      electricityMeter: _readableText(firstUnit?['electricityMeter'], ''),
+      waterMeter: _readableText(firstUnit?['waterMeter'], ''),
+      gasMeter: _readableText(firstUnit?['gasMeter'], ''),
+      acWindow: firstUnit?['acWindow'] == true,
+      acSplit: firstUnit?['acSplit'] != false,
+      acCentral: firstUnit?['acCentral'] == true,
+      notes: _readableText(firstUnit?['notes'], ''),
+    );
     return PropertyRecord(
       id: doc.id,
       title: _readableText(data['title'], 'عقار'),
@@ -1083,9 +1579,10 @@ class FirebaseRepository {
       district: _readableText(data['district'], ''),
       type: _readableText(data['type'], 'عمارة'),
       usage: _readableText(data['usage'], 'سكن عوائل'),
-      floors: ((data['floors'] as num?) ?? 1).toInt(),
-      totalUnits: ((data['totalUnits'] as num?) ?? 1).toInt(),
+      floors: floors,
+      totalUnits: totalUnits,
       units: units,
+      data: details,
     );
   }
 
@@ -1176,6 +1673,7 @@ class FirebaseRepository {
       'title': item.title,
       'description': item.description,
       'type': item.type,
+      'issueCode': item.issueCode,
       'fieldPath': item.fieldPath,
       'required': item.required,
       'resolved': item.resolved,
@@ -1210,7 +1708,8 @@ class FirebaseRepository {
       ..tenant.birthDate = '1990/02/02';
     draft.property
       ..propertySource = 'إضافة عقار جديد'
-      ..ownershipDocumentNumber = 'DOC-DEMO-2026'
+      ..ownershipDocumentNumber = '310123456789'
+      ..ownershipDocumentType = 'صك إلكتروني'
       ..ownershipDocumentDate = '2026/06/20'
       ..propertyUsage = type == ContractType.residential ? 'سكن عوائل' : 'تجاري'
       ..propertyType = unitType == 'فيلا' ? 'فيلا' : 'عمارة'
@@ -1229,11 +1728,22 @@ class FirebaseRepository {
       ..unitType = unitType
       ..floor = '2'
       ..area = '145'
-      ..roomsCount = type == ContractType.residential ? '3' : '0'
+      ..roomsCount = type == ContractType.residential ? '3' : '1'
       ..bathroomsCount = '2'
       ..hallsCount = '1'
-      ..electricityMeter = 'EM-DEMO-7788'
-      ..waterMeter = 'WM-DEMO-7788';
+      ..maidRoom = type == ContractType.residential
+      ..kitchen = true
+      ..storage = true
+      ..majlis = type == ContractType.residential
+      ..furnishingStatus = 'غير مؤثثة'
+      ..acWindow = false
+      ..acSplit = true
+      ..acCentral = type == ContractType.commercial
+      ..privateParking = true
+      ..electricityMeter = '700200101'
+      ..waterMeter = '710200101'
+      ..gasMeter = '720200101'
+      ..notes = 'بيانات عقار مكتملة للعرض في النسخة التجريبية.';
     for (final attachment in draft.attachments) {
       if (attachment.required ||
           attachment.keyName == 'commercial_registration' &&
@@ -1247,7 +1757,7 @@ class FirebaseRepository {
     return draft;
   }
 
-  Map<String, Object?> draftToMap(ContractDraft draft) {
+  static Map<String, Object?> draftToMap(ContractDraft draft) {
     return <String, Object?>{
       'type': draft.type.name,
       'role': roleFromDraft(draft).name,
@@ -1267,11 +1777,19 @@ class FirebaseRepository {
         'rentPeriod': draft.rentPeriod,
         'hasSecurityDeposit': draft.hasSecurityDeposit,
         'securityDeposit': draft.securityDeposit,
+        'brokerageFee': draft.brokerageFee,
+        'brokeragePayer': draft.brokeragePayer,
+        'ownerSubjectToVat': draft.ownerSubjectToVat,
+        'vatValue': draft.vatValue,
+        'otherAmounts': draft.otherAmounts,
+        'paymentScheduleType': draft.paymentScheduleType,
         'paymentFrequency': draft.paymentFrequency,
         'paymentCount': draft.paymentCount,
+        'firstPaymentDate': draft.firstPaymentDate,
         'paymentChannel': draft.paymentChannel,
         'officialFeePayer': draft.officialFeePayer,
         'serviceFeePayer': draft.serviceFeePayer,
+        'paymentMethod': draft.paymentMethod.name,
         'ejarPlatformFee': draft.officialFee,
         'serviceFee': draft.serviceFee,
         'totalPayable': draft.totalPayable,
@@ -1287,6 +1805,11 @@ class FirebaseRepository {
         'autoRenewal': draft.autoRenewal,
         'specialTerms': draft.specialTerms,
       },
+      'declarations': <String, Object?>{
+        'acceptAccuracyDeclaration': draft.acceptAccuracyDeclaration,
+        'acceptDataSharing': draft.acceptDataSharing,
+        'acceptTerms': draft.acceptTerms,
+      },
       'attachments': draft.attachments.map(attachmentToMap).toList(),
       'installments': draft.installments
           .map((item) => <String, Object?>{
@@ -1298,6 +1821,298 @@ class FirebaseRepository {
           .toList(),
     };
   }
+
+  static Map<String, Object?> draftProgressToMap(DraftProgress progress) =>
+      <String, Object?>{
+        'lastStep': progress.lastStep.clamp(0, 6),
+        'touchedSections': progress.touchedSections.toSet().toList(),
+      };
+
+  static ContractDraft? draftFromMap(Object? value) {
+    final root = _dynamicMap(value);
+    if (root.isEmpty) return null;
+    final draft = ContractDraft();
+    draft.type = ContractType.values.firstWhere(
+      (item) => item.name == _mapString(root, 'type'),
+      orElse: () => draft.type,
+    );
+    draft.role = UserRole.values.firstWhere(
+      (item) => item.name == _mapString(root, 'role'),
+      orElse: () => draft.role,
+    );
+
+    final property = _dynamicMap(root['property']);
+    draft.property = PropertyData(
+      propertySource:
+          _mapString(property, 'propertySource', draft.property.propertySource),
+      ownershipDocumentNumber: _mapString(property, 'ownershipDocumentNumber'),
+      ownershipDocumentType: _mapString(
+        property,
+        'ownershipDocumentType',
+        draft.property.ownershipDocumentType,
+      ),
+      ownershipDocumentDate: _mapString(property, 'ownershipDocumentDate'),
+      propertyUsage:
+          _mapString(property, 'propertyUsage', draft.property.propertyUsage),
+      propertyType:
+          _mapString(property, 'propertyType', draft.property.propertyType),
+      floorsCount: _mapString(property, 'floorsCount'),
+      unitsPerFloor: _mapString(property, 'unitsPerFloor'),
+      totalUnits: _mapString(property, 'totalUnits'),
+      city: _mapString(property, 'city', draft.property.city),
+      district: _mapString(property, 'district'),
+      street: _mapString(property, 'street'),
+      buildingNumber: _mapString(property, 'buildingNumber'),
+      additionalNumber: _mapString(property, 'additionalNumber'),
+      postalCode: _mapString(property, 'postalCode'),
+      buildingName: _mapString(property, 'buildingName'),
+      unitNumber: _mapString(property, 'unitNumber'),
+      unitName: _mapString(property, 'unitName'),
+      unitType: _mapString(property, 'unitType', draft.property.unitType),
+      floor: _mapString(property, 'floor'),
+      area: _mapString(property, 'area'),
+      roomsCount: _mapString(property, 'roomsCount'),
+      bathroomsCount: _mapString(property, 'bathroomsCount'),
+      hallsCount: _mapString(property, 'hallsCount'),
+      maidRoom: _mapBool(property, 'maidRoom', draft.property.maidRoom),
+      kitchen: _mapBool(property, 'kitchen', draft.property.kitchen),
+      storage: _mapBool(property, 'storage', draft.property.storage),
+      majlis: _mapBool(property, 'majlis', draft.property.majlis),
+      furnishingStatus: _mapString(
+        property,
+        'furnishingStatus',
+        draft.property.furnishingStatus,
+      ),
+      acWindow: _mapBool(property, 'acWindow', draft.property.acWindow),
+      acSplit: _mapBool(property, 'acSplit', draft.property.acSplit),
+      acCentral: _mapBool(property, 'acCentral', draft.property.acCentral),
+      privateParking:
+          _mapBool(property, 'privateParking', draft.property.privateParking),
+      electricityMeter: _mapString(property, 'electricityMeter'),
+      waterMeter: _mapString(property, 'waterMeter'),
+      gasMeter: _mapString(property, 'gasMeter'),
+      notes: _mapString(property, 'notes'),
+    );
+
+    draft.lessor = _partyFromMap(root['lessor']);
+    draft.tenant = _partyFromMap(root['tenant']);
+    draft.representative = _representativeFromMap(root['representative']);
+
+    final duration = _dynamicMap(root['duration']);
+    draft
+      ..startDate = _mapString(duration, 'startDate')
+      ..endDate = _mapString(duration, 'endDate')
+      ..durationYears = _mapString(duration, 'years', draft.durationYears)
+      ..durationMonths = _mapString(duration, 'months', draft.durationMonths)
+      ..durationDays = _mapString(duration, 'days', draft.durationDays);
+
+    final financial = _dynamicMap(root['financial']);
+    draft
+      ..rentValue = _mapString(financial, 'rentValue')
+      ..rentPeriod = _mapString(financial, 'rentPeriod', draft.rentPeriod)
+      ..hasSecurityDeposit = _mapBool(
+        financial,
+        'hasSecurityDeposit',
+        draft.hasSecurityDeposit,
+      )
+      ..securityDeposit = _mapString(financial, 'securityDeposit')
+      ..brokerageFee = _mapString(financial, 'brokerageFee')
+      ..brokeragePayer =
+          _mapString(financial, 'brokeragePayer', draft.brokeragePayer)
+      ..ownerSubjectToVat =
+          _mapBool(financial, 'ownerSubjectToVat', draft.ownerSubjectToVat)
+      ..vatValue = _mapString(financial, 'vatValue')
+      ..otherAmounts = _mapString(financial, 'otherAmounts')
+      ..paymentScheduleType = _mapString(
+        financial,
+        'paymentScheduleType',
+        draft.paymentScheduleType,
+      )
+      ..paymentFrequency = _mapString(
+        financial,
+        'paymentFrequency',
+        draft.paymentFrequency,
+      )
+      ..paymentCount = _mapInt(financial, 'paymentCount', draft.paymentCount)
+      ..firstPaymentDate = _mapString(financial, 'firstPaymentDate')
+      ..paymentChannel =
+          _mapString(financial, 'paymentChannel', draft.paymentChannel)
+      ..officialFeePayer =
+          _mapString(financial, 'officialFeePayer', draft.officialFeePayer)
+      ..serviceFeePayer =
+          _mapString(financial, 'serviceFeePayer', draft.serviceFeePayer)
+      ..paymentMethod = PaymentMethod.values.firstWhere(
+        (item) => item.name == _mapString(financial, 'paymentMethod'),
+        orElse: () => draft.paymentMethod,
+      );
+
+    final services = _dynamicMap(root['services']);
+    draft
+      ..electricity = _serviceFromMap(
+        services['electricity'],
+        fallback: draft.electricity,
+      )
+      ..water = _serviceFromMap(services['water'], fallback: draft.water)
+      ..gas = _serviceFromMap(services['gas'], fallback: draft.gas)
+      ..otherServices = _mapString(services, 'otherServices');
+
+    final terms = _dynamicMap(root['terms']);
+    draft
+      ..allowSublease = _mapBool(terms, 'allowSublease', draft.allowSublease)
+      ..autoRenewal = _mapBool(terms, 'autoRenewal', draft.autoRenewal)
+      ..specialTerms = _mapString(terms, 'specialTerms');
+    final declarations = _dynamicMap(root['declarations']);
+    draft
+      ..acceptAccuracyDeclaration = _mapBool(
+        declarations,
+        'acceptAccuracyDeclaration',
+        draft.acceptAccuracyDeclaration,
+      )
+      ..acceptDataSharing = _mapBool(
+        declarations,
+        'acceptDataSharing',
+        draft.acceptDataSharing,
+      )
+      ..acceptTerms = _mapBool(declarations, 'acceptTerms', draft.acceptTerms);
+
+    final storedAttachments =
+        ((root['attachments'] as List?) ?? const <Object?>[])
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+    if (storedAttachments.isNotEmpty) {
+      final byKey = <String, Map<String, dynamic>>{
+        for (final item in storedAttachments) _mapString(item, 'keyName'): item,
+      };
+      draft.attachments = draft.attachments.map((fallback) {
+        final item = byKey[fallback.keyName];
+        if (item == null) return fallback;
+        return AttachmentData(
+          keyName: fallback.keyName,
+          title: _mapString(item, 'title', fallback.title),
+          required: _mapBool(item, 'required', fallback.required),
+          uploaded: _mapBool(item, 'uploaded', fallback.uploaded),
+          fileName: _mapString(item, 'fileName'),
+          sizeLabel: _mapString(item, 'sizeLabel'),
+        );
+      }).toList();
+    }
+    draft.installments = ((root['installments'] as List?) ?? const <Object?>[])
+        .whereType<Map>()
+        .map((item) {
+      final data = Map<String, dynamic>.from(item);
+      return InstallmentData(
+        index: _mapInt(data, 'index', 1),
+        amount: _mapString(data, 'amount'),
+        dueDate: _mapString(data, 'dueDate'),
+        note: _mapString(data, 'note'),
+      );
+    }).toList();
+    return draft;
+  }
+
+  static DraftProgress draftProgressFromMap(Object? value) {
+    final data = _dynamicMap(value);
+    return DraftProgress(
+      lastStep: _mapInt(data, 'lastStep').clamp(0, 6),
+      touchedSections: ((data['touchedSections'] as List?) ?? const <Object?>[])
+          .map((item) => '$item'.trim())
+          .where((item) => item.isNotEmpty)
+          .toSet()
+          .toList(),
+    );
+  }
+
+  static PartyData _partyFromMap(Object? value) {
+    final data = _dynamicMap(value);
+    final defaults = PartyData();
+    return PartyData(
+      kind: PartyKind.values.firstWhere(
+        (item) => item.name == _mapString(data, 'kind'),
+        orElse: () => defaults.kind,
+      ),
+      fullName: _mapString(data, 'fullName'),
+      idType: _mapString(data, 'idType', defaults.idType),
+      idNumber: _mapString(data, 'idNumber'),
+      birthDate: _mapString(data, 'birthDate'),
+      mobile: _mapString(data, 'mobile'),
+      email: _mapString(data, 'email'),
+      city: _mapString(data, 'city', defaults.city),
+      district: _mapString(data, 'district'),
+      nationalAddress: _mapString(data, 'nationalAddress'),
+      mobileRegisteredInAbsher: _mapBool(
+        data,
+        'mobileRegisteredInAbsher',
+        defaults.mobileRegisteredInAbsher,
+      ),
+      commercialRegistration: _mapString(data, 'commercialRegistration'),
+      unifiedNumber: _mapString(data, 'unifiedNumber'),
+      authorizedPersonName: _mapString(data, 'authorizedPersonName'),
+      authorizedPersonId: _mapString(data, 'authorizedPersonId'),
+      iban: _mapString(data, 'iban'),
+      bankName: _mapString(data, 'bankName'),
+      accountOwner: _mapString(data, 'accountOwner'),
+    );
+  }
+
+  static RepresentativeData _representativeFromMap(Object? value) {
+    final data = _dynamicMap(value);
+    final defaults = RepresentativeData();
+    return RepresentativeData(
+      enabled: _mapBool(data, 'enabled', defaults.enabled),
+      represents: _mapString(data, 'represents', defaults.represents),
+      type: _mapString(data, 'type', defaults.type),
+      fullName: _mapString(data, 'fullName'),
+      idType: _mapString(data, 'idType', defaults.idType),
+      idNumber: _mapString(data, 'idNumber'),
+      birthDate: _mapString(data, 'birthDate'),
+      mobile: _mapString(data, 'mobile'),
+      authorizationNumber: _mapString(data, 'authorizationNumber'),
+      authorizationDate: _mapString(data, 'authorizationDate'),
+      issuer: _mapString(data, 'issuer'),
+      expiryDate: _mapString(data, 'expiryDate'),
+    );
+  }
+
+  static ServiceCharge _serviceFromMap(
+    Object? value, {
+    required ServiceCharge fallback,
+  }) {
+    final data = _dynamicMap(value);
+    return ServiceCharge(
+      enabled: _mapBool(data, 'enabled', fallback.enabled),
+      calculationMethod:
+          _mapString(data, 'calculationMethod', fallback.calculationMethod),
+      fixedAmount: _mapString(data, 'fixedAmount'),
+      currentReading: _mapString(data, 'currentReading'),
+    );
+  }
+
+  static Map<String, dynamic> _dynamicMap(Object? value) =>
+      value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
+
+  static String _mapString(
+    Map<String, dynamic> data,
+    String key, [
+    String fallback = '',
+  ]) {
+    final value = data[key];
+    return value == null ? fallback : '$value';
+  }
+
+  static bool _mapBool(
+    Map<String, dynamic> data,
+    String key,
+    bool fallback,
+  ) =>
+      data[key] is bool ? data[key] as bool : fallback;
+
+  static int _mapInt(
+    Map<String, dynamic> data,
+    String key, [
+    int fallback = 0,
+  ]) =>
+      data[key] is num ? (data[key] as num).toInt() : fallback;
 
   static Map<String, String> contractDetailsFromDraft(ContractDraft draft) {
     return <String, String>{
@@ -1700,6 +2515,33 @@ class FirebaseRepository {
     ContractStatus status,
     DateTime now,
   ) {
+    if (status == ContractStatus.rejected) {
+      return <StatusTimelineItem>[
+        StatusTimelineItem(
+          title: 'تم استلام الطلب',
+          subtitle: 'تم استلام الطلب بنجاح',
+          date: _dateLabel(now),
+          time: _timeLabel(now),
+          completed: true,
+        ),
+        StatusTimelineItem(
+          title: 'قيد المعالجة',
+          subtitle: 'تمت مراجعة بيانات الطلب',
+          date: _dateLabel(now),
+          time: _timeLabel(now),
+          completed: true,
+          eventStatus: ContractStatus.processing,
+        ),
+        StatusTimelineItem(
+          title: 'تم رفض الطلب نهائيًا',
+          subtitle: 'تم رفض الطلب بعد مراجعته.',
+          date: _dateLabel(now),
+          time: _timeLabel(now),
+          current: true,
+          eventStatus: ContractStatus.rejected,
+        ),
+      ];
+    }
     return <StatusTimelineItem>[
       StatusTimelineItem(
         title: status == ContractStatus.draft
@@ -1716,6 +2558,7 @@ class FirebaseRepository {
         current: status == ContractStatus.draft ||
             status == ContractStatus.awaitingPayment ||
             status == ContractStatus.processing,
+        eventStatus: status,
       ),
     ];
   }
@@ -1729,7 +2572,7 @@ class FirebaseRepository {
       ContractStatus.missingData => 'يوجد نقص مطلوب',
       ContractStatus.processing => 'قيد المعالجة',
       ContractStatus.authenticated => 'تم إصدار العقد النهائي',
-      ContractStatus.rejected => 'تم رفض الطلب',
+      ContractStatus.rejected => 'تم رفض الطلب نهائيًا',
       ContractStatus.awaitingPayment => 'بانتظار الدفع',
       ContractStatus.draft => 'مسودة',
     };
@@ -1740,7 +2583,60 @@ class FirebaseRepository {
       time: _timeLabel(now),
       completed: status == ContractStatus.authenticated,
       current: status != ContractStatus.authenticated,
+      eventStatus: status,
     );
+  }
+
+  static List<StatusTimelineItem> normalizeTimelineForStatus({
+    required ContractStatus status,
+    required List<StatusTimelineItem> items,
+    String rejectionReason = '',
+    DateTime? rejectedAt,
+  }) {
+    if (status != ContractStatus.rejected) return items;
+    final normalized = <StatusTimelineItem>[];
+    StatusTimelineItem? rejectionEvent;
+    for (final item in items) {
+      final isRejected = item.eventStatus == ContractStatus.rejected ||
+          item.title.contains('رفض');
+      final isCompletedContract =
+          item.eventStatus == ContractStatus.authenticated ||
+              item.title == 'مكتمل' ||
+              item.title.contains('العقد النهائي');
+      if (isCompletedContract) continue;
+      if (isRejected) {
+        rejectionEvent = item;
+        continue;
+      }
+      normalized.add(
+        StatusTimelineItem(
+          title: item.title,
+          subtitle: item.subtitle,
+          date: item.date,
+          time: item.time,
+          completed: true,
+          eventStatus: item.eventStatus,
+        ),
+      );
+    }
+    final reason = rejectionReason.trim();
+    final fallbackDate = rejectionEvent?.date ??
+        (rejectedAt == null ? '' : _dateLabel(rejectedAt));
+    final fallbackTime = rejectionEvent?.time ??
+        (rejectedAt == null ? '' : _timeLabel(rejectedAt));
+    normalized.add(
+      StatusTimelineItem(
+        title: 'تم رفض الطلب نهائيًا',
+        subtitle: reason.isEmpty
+            ? 'تم رفض الطلب نهائيًا بعد مراجعته.'
+            : 'سبب الرفض: $reason',
+        date: fallbackDate,
+        time: fallbackTime,
+        current: true,
+        eventStatus: ContractStatus.rejected,
+      ),
+    );
+    return normalized;
   }
 
   static Map<String, Object?> timelineToMap(StatusTimelineItem item) {
@@ -1751,6 +2647,7 @@ class FirebaseRepository {
       'time': item.time,
       'completed': item.completed,
       'current': item.current,
+      if (item.eventStatus != null) 'eventStatus': item.eventStatus!.name,
     };
   }
 
@@ -1762,18 +2659,52 @@ class FirebaseRepository {
       time: _readableText(data['time'], ''),
       completed: (data['completed'] as bool?) ?? false,
       current: (data['current'] as bool?) ?? false,
+      eventStatus: _contractStatusOrNull(
+        _readableText(data['eventStatus'], ''),
+      ),
     );
   }
 
   static MissingRequirement missingRequirementFromMap(
     Map<String, dynamic> data,
   ) {
+    var title = _readableText(data['title'], 'متطلب مراجعة');
+    var description = _readableText(data['description'], '');
+    var issueCode = _readableText(data['issueCode'], '');
+    final fieldPath = _readableText(data['fieldPath'], '');
+    final legacyText = '$title $description $fieldPath';
+    if (issueCode.isEmpty && containsIllogicalMissingClaim(legacyText)) {
+      if (legacyText.contains('السجل التجاري') ||
+          legacyText.toLowerCase().contains('commercial')) {
+        title = 'السجل التجاري';
+        issueCode = MissingReviewIssue.unclear.code;
+        description = buildMissingReviewDescription(
+          target: title,
+          issue: MissingReviewIssue.unclear,
+        );
+      } else if (legacyText.contains('عداد الكهرباء') ||
+          legacyText.contains('electricityMeter')) {
+        title = 'رقم عداد الكهرباء';
+        issueCode = MissingReviewIssue.unverifiable.code;
+        description = buildMissingReviewDescription(
+          target: title,
+          issue: MissingReviewIssue.unverifiable,
+        );
+      } else {
+        issueCode = MissingReviewIssue.incorrect.code;
+        description = buildMissingReviewDescription(
+          target: title,
+          issue: MissingReviewIssue.incorrect,
+        );
+      }
+    }
     return MissingRequirement(
       id: (data['id'] as String?) ?? '',
-      title: _readableText(data['title'], 'نقص مطلوب'),
-      description: _readableText(data['description'], ''),
+      title: title,
+      description: description,
       type: _readableText(data['type'], 'field'),
-      fieldPath: _readableText(data['fieldPath'], ''),
+      issueCode: issueCode,
+      fieldPath: fieldPath,
       required: (data['required'] as bool?) ?? true,
       resolved: (data['resolved'] as bool?) ?? false,
     );
@@ -1807,12 +2738,21 @@ class FirebaseRepository {
     };
   }
 
+  static ContractStatus? _contractStatusOrNull(String value) {
+    if (value.isEmpty) return null;
+    for (final status in ContractStatus.values) {
+      if (status.name == value) return status;
+    }
+    return null;
+  }
+
   static String _notificationFallbackTitle(String type) {
     return switch (type) {
       'payment' => 'تم الدفع التجريبي',
       'paymentRequired' => 'بانتظار الدفع',
       'missingRequirement' => 'يوجد نقص مطلوب في طلبك',
       'finalPdfUploaded' => 'تم إصدار العقد النهائي',
+      'rejected' => 'تم رفض طلب العقد',
       'supportReply' => 'رد جديد من الدعم',
       _ => 'تنبيه',
     };
@@ -1824,6 +2764,8 @@ class FirebaseRepository {
       'paymentRequired' => 'طلبك جاهز للدفع، إجمالي الرسوم 398 ريال.',
       'missingRequirement' => 'يوجد نقص مطلوب لاستكمال معالجة الطلب.',
       'finalPdfUploaded' => 'يمكنك الآن عرض تفاصيل العقد النهائي.',
+      'rejected' =>
+        'تم رفض هذا الطلب نهائيًا. يمكنك تقديم طلب جديد أو التواصل مع الدعم الفني.',
       'supportReply' => 'وصلك رد جديد من فريق الدعم.',
       _ => '',
     };
@@ -1831,13 +2773,18 @@ class FirebaseRepository {
 
   static ContractStatus _statusForNotificationType(String value) {
     return switch (value) {
-      'awaitingPayment' => ContractStatus.awaitingPayment,
-      'missingRequirement' => ContractStatus.missingData,
+      'awaitingPayment' || 'paymentRequired' => ContractStatus.awaitingPayment,
+      'missingRequirement' ||
+      'missingResponseReturned' =>
+        ContractStatus.missingData,
       'processing' ||
       'readyForEjar' ||
       'enteredInEjar' =>
         ContractStatus.processing,
-      'authenticated' || 'finalPdfUploaded' => ContractStatus.authenticated,
+      'authenticated' ||
+      'finalPdfUploaded' ||
+      'finalContractReady' =>
+        ContractStatus.authenticated,
       'rejected' => ContractStatus.rejected,
       'draftSaved' => ContractStatus.draft,
       'contractSubmitted' ||
@@ -1873,6 +2820,7 @@ class _DemoContractSeed {
   final ContractStatus status;
   final String paymentStatus;
   final String note;
+  final String rejectionReason;
   final List<MissingRequirement> missingRequirements;
   final bool finalPdf;
 
@@ -1881,6 +2829,7 @@ class _DemoContractSeed {
     required this.status,
     required this.paymentStatus,
     required this.note,
+    this.rejectionReason = '',
     this.missingRequirements = const <MissingRequirement>[],
     this.finalPdf = false,
   });

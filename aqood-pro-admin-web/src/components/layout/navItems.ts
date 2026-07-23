@@ -15,9 +15,9 @@ export const navItems = [
 ];
 
 export const mobileNavItems = [
-  { to: '/dashboard', label: '????????', icon: '?' },
-  { to: '/contracts', label: '??????', icon: '?' },
-  { to: '/users', label: '???????', icon: '?' },
-  { to: '/reports', label: '??????', icon: '?' },
-  { to: '__more__', label: '??????', icon: '?' },
+  { to: '/dashboard', label: 'الرئيسية', icon: '◆' },
+  { to: '/contracts', label: 'العقود', icon: '▣' },
+  { to: '/users', label: 'المستخدمون', icon: '◉' },
+  { to: '/reports', label: 'التقارير', icon: '▲' },
+  { to: '__more__', label: 'المزيد', icon: '☰' },
 ];

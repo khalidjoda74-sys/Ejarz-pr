@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/app_controller.dart';
+import '../core/draft_resume_policy.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
 import '../widgets/common.dart';
@@ -61,7 +62,8 @@ String? _requiredIdentityNumber(String? value, String idType) {
 String? _requiredSaudiPersonId(String? value) {
   final digits = _digitsOnly(value ?? '');
   if (digits.isEmpty) return 'هذا الحقل مطلوب';
-  if (digits.length == 10 && (digits.startsWith('1') || digits.startsWith('2'))) {
+  if (digits.length == 10 &&
+      (digits.startsWith('1') || digits.startsWith('2'))) {
     return null;
   }
   return 'أدخل رقم هوية أو إقامة صحيح من 10 أرقام';
@@ -156,13 +158,206 @@ DateTime? _parseAppDate(String value) {
   final month = int.tryParse(parts[1]);
   final day = int.tryParse(parts[2]);
   if (year == null || month == null || day == null) return null;
-  return DateTime.tryParse(
+  final parsed = DateTime.tryParse(
     '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}',
+  );
+  if (parsed == null ||
+      parsed.year != year ||
+      parsed.month != month ||
+      parsed.day != day) {
+    return null;
+  }
+  return parsed;
+}
+
+const String _newPropertySource = 'إضافة عقار جديد';
+
+class _SavedPropertyOption {
+  final String label;
+  final PropertyRecord property;
+
+  const _SavedPropertyOption({
+    required this.label,
+    required this.property,
+  });
+}
+
+List<_SavedPropertyOption> _savedPropertyOptions(
+  List<PropertyRecord> properties,
+  ContractType type,
+) {
+  final labels = <String, int>{};
+  return properties
+      .where((property) => _propertyMatchesContractType(property, type))
+      .map((property) {
+    final baseLabel = _savedPropertyLabel(property);
+    final labelIndex = labels[baseLabel] ?? 0;
+    labels[baseLabel] = labelIndex + 1;
+    return _SavedPropertyOption(
+      label: labelIndex == 0 ? baseLabel : '$baseLabel (${labelIndex + 1})',
+      property: property,
+    );
+  }).toList(growable: false);
+}
+
+bool _propertyMatchesContractType(PropertyRecord property, ContractType type) {
+  final data = property.data;
+  final usage = (data?.propertyUsage ?? property.usage).trim();
+  final unitType = (data?.unitType ??
+          (property.units.isEmpty ? '' : property.units.first.type))
+      .trim();
+  final commercial = usage.contains('تجاري') ||
+      unitType == 'محل' ||
+      unitType == 'مستودع' ||
+      unitType == 'مكتب إداري';
+  return type == ContractType.commercial ? commercial : !commercial;
+}
+
+String _savedPropertyLabel(PropertyRecord property) {
+  final data = property.data;
+  final title = _cleanPropertyText(data?.buildingName ?? property.title);
+  final unitNumber = _cleanPropertyText(data?.unitNumber ??
+      (property.units.isEmpty ? '' : property.units.first.number));
+  final district = _cleanPropertyText(data?.district ?? property.district);
+  return <String>[
+    title.isEmpty ? property.type : title,
+    if (unitNumber.isNotEmpty) 'وحدة $unitNumber',
+    if (district.isNotEmpty) district,
+  ].join(' - ');
+}
+
+String _cleanPropertyText(String value) {
+  final text = value.trim();
+  return text == '-' || text == 'غير محدد' ? '' : text;
+}
+
+String _numericPropertyText(String value) {
+  return value.trim().replaceAll(RegExp(r'[^0-9.]'), '');
+}
+
+PropertyData _propertyDataFromRecord(
+  PropertyRecord property,
+  String sourceLabel,
+) {
+  final data = property.data;
+  if (data != null) {
+    return PropertyData(
+      propertySource: sourceLabel,
+      ownershipDocumentNumber: data.ownershipDocumentNumber,
+      ownershipDocumentType: data.ownershipDocumentType,
+      ownershipDocumentDate: data.ownershipDocumentDate,
+      propertyUsage: data.propertyUsage,
+      propertyType: data.propertyType,
+      floorsCount: data.floorsCount,
+      unitsPerFloor: data.unitsPerFloor,
+      totalUnits: data.totalUnits,
+      city: data.city,
+      district: data.district,
+      street: data.street,
+      buildingNumber: data.buildingNumber,
+      additionalNumber: data.additionalNumber,
+      postalCode: data.postalCode,
+      buildingName: data.buildingName,
+      unitNumber: data.unitNumber,
+      unitName: data.unitName,
+      unitType: data.unitType,
+      floor: data.floor,
+      area: data.area,
+      roomsCount: data.roomsCount,
+      bathroomsCount: data.bathroomsCount,
+      hallsCount: data.hallsCount,
+      maidRoom: data.maidRoom,
+      kitchen: data.kitchen,
+      storage: data.storage,
+      majlis: data.majlis,
+      furnishingStatus: data.furnishingStatus,
+      acWindow: data.acWindow,
+      acSplit: data.acSplit,
+      acCentral: data.acCentral,
+      privateParking: data.privateParking,
+      electricityMeter: data.electricityMeter,
+      waterMeter: data.waterMeter,
+      gasMeter: data.gasMeter,
+      notes: data.notes,
+    );
+  }
+  final unit = property.units.isEmpty ? null : property.units.first;
+  final unitType = _cleanPropertyText(unit?.type ?? '');
+  return PropertyData(
+    propertySource: sourceLabel,
+    propertyUsage: property.usage,
+    propertyType: property.type,
+    floorsCount: property.floors.toString(),
+    unitsPerFloor: '1',
+    totalUnits: property.totalUnits.toString(),
+    city: property.city,
+    district: property.district,
+    buildingName: property.title,
+    unitNumber: _cleanPropertyText(unit?.number ?? ''),
+    unitName: _cleanPropertyText(unit?.name ?? ''),
+    unitType: unitType.isEmpty ? 'شقة' : unitType,
+    floor: _cleanPropertyText(unit?.floor ?? ''),
+    area: _numericPropertyText(unit?.area ?? ''),
   );
 }
 
+PropertyData _newPropertyDataForContractType(ContractType type) {
+  final data = PropertyData(propertySource: _newPropertySource);
+  if (type == ContractType.commercial) {
+    data
+      ..propertyUsage = 'تجاري'
+      ..propertyType = 'برج'
+      ..unitType = 'محل';
+  }
+  return data;
+}
+
+void _applyContractType(ContractDraft draft, ContractType type) {
+  final typeChanged = draft.type != type;
+  final savedPropertySelected =
+      draft.property.propertySource.trim() != _newPropertySource;
+  draft.type = type;
+  if (typeChanged && savedPropertySelected) {
+    draft.property = _newPropertyDataForContractType(type);
+    return;
+  }
+  if (!typeChanged && savedPropertySelected) return;
+  if (type == ContractType.commercial) {
+    draft.property
+      ..unitType = 'محل'
+      ..propertyType = 'برج'
+      ..propertyUsage = 'تجاري';
+  } else {
+    draft.property
+      ..unitType = 'شقة'
+      ..propertyType = 'عمارة'
+      ..propertyUsage = 'سكن عوائل';
+  }
+}
+
+ContractDraft createContractDraftForType(ContractType type) {
+  final draft = ContractDraft();
+  _applyContractType(draft, type);
+  return draft;
+}
+
 class CreateContractScreen extends StatefulWidget {
-  const CreateContractScreen({super.key});
+  final ContractDraft? initialDraft;
+  final String draftId;
+  final int? initialStep;
+  final List<String> initialTouchedSections;
+  final bool renewalMode;
+  final String renewalSourceNumber;
+
+  const CreateContractScreen({
+    super.key,
+    this.initialDraft,
+    this.draftId = '',
+    this.initialStep,
+    this.initialTouchedSections = const <String>[],
+    this.renewalMode = false,
+    this.renewalSourceNumber = '',
+  });
 
   @override
   State<CreateContractScreen> createState() => _CreateContractScreenState();
@@ -179,7 +374,9 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     'المراجعة',
   ];
 
-  final ContractDraft _draft = ContractDraft();
+  late final ContractDraft _draft;
+  late String _draftId;
+  final Set<String> _touchedSections = <String>{};
   final List<GlobalKey<FormState>> _formKeys =
       List<GlobalKey<FormState>>.generate(
     7,
@@ -190,6 +387,21 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   int _currentStep = 0;
   int _partyTab = 0;
   bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _draft = widget.initialDraft == null
+        ? ContractDraft()
+        : ContractDraft.copyOf(widget.initialDraft!);
+    _draftId = widget.draftId.trim();
+    _touchedSections.addAll(widget.initialTouchedSections);
+    _currentStep = (widget.initialStep ??
+            (widget.initialDraft == null
+                ? 0
+                : firstIncompleteDraftStep(_draft)))
+        .clamp(0, _steps.length - 1);
+  }
 
   @override
   void dispose() {
@@ -248,6 +460,16 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
         'اسم صاحب الحساب',
     ];
   }
+
+  void _markChanged() {
+    _touchedSections.add(draftSectionForStep(_currentStep));
+    setState(() {});
+  }
+
+  DraftProgress get _draftProgress => DraftProgress(
+        lastStep: _currentStep,
+        touchedSections: _touchedSections.toList(),
+      );
 
   List<String> _missingRepresentativeFields(RepresentativeData representative) {
     if (!representative.enabled) return const <String>[];
@@ -311,6 +533,8 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
           null)
         'رقم وثيقة الملكية',
       if (_isBlank(property.ownershipDocumentDate)) 'تاريخ وثيقة الملكية',
+      if (!_isBlank(property.ownershipDocumentDate) && ownershipDate == null)
+        'تاريخ وثيقة الملكية بصيغة صحيحة',
       if (ownershipDate != null && ownershipDate.isAfter(DateTime.now()))
         'تاريخ وثيقة الملكية غير مستقبلي',
       if (_requiredPositiveInt(property.floorsCount, min: 1, max: 200) != null)
@@ -325,12 +549,10 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
       if (_requiredFixedDigits(property.buildingNumber, 4, 'رقم المبنى') !=
           null)
         'رقم المبنى',
-      if (_requiredFixedDigits(
-              property.additionalNumber, 4, 'الرقم الإضافي') !=
+      if (_requiredFixedDigits(property.additionalNumber, 4, 'الرقم الإضافي') !=
           null)
         'الرقم الإضافي',
-      if (_requiredFixedDigits(property.postalCode, 5, 'الرمز البريدي') !=
-          null)
+      if (_requiredFixedDigits(property.postalCode, 5, 'الرمز البريدي') != null)
         'الرمز البريدي',
       if (_requiredValue(property.unitNumber) != null) 'رقم الوحدة',
       if (_requiredName(property.unitName) != null) 'اسم الوحدة',
@@ -442,7 +664,8 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
       return;
     }
 
-    if (_currentStep == 0) {
+    if (_currentStep == 0 &&
+        _draft.property.propertySource.trim() == _newPropertySource) {
       _draft.property.propertyUsage =
           _draft.type == ContractType.residential ? 'سكن عوائل' : 'تجاري';
     }
@@ -471,6 +694,8 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
         return;
       }
     }
+
+    _touchedSections.add(draftSectionForStep(_currentStep));
 
     if (_currentStep < _steps.length - 1) {
       setState(() => _currentStep += 1);
@@ -530,11 +755,22 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
       showAppSnackBar(context, 'يجب الموافقة على الإقرارات والشروط');
       return;
     }
+    _touchedSections.addAll(const <String>{
+      draftSectionContract,
+      draftSectionParties,
+      draftSectionProperty,
+      draftSectionFinancial,
+      draftSectionAttachments,
+    });
     setState(() => _submitting = true);
     await Future<void>.delayed(const Duration(milliseconds: 1100));
     if (!mounted) return;
     final controller = AppScope.of(context, listen: false);
-    final record = await controller.submitContract(_draft);
+    final record = await controller.submitContract(
+      _draft,
+      draftId: _draftId,
+      progress: _draftProgress,
+    );
     final waitsForConnection = record.pendingSync;
     if (!mounted) return;
     setState(() => _submitting = false);
@@ -593,9 +829,15 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   }
 
   Future<void> _saveDraft() async {
+    _touchedSections.add(draftSectionForStep(_currentStep));
     final controller = AppScope.of(context, listen: false);
-    final record = await controller.saveDraft(_draft);
+    final record = await controller.saveDraft(
+      _draft,
+      draftId: _draftId,
+      progress: _draftProgress,
+    );
     if (!mounted) return;
+    _draftId = record.id;
     showAppSnackBar(
       context,
       record.pendingSync
@@ -608,15 +850,21 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('إنشاء عقد جديد'),
+        title: Text(
+          widget.renewalMode
+              ? 'تجديد عقد'
+              : _draftId.isEmpty
+                  ? 'إنشاء عقد جديد'
+                  : 'استكمال المسودة',
+        ),
         leading: IconButton(
           onPressed: _previous,
-          icon: const Icon(Icons.arrow_forward_rounded),
+          icon: const BackButtonIcon(),
         ),
         actions: <Widget>[
           TextButton(
             onPressed: _saveDraft,
-            child: const Text('حفظ كمسودة'),
+            child: Text(_draftId.isEmpty ? 'حفظ كمسودة' : 'حفظ التعديلات'),
           ),
         ],
       ),
@@ -715,35 +963,37 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     return switch (_currentStep) {
       0 => _TypeStep(
           draft: _draft,
-          onChanged: () => setState(() {}),
+          onChanged: _markChanged,
+          renewalMode: widget.renewalMode,
+          renewalSourceNumber: widget.renewalSourceNumber,
         ),
       1 => _OwnershipStep(
           draft: _draft,
-          onChanged: () => setState(() {}),
+          onChanged: _markChanged,
         ),
       2 => _PartiesStep(
           draft: _draft,
           selectedTab: _partyTab,
           onTabChanged: (value) => setState(() => _partyTab = value),
-          onChanged: () => setState(() {}),
+          onChanged: _markChanged,
         ),
       3 => _PropertyStep(
           draft: _draft,
-          onChanged: () => setState(() {}),
+          onChanged: _markChanged,
         ),
       4 => _FinancialStep(
           draft: _draft,
-          onChanged: () => setState(() {}),
+          onChanged: _markChanged,
         ),
       5 => _AttachmentsStep(
           draft: _draft,
           requiredAttachments: _requiredAttachments,
-          onChanged: () => setState(() {}),
+          onChanged: _markChanged,
         ),
       6 => _ReviewStep(
           draft: _draft,
           requiredAttachments: _requiredAttachments,
-          onChanged: () => setState(() {}),
+          onChanged: _markChanged,
         ),
       _ => const SizedBox.shrink(),
     };
@@ -753,21 +1003,44 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
 class _TypeStep extends StatelessWidget {
   final ContractDraft draft;
   final VoidCallback onChanged;
+  final bool renewalMode;
+  final String renewalSourceNumber;
 
-  const _TypeStep({required this.draft, required this.onChanged});
+  const _TypeStep({
+    required this.draft,
+    required this.onChanged,
+    required this.renewalMode,
+    required this.renewalSourceNumber,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const AppPageHeader(
-          title: 'إنشاء عقد جديد',
-          subtitle: 'اختر نوع العقد وتصنيف الوحدة للبدء.',
-          icon: Icons.add_home_work_outlined,
+        AppPageHeader(
+          title: renewalMode ? 'تجديد عقد قائم' : 'إنشاء عقد جديد',
+          subtitle: renewalMode
+              ? 'راجع نوع العقد المنسوخ وبياناته قبل إنشاء طلب التجديد.'
+              : 'اختر نوع العقد وتصنيف الوحدة للبدء.',
+          icon: renewalMode
+              ? Icons.refresh_rounded
+              : Icons.add_home_work_outlined,
         ),
+        if (renewalMode) ...<Widget>[
+          const SizedBox(height: 12),
+          InfoBanner(
+            text: renewalSourceNumber.trim().isEmpty
+                ? 'نوع العقد محفوظ من العقد السابق ولا يمكن تغييره أثناء التجديد.'
+                : 'يتم إنشاء طلب تجديد جديد بالاعتماد على العقد رقم $renewalSourceNumber. نوع العقد محفوظ من الطلب السابق.',
+            icon: Icons.lock_outline_rounded,
+            color: AppColors.blue,
+          ),
+        ],
         const SizedBox(height: 16),
-        const SectionTitle(title: 'اختر نوع العقد'),
+        SectionTitle(
+          title: renewalMode ? 'نوع العقد الأصلي' : 'اختر نوع العقد',
+        ),
         const SizedBox(height: 12),
         LayoutBuilder(
           builder: (context, constraints) {
@@ -775,22 +1048,18 @@ class _TypeStep extends StatelessWidget {
               _ContractTypeCard(
                 type: ContractType.residential,
                 selected: draft.type == ContractType.residential,
+                enabled: !renewalMode,
                 onTap: () {
-                  draft.type = ContractType.residential;
-                  draft.property.unitType = 'شقة';
-                  draft.property.propertyType = 'عمارة';
-                  draft.property.propertyUsage = 'سكن عوائل';
+                  _applyContractType(draft, ContractType.residential);
                   onChanged();
                 },
               ),
               _ContractTypeCard(
                 type: ContractType.commercial,
                 selected: draft.type == ContractType.commercial,
+                enabled: !renewalMode,
                 onTap: () {
-                  draft.type = ContractType.commercial;
-                  draft.property.unitType = 'محل';
-                  draft.property.propertyType = 'برج';
-                  draft.property.propertyUsage = 'تجاري';
+                  _applyContractType(draft, ContractType.commercial);
                   onChanged();
                 },
               ),
@@ -815,6 +1084,9 @@ class _TypeStep extends StatelessWidget {
           required: true,
           icon: draft.type.icon,
           onChanged: (value) {
+            if (draft.property.propertySource.trim() != _newPropertySource) {
+              draft.property = _newPropertyDataForContractType(draft.type);
+            }
             draft.property.unitType = value!;
             draft.property.propertyType = value == 'مكتب إداري' ? 'برج' : value;
             onChanged();
@@ -834,17 +1106,20 @@ class _ContractTypeCard extends StatelessWidget {
   final ContractType type;
   final bool selected;
   final VoidCallback onTap;
+  final bool enabled;
 
   const _ContractTypeCard({
     required this.type,
     required this.selected,
     required this.onTap,
+    this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      onTap: onTap,
+      key: ValueKey<String>('contract-type-${type.name}'),
+      onTap: enabled ? onTap : null,
       padding: const EdgeInsets.fromLTRB(8, 10, 8, 12),
       border: Border.all(
         color: selected ? AppColors.primary : context.ejarzTheme.border,
@@ -903,8 +1178,14 @@ class _ContractTypeCard extends StatelessWidget {
                 ),
               ),
               child: selected
-                  ? const Icon(Icons.check_rounded,
-                      color: Colors.white, size: 15)
+                  ? Icon(
+                      enabled ? Icons.check_rounded : Icons.lock_rounded,
+                      key: ValueKey<String>(
+                        'contract-type-selected-${type.name}',
+                      ),
+                      color: Colors.white,
+                      size: 15,
+                    )
                   : null,
             ),
           ),
@@ -997,8 +1278,19 @@ class _PropertyStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final controller = AppScope.of(context);
     final property = draft.property;
+    final savedOptions =
+        _savedPropertyOptions(controller.properties, draft.type);
+    final propertySourceItems = <String>[
+      _newPropertySource,
+      ...savedOptions.map((option) => option.label),
+    ];
+    final selectedSource = property.propertySource.trim().isEmpty
+        ? _newPropertySource
+        : property.propertySource;
     return Column(
+      key: ValueKey<String>('property-step-$selectedSource'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         const AppPageHeader(
@@ -1014,16 +1306,29 @@ class _PropertyStep extends StatelessWidget {
           children: <Widget>[
             AppDropdownField(
               label: 'مصدر العقار',
-              value: property.propertySource,
-              items: const <String>[
-                'إضافة عقار جديد',
-                'عمارة النرجس',
-                'فيلا الياسمين',
-                'مكتب العليا',
-              ],
+              value: selectedSource,
+              items: propertySourceItems,
+              required: true,
               icon: Icons.apartment_outlined,
               onChanged: (value) {
-                property.propertySource = value!;
+                final selected = value ?? _newPropertySource;
+                _SavedPropertyOption? savedOption;
+                for (final option in savedOptions) {
+                  if (option.label == selected) {
+                    savedOption = option;
+                    break;
+                  }
+                }
+                if (savedOption == null) {
+                  draft.property = selected == _newPropertySource
+                      ? _newPropertyDataForContractType(draft.type)
+                      : (property..propertySource = selected);
+                } else {
+                  draft.property = _propertyDataFromRecord(
+                    savedOption.property,
+                    savedOption.label,
+                  );
+                }
                 onChanged();
               },
             ),

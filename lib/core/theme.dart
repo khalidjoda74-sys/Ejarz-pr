@@ -111,16 +111,22 @@ class AppTheme {
             displayColor: AppColors.text,
           ),
       appBarTheme: const AppBarTheme(
-        toolbarHeight: 48,
+        toolbarHeight: 52,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: true,
-        backgroundColor: AppColors.background,
+        backgroundColor: Colors.transparent,
         foregroundColor: AppColors.text,
         surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
+        iconTheme: IconThemeData(color: AppColors.text, size: 22),
+        actionsIconTheme: IconThemeData(color: AppColors.text, size: 22),
+        shape: Border(
+          bottom: BorderSide(color: AppColors.border, width: 0.8),
+        ),
         titleTextStyle: TextStyle(
-          color: AppColors.primary,
-          fontSize: 18,
+          color: AppColors.text,
+          fontSize: 17.5,
           fontWeight: FontWeight.w800,
           fontFamily: _fontFamily,
           fontFamilyFallback: _fontFallback,
@@ -266,8 +272,15 @@ class AppTheme {
         onSurface: text,
       ),
       appBarTheme: lightTheme.appBarTheme.copyWith(
-        backgroundColor: background,
+        backgroundColor: Colors.transparent,
         foregroundColor: text,
+        iconTheme: const IconThemeData(color: text, size: 22),
+        actionsIconTheme: const IconThemeData(color: text, size: 22),
+        shape: const Border(
+          bottom: BorderSide(color: border, width: 0.8),
+        ),
+        titleTextStyle:
+            lightTheme.appBarTheme.titleTextStyle?.copyWith(color: text),
       ),
       cardColor: surface,
       dividerTheme: const DividerThemeData(color: border, thickness: 1),

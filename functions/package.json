@@ -5,6 +5,10 @@
     "node": "22"
   },
   "main": "index.js",
+  "scripts": {
+    "test": "node --test notification_policy.test.js",
+    "check": "node --check index.js"
+  },
   "dependencies": {
     "firebase-admin": "^13.0.0",
     "firebase-functions": "^7.2.5"

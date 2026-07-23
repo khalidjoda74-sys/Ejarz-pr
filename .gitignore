@@ -21,6 +21,7 @@ tmp_web_server*.log
 
 # Dependency and generated web caches
 node_modules/
+.pnpm-store/
 .next/
 out/
 dist/

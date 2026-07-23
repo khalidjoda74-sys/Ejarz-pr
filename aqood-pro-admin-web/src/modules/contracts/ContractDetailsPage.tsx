@@ -19,6 +19,7 @@ import {
   listContractFiles,
   listMissingRequirementResponses,
   markFinalPdfUploaded,
+  reviewMissingRequirementResponse,
   setMissingRequirementResolved,
   updateContractStatus,
 } from '@/services/contractService';
@@ -36,6 +37,12 @@ import {
 import { formatCurrency, safeText, statusLabel } from '@/lib/formatters';
 import { formatDate } from '@/lib/dates';
 import { getErrorMessage } from '@/lib/errors';
+import {
+  buildMissingReviewDescription,
+  MISSING_REVIEW_TARGETS,
+  missingReviewIssuesFor,
+  MissingReviewIssueCode,
+} from '@/lib/missingRequirementPolicy';
 
 const ownershipKeys = ['ownershipDocumentType', 'ownershipDocumentNumber', 'ownershipDocumentDate'];
 
@@ -219,13 +226,15 @@ export function ContractDetailsPage() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<ContractStatus>('processing');
   const [customerNote, setCustomerNote] = useState('');
-  const [missingTitle, setMissingTitle] = useState('');
-  const [missingType, setMissingType] = useState<'field' | 'file' | 'clarification'>('field');
-  const [missingFieldPath, setMissingFieldPath] = useState('');
-  const [missingDescription, setMissingDescription] = useState('');
+  const [missingTargetKey, setMissingTargetKey] = useState('commercial-registration');
+  const [missingIssueCode, setMissingIssueCode] = useState<MissingReviewIssueCode>('unclear');
+  const [customMissingTitle, setCustomMissingTitle] = useState('');
+  const [missingReviewNote, setMissingReviewNote] = useState('');
   const [internalNote, setInternalNote] = useState('');
   const [confirmStatus, setConfirmStatus] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [responseNotes, setResponseNotes] = useState<Record<string, string>>({});
+  const [reviewingResponseId, setReviewingResponseId] = useState('');
 
   async function load() {
     setLoading(true);
@@ -235,7 +244,11 @@ export function ContractDetailsPage() {
       setContract(item);
       if (item) {
         setStatus(item.status === 'draft' ? 'awaitingPayment' : item.status);
-        setCustomerNote(String(item.customerVisibleNote ?? item.customerNote ?? ''));
+        setCustomerNote(String(
+          item.status === 'rejected'
+            ? item.rejectionReason ?? item.customerVisibleNote ?? item.customerNote ?? ''
+            : item.customerVisibleNote ?? item.customerNote ?? '',
+        ));
         setFiles(await listContractFiles(contractId).catch(() => []));
         setMissingResponses(await listMissingRequirementResponses(contractId).catch(() => []));
       }
@@ -251,9 +264,34 @@ export function ContractDetailsPage() {
   }, [contractId]);
 
   const view = useMemo(() => (contract ? buildContractView(contract) : null), [contract]);
+  const isRejected = contract?.status === 'rejected';
+  const missingTarget = useMemo(
+    () => MISSING_REVIEW_TARGETS.find((item) => item.key === missingTargetKey) ?? MISSING_REVIEW_TARGETS[0],
+    [missingTargetKey],
+  );
+  const missingIssueOptions = useMemo(() => missingReviewIssuesFor(missingTarget.type), [missingTarget.type]);
+  const missingTitle = missingTarget.key === 'other' ? customMissingTitle.trim() : missingTarget.title;
+  const missingDescription = useMemo(() => {
+    if (!missingTitle || !missingIssueOptions.some((item) => item.code === missingIssueCode)) return '';
+    return buildMissingReviewDescription(missingTitle, missingIssueCode, missingReviewNote);
+  }, [missingIssueCode, missingIssueOptions, missingReviewNote, missingTitle]);
+
+  useEffect(() => {
+    if (!missingIssueOptions.some((item) => item.code === missingIssueCode)) {
+      setMissingIssueCode(missingIssueOptions[0].code);
+    }
+  }, [missingIssueCode, missingIssueOptions]);
 
   async function submitStatus() {
     if (!admin || !contract || !canWrite) return;
+    if (contract.status === 'rejected') {
+      toast.push('الطلب مرفوض نهائيًا ولا يمكن تغيير حالته.', 'error');
+      return;
+    }
+    if (status === 'rejected' && !customerNote.trim()) {
+      toast.push('يجب كتابة سبب واضح لرفض الطلب.', 'error');
+      return;
+    }
     try {
       await updateContractStatus(admin, contract, status, customerNote);
       toast.push('تم تحديث حالة العقد وإضافة السجل', 'success');
@@ -265,19 +303,18 @@ export function ContractDetailsPage() {
   }
 
   async function submitMissing() {
-    if (!admin || !contract || !canWrite || !missingTitle.trim()) return;
+    if (!admin || !contract || !canWrite || !missingTitle || !missingDescription) return;
     try {
       await addMissingItem(admin, contract, {
         title: missingTitle,
-        type: missingType,
+        type: missingTarget.type,
+        issueCode: missingIssueCode,
         description: missingDescription,
-        fieldPath: missingFieldPath,
+        fieldPath: missingTarget.fieldPath,
       });
-      toast.push('تم إضافة النقص وتحويل العقد إلى ناقص بيانات', 'success');
-      setMissingTitle('');
-      setMissingFieldPath('');
-      setMissingDescription('');
-      setMissingType('field');
+      toast.push('تم إرسال ملاحظة المراجعة للعميل وتحويل العقد إلى ناقص بيانات', 'success');
+      setCustomMissingTitle('');
+      setMissingReviewNote('');
       await load();
     } catch (err) {
       toast.push(getErrorMessage(err), 'error');
@@ -316,10 +353,30 @@ export function ContractDetailsPage() {
     if (!admin || !contract || !canWrite) return;
     try {
       await setMissingRequirementResolved(admin, contract, requirementId, true);
-      toast.push('?? ????? ????? ??????', 'success');
+      toast.push('تم اعتماد متطلب المراجعة', 'success');
       await load();
     } catch (err) {
       toast.push(getErrorMessage(err), 'error');
+    }
+  }
+
+  async function reviewResponse(response: MissingRequirementResponse, decision: 'accepted' | 'returned') {
+    if (!admin || !contract || !canWrite) return;
+    const note = String(responseNotes[response.id] ?? '').trim();
+    if (decision === 'returned' && !note) {
+      toast.push('اكتب سبب إعادة الاستكمال للعميل.', 'error');
+      return;
+    }
+    try {
+      setReviewingResponseId(response.id);
+      await reviewMissingRequirementResponse(admin, contract, response, decision, note);
+      toast.push(decision === 'accepted' ? 'تم اعتماد استكمال العميل.' : 'تمت إعادة الاستكمال للعميل مع السبب.', 'success');
+      setResponseNotes((current) => ({ ...current, [response.id]: '' }));
+      await load();
+    } catch (err) {
+      toast.push(getErrorMessage(err), 'error');
+    } finally {
+      setReviewingResponseId('');
     }
   }
 
@@ -345,10 +402,17 @@ export function ContractDetailsPage() {
         </div>
       </div>
       <div className="card-solid" style={{ padding: 14, minWidth: 250 }}>
-        <Field label="تغيير الحالة"><Select value={status} disabled={!canWrite} onChange={(e) => setStatus(e.target.value as ContractStatus)}>{ADMIN_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}</Select></Field>
-        <div style={{ height: 10 }} />
-        <Field label="ملاحظة تظهر للعميل"><Textarea value={customerNote} disabled={!canWrite} onChange={(e) => setCustomerNote(e.target.value)} placeholder="اكتب ملاحظة مختصرة للعميل..." /></Field>
-        <Button variant="gold" style={{ width: '100%', marginTop: 10 }} disabled={!canWrite} onClick={() => setConfirmStatus(true)}>حفظ الحالة</Button>
+        {isRejected ? <>
+          <Badge tone="red">رفض نهائي</Badge>
+          <h3 className="section-title" style={{ marginTop: 10 }}>سبب الرفض</h3>
+          <p className="page-subtitle">{safeText(contract.rejectionReason || contract.customerVisibleNote, 'لم يُحفظ سبب الرفض في هذا السجل القديم.')}</p>
+          <p className="page-subtitle">لا يمكن تغيير الحالة أو إضافة نواقص أو رفع عقد نهائي.</p>
+        </> : <>
+          <Field label="تغيير الحالة"><Select value={status} disabled={!canWrite} onChange={(e) => setStatus(e.target.value as ContractStatus)}>{ADMIN_STATUS_OPTIONS.filter((item) => item !== 'authenticated' && !(item === 'rejected' && (contract.status === 'draft' || contract.status === 'authenticated'))).map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}</Select></Field>
+          <div style={{ height: 10 }} />
+          <Field label={status === 'rejected' ? 'سبب الرفض (إلزامي)' : 'ملاحظة تظهر للعميل'}><Textarea value={customerNote} disabled={!canWrite} onChange={(e) => setCustomerNote(e.target.value)} placeholder={status === 'rejected' ? 'اكتب سببًا واضحًا يظهر للعميل...' : 'اكتب ملاحظة مختصرة للعميل...'} /></Field>
+          <Button variant={status === 'rejected' ? 'danger' : 'gold'} style={{ width: '100%', marginTop: 10 }} disabled={!canWrite || (status === 'rejected' && !customerNote.trim())} onClick={() => setConfirmStatus(true)}>حفظ الحالة</Button>
+        </>}
       </div>
     </section>
 
@@ -363,6 +427,7 @@ export function ContractDetailsPage() {
           ['UID', contract.uid || contract.userId],
           ['نوع العقد', view.contractType],
           ['دور مقدم الطلب', view.role],
+          ...(isRejected ? [['سبب الرفض', contract.rejectionReason || contract.customerVisibleNote] as [string, unknown]] : []),
         ]} />
         <RecordSection title="الدفع والفاتورة" record={view.payment} />
         <RecordSection title="بيانات المؤجر" record={view.lessor} />
@@ -381,36 +446,64 @@ export function ContractDetailsPage() {
       </div>
 
       <aside className="stack">
-        <Card style={{ padding: 18 }} goldLine>
+        {!isRejected && <Card style={{ padding: 18 }} goldLine>
           <h2 className="section-title">رفع PDF النهائي</h2>
           <p className="page-subtitle">سيتم رفع الملف إلى Storage وتحويل الحالة إلى مكتمل.</p>
           <Input type="file" accept="application/pdf,.pdf" disabled={!canWrite} onChange={(e) => handlePdf(e.target.files?.[0])} />
           {uploadProgress > 0 && <div style={{ marginTop: 12 }}><div className="skeleton" style={{ height: 10, width: `${uploadProgress}%` }} /><p className="page-subtitle">{uploadProgress}%</p></div>}
           {contract.finalPdfUrl && <a className="badge badge-green" style={{ marginTop: 12 }} href={contract.finalPdfUrl} target="_blank" rel="noreferrer">فتح PDF النهائي</a>}
-        </Card>
+        </Card>}
 
         <Card style={{ padding: 18 }}>
-          <h2 className="section-title">النواقص</h2>
-          <div className="stack">
-            <Field label="عنوان النقص"><Input value={missingTitle} onChange={(e) => setMissingTitle(e.target.value)} /></Field>
-            <Field label="نوع النقص"><Select value={missingType} onChange={(e) => setMissingType(e.target.value as 'field' | 'file' | 'clarification')}><option value="field">حقل</option><option value="file">ملف</option><option value="clarification">توضيح</option></Select></Field>
-            <Field label="مسار الحقل داخل العقد"><Input value={missingFieldPath} onChange={(e) => setMissingFieldPath(e.target.value)} placeholder="مثال: draftData.property.electricityMeter" /></Field>
-            <Field label="الوصف"><Textarea value={missingDescription} onChange={(e) => setMissingDescription(e.target.value)} /></Field>
-            <Button variant="gold" disabled={!canWrite} onClick={submitMissing}>إضافة نقص</Button>
-          </div>
+          <h2 className="section-title">متطلبات المراجعة</h2>
+          <p className="page-subtitle">المتطلبات الإجبارية تُفحص قبل إرسال العقد. اختر هنا مشكلة جودة أو صحة أو مطابقة، وليس غياب حقل إجباري.</p>
+          {!isRejected && <div className="stack">
+            <Field label="البيان أو المستند محل المراجعة">
+              <Select value={missingTargetKey} onChange={(event) => setMissingTargetKey(event.target.value)}>
+                {MISSING_REVIEW_TARGETS.map((item) => <option value={item.key} key={item.key}>{item.title}</option>)}
+              </Select>
+            </Field>
+            {missingTarget.key === 'other' && <Field label="اسم المتطلب الإضافي"><Input value={customMissingTitle} onChange={(event) => setCustomMissingTitle(event.target.value)} placeholder="مثال: تفويض محدث" /></Field>}
+            <Field label="سبب المراجعة">
+              <Select value={missingIssueCode} onChange={(event) => setMissingIssueCode(event.target.value as MissingReviewIssueCode)}>
+                {missingIssueOptions.map((item) => <option value={item.code} key={item.code}>{item.label}</option>)}
+              </Select>
+            </Field>
+            <Field label="ملاحظة إضافية اختيارية"><Textarea value={missingReviewNote} onChange={(event) => setMissingReviewNote(event.target.value)} placeholder="أضف تفصيلًا مفيدًا للعميل دون تكرار النص الأساسي" /></Field>
+            {missingDescription && <div className="card-solid" style={{ padding: 12 }}><strong>النص الذي سيظهر للعميل</strong><p className="page-subtitle" style={{ margin: '6px 0 0' }}>{missingDescription}</p></div>}
+            <Button variant="gold" disabled={!canWrite || !missingTitle || !missingDescription} onClick={submitMissing}>إرسال ملاحظة المراجعة</Button>
+          </div>}
           <div className="timeline" style={{ marginTop: 16 }}>
-            {view.missingRequirements.map((item) => <MissingEntry item={item} key={item.id || item.title} canWrite={canWrite} onResolve={resolveMissing} />)}
-            {!view.missingRequirements.length && <p className="page-subtitle">?? ???? ????? ?????.</p>}
+            {view.missingRequirements.map((item) => <MissingEntry item={item} key={item.id || item.title} canWrite={canWrite && !isRejected} onResolve={resolveMissing} />)}
+            {!view.missingRequirements.length && <p className="page-subtitle">لا توجد متطلبات مراجعة مفتوحة.</p>}
           </div>
           <div className="stack" style={{ marginTop: 14 }}>
-            <h3 className="section-title">????????? ??????</h3>
+            <h3 className="section-title">الاستكمالات الواردة</h3>
             {missingResponses.map((response) => <div className="card-solid" style={{ padding: 12 }} key={response.id}>
-              <strong>{safeText(response.missingRequirementTitle || response.missingRequirementId)}</strong>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                <strong>{safeText(response.missingRequirementTitle || response.missingRequirementId)}</strong>
+                <Badge tone={response.status === 'accepted' ? 'green' : response.status === 'returned' ? 'red' : 'gold'}>
+                  {response.status === 'accepted' ? 'معتمد' : response.status === 'returned' ? 'معاد للعميل' : 'بانتظار المراجعة'}
+                </Badge>
+              </div>
               <p className="page-subtitle" style={{ margin: '6px 0' }}>{safeText(response.message, '')}</p>
               {response.fileName && <Badge tone="blue">{response.fileName}</Badge>}
               <p className="page-subtitle" style={{ margin: '6px 0 0' }}>{formatDate(response.createdAt)}</p>
+              {(!response.status || response.status === 'pendingAdminReview') && canWrite && !isRejected && <div className="stack" style={{ marginTop: 10 }}>
+                <Field label="سبب الإعادة (مطلوب عند الإعادة)">
+                  <Textarea
+                    value={responseNotes[response.id] ?? ''}
+                    onChange={(event) => setResponseNotes((current) => ({ ...current, [response.id]: event.target.value }))}
+                    placeholder="اكتب للعميل التعديل المطلوب بوضوح"
+                  />
+                </Field>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button disabled={reviewingResponseId === response.id} onClick={() => void reviewResponse(response, 'accepted')}>اعتماد الاستكمال</Button>
+                  <Button variant="danger" disabled={reviewingResponseId === response.id} onClick={() => void reviewResponse(response, 'returned')}>إعادة للعميل</Button>
+                </div>
+              </div>}
             </div>)}
-            {!missingResponses.length && <p className="page-subtitle">?? ???? ?????? ????????? ???.</p>}
+            {!missingResponses.length && <p className="page-subtitle">لا توجد استكمالات واردة حتى الآن.</p>}
           </div>
         </Card>
 
@@ -424,8 +517,8 @@ export function ContractDetailsPage() {
 
         <Card style={{ padding: 18 }}>
           <h2 className="section-title">ملاحظات داخلية</h2>
-          <Textarea value={internalNote} onChange={(e) => setInternalNote(e.target.value)} placeholder="لا تظهر للعميل..." />
-          <Button variant="soft" style={{ marginTop: 10 }} disabled={!canWrite} onClick={submitInternalNote}>حفظ ملاحظة</Button>
+          {!isRejected && <><Textarea value={internalNote} onChange={(e) => setInternalNote(e.target.value)} placeholder="لا تظهر للعميل..." />
+          <Button variant="soft" style={{ marginTop: 10 }} disabled={!canWrite} onClick={submitInternalNote}>حفظ ملاحظة</Button></>}
           <div className="timeline" style={{ marginTop: 16 }}>
             {contract.internalNotes?.map((note) => <div className="timeline-item" key={note.id}><strong>{note.createdByName}</strong><p>{note.note}</p><p className="page-subtitle">{formatDate(note.createdAt)}</p></div>)}
           </div>
@@ -434,14 +527,14 @@ export function ContractDetailsPage() {
         <Card style={{ padding: 18 }}>
           <h2 className="section-title">سجل الحالة</h2>
           <div className="timeline">
-            {view.timeline.map((item, index) => <div className="timeline-item" key={item.id || `${item.title}-${index}`}><strong>{safeText(item.title)}</strong><p className="page-subtitle">{safeText(item.description ?? item.subtitle, '')}</p><p className="page-subtitle">{formatTimelineDate(item)}</p></div>)}
+            {view.timeline.map((item, index) => <div className={`timeline-item ${(item.eventStatus ?? item.status) === 'rejected' ? 'timeline-item-rejected' : ''}`} key={item.id || `${item.title}-${index}`}><strong>{safeText(item.title)}</strong><p className="page-subtitle">{safeText(item.description ?? item.subtitle, '')}</p><p className="page-subtitle">{formatTimelineDate(item)}</p></div>)}
             {!view.timeline.length && <p className="page-subtitle">لا يوجد سجل حالة بعد.</p>}
           </div>
         </Card>
       </aside>
     </div>
 
-    <ConfirmDialog open={confirmStatus} title="تأكيد تغيير حالة العقد" description="سيتم تحديث الحالة وكتابة auditLog وإنشاء إشعار للعميل إن وجد UID." confirmLabel="تأكيد التغيير" onCancel={() => setConfirmStatus(false)} onConfirm={submitStatus} />
+    <ConfirmDialog open={confirmStatus} title={status === 'rejected' ? 'رفض الطلب نهائيًا؟' : 'تأكيد تغيير حالة العقد'} description={status === 'rejected' ? 'سيصبح الطلب مرفوضًا نهائيًا، ولن يمكن تعديله أو إعادته إلى المعالجة.' : 'سيتم تحديث الحالة وكتابة سجل التدقيق، وسيُرسل إشعار الخادم للعميل.'} confirmLabel={status === 'rejected' ? 'رفض الطلب' : 'تأكيد التغيير'} onCancel={() => setConfirmStatus(false)} onConfirm={submitStatus} />
   </div>;
 }
 
@@ -489,11 +582,11 @@ function MissingEntry({
   const resolved = Boolean((item as MissingRequirement).resolved) || (item as MissingItem).status === 'resolved';
   const id = String(item.id || '');
   return <div className="timeline-item">
-    <Badge tone={resolved ? 'green' : 'red'}>{resolved ? '?? ????' : '?????'}</Badge>
+    <Badge tone={resolved ? 'green' : 'red'}>{resolved ? 'تم الحل' : 'مفتوح'}</Badge>
     <strong style={{ display: 'block', marginTop: 8 }}>{item.title}</strong>
     <p className="page-subtitle">{safeText(item.description, '')}</p>
-    {'fieldPath' in item && item.fieldPath && <p className="page-subtitle">??????: {item.fieldPath}</p>}
-    {!resolved && id && <Button variant="soft" disabled={!canWrite} onClick={() => onResolve(id)}>????? ??????</Button>}
+    {'fieldPath' in item && item.fieldPath && <p className="page-subtitle">المسار: {item.fieldPath}</p>}
+    {!resolved && id && <Button variant="soft" disabled={!canWrite} onClick={() => onResolve(id)}>تعليم كمحلول</Button>}
   </div>;
 }
 

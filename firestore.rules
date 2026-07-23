@@ -129,6 +129,111 @@ service cloud.firestore {
         request.resource.data.delivery.pushStatus == 'pending';
     }
 
+    function hasValidAuthenticatedContract() {
+      return request.resource.data.status != 'authenticated' ||
+        (request.resource.data.finalPdfUrl is string &&
+          request.resource.data.finalPdfUrl.size() > 0);
+    }
+
+    function ownsContractUpdate() {
+      return signedIn() &&
+        resource.data.uid == request.auth.uid &&
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    function isCustomerDraftUpdate() {
+      return ownsContractUpdate() &&
+        resource.data.status == 'draft' &&
+        request.resource.data.status == 'draft' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'type',
+          'role',
+          'title',
+          'propertySummary',
+          'propertyTitle',
+          'city',
+          'district',
+          'lessorSummary',
+          'tenantSummary',
+          'contractDetails',
+          'partyDetails',
+          'propertyDetails',
+          'attachmentFiles',
+          'draftData',
+          'draftProgress',
+          'totalFees',
+          'updatedAt'
+        ]);
+    }
+
+    function isCustomerDraftSubmission() {
+      return ownsContractUpdate() &&
+        resource.data.status == 'draft' &&
+        request.resource.data.status == 'awaitingPayment' &&
+        request.resource.data.totalFees == 398 &&
+        request.resource.data.paymentStatus == 'pending' &&
+        request.resource.data.finalPdfUrl == resource.data.finalPdfUrl &&
+        request.resource.data.missingRequirements == resource.data.missingRequirements &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'type',
+          'role',
+          'status',
+          'title',
+          'propertySummary',
+          'propertyTitle',
+          'propertyId',
+          'city',
+          'district',
+          'lessorSummary',
+          'tenantSummary',
+          'contractDetails',
+          'partyDetails',
+          'propertyDetails',
+          'attachmentFiles',
+          'draftData',
+          'draftProgress',
+          'totalFees',
+          'paymentStatus',
+          'submittedAt',
+          'customerVisibleNote',
+          'timeline',
+          'updatedAt'
+        ]);
+    }
+
+    function isDemoContractCreate() {
+      return signedIn() &&
+        request.auth.token.firebase.sign_in_provider == 'anonymous' &&
+        request.resource.data.isDemo == true &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isDemoUser == true;
+    }
+
+    function isCustomerContractCreate() {
+      return signedIn() &&
+        request.resource.data.uid == request.auth.uid &&
+        (request.resource.data.status in ['draft', 'awaitingPayment'] ||
+          isDemoContractCreate());
+    }
+
+    function isAdminRejectedTransition() {
+      return isAdmin() &&
+        resource.data.status in ['awaitingPayment', 'processing', 'missingData'] &&
+        request.resource.data.status == 'rejected' &&
+        request.resource.data.customerVisibleNote == '' &&
+        request.resource.data.rejectionReason is string &&
+        request.resource.data.rejectionReason.size() > 0 &&
+        request.resource.data.rejectedBy == request.auth.uid &&
+        request.resource.data.rejectedAt == request.time;
+    }
+
+    function isAdminContractUpdate() {
+      return isAdmin() &&
+        ((resource.data.status != 'rejected' &&
+            request.resource.data.status != 'rejected') ||
+          isAdminRejectedTransition());
+    }
+
     match /adminUsers/{uid} {
       allow read: if ownsUid(uid) || isAdmin();
       allow write: if isAdmin();
@@ -149,30 +254,33 @@ service cloud.firestore {
 
     match /contracts/{contractId} {
       allow read: if isAdmin() || ownsUid(resource.data.uid);
-      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
-      allow update: if isAdmin() ||
-        isDemoPaymentContractUpdate() ||
-        (signedIn() &&
-          resource.data.uid == request.auth.uid &&
-          request.resource.data.uid == request.auth.uid &&
-          !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny([
-              'status',
-              'adminAssignedTo',
-              'adminInternalNotes',
-              'customerVisibleNote',
-              'missingRequirements',
-              'finalPdfUrl',
-              'finalPdfFileName',
-              'finalPdfUploadedAt',
-              'completedAt'
-            ]));
-      allow delete: if isAdmin();
+      allow create: if isAdmin() || isCustomerContractCreate();
+      allow update: if hasValidAuthenticatedContract() && (
+        isAdminContractUpdate() ||
+          isDemoPaymentContractUpdate() ||
+          isCustomerDraftUpdate() ||
+          isCustomerDraftSubmission() ||
+          (ownsContractUpdate() &&
+            resource.data.status != 'draft' &&
+            !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny([
+                'status',
+                'adminAssignedTo',
+                'adminInternalNotes',
+                'customerVisibleNote',
+                'missingRequirements',
+                'finalPdfUrl',
+                'finalPdfFileName',
+                'finalPdfUploadedAt',
+                'completedAt'
+              ])));
+      allow delete: if isAdmin() && resource.data.status != 'rejected';
 
       match /files/{fileId} {
         allow read: if isAdmin() ||
           ownsUid(get(/databases/$(database)/documents/contracts/$(contractId)).data.uid);
-        allow write: if isAdmin();
+        allow write: if isAdmin() &&
+          get(/databases/$(database)/documents/contracts/$(contractId)).data.status != 'rejected';
       }
 
       match /missingResponses/{responseId} {
@@ -182,7 +290,8 @@ service cloud.firestore {
           get(/databases/$(database)/documents/contracts/$(contractId)).data.uid == request.auth.uid &&
           request.resource.data.uid == request.auth.uid &&
           request.resource.data.contractId == contractId;
-        allow update, delete: if isAdmin();
+        allow update, delete: if isAdmin() &&
+          get(/databases/$(database)/documents/contracts/$(contractId)).data.status != 'rejected';
       }
     }
 
@@ -195,6 +304,16 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['read', 'readAt']));
       allow delete: if isAdmin();
+    }
+
+    match /adminNotifications/{notificationId} {
+      allow read: if isAdmin() && resource.data.recipientUid == request.auth.uid;
+      allow create, delete: if false;
+      allow update: if isAdmin() &&
+        resource.data.recipientUid == request.auth.uid &&
+        request.resource.data.recipientUid == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['read', 'readAt']);
     }
 
     match /properties/{propertyId} {

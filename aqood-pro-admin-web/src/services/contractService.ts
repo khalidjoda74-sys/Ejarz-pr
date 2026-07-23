@@ -7,12 +7,17 @@ import {
   limit,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import {
+  assertLogicalMissingRequirement,
+  buildMissingReviewDescription,
+} from '@/lib/missingRequirementPolicy';
 import { AdminUser } from '@/types/admin';
 import {
   Contract,
@@ -22,10 +27,11 @@ import {
   InternalNote,
   MissingRequirement,
   MissingRequirementResponse,
+  TimelineItem,
 } from '@/types/contract';
 import { writeAuditLog } from './auditService';
 
-type MissingRequirementInput = Pick<MissingRequirement, 'title' | 'description' | 'type' | 'fieldPath'>;
+type MissingRequirementInput = Pick<MissingRequirement, 'title' | 'description' | 'type' | 'issueCode' | 'fieldPath'>;
 
 export async function listContracts(count = 120) {
   const snap = await getDocs(query(collection(db, 'contracts'), orderBy('createdAt', 'desc'), limit(count)));
@@ -54,9 +60,50 @@ export async function updateContractStatus(
   status: ContractStatus,
   customerVisibleNote = '',
 ) {
-  const batch = writeBatch(db);
+  if (contract.status === 'rejected') {
+    throw new Error('الطلب مرفوض نهائيًا ولا يمكن تغيير حالته.');
+  }
+  if (status === 'authenticated' && !String(contract.finalPdfUrl ?? '').trim()) {
+    throw new Error('لا يمكن إكمال العقد قبل رفع ملف PDF النهائي.');
+  }
   const contractRef = doc(db, 'contracts', contract.id);
   const note = customerVisibleNote.trim();
+  if (status === 'rejected') {
+    if (contract.status === 'draft' || contract.status === 'authenticated') {
+      throw new Error('لا يمكن رفض مسودة أو عقد مكتمل.');
+    }
+    if (!note) throw new Error('يجب كتابة سبب واضح لرفض الطلب.');
+    await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(contractRef);
+      if (!snapshot.exists()) throw new Error('العقد غير موجود.');
+      const current = normalizeContract({ id: snapshot.id, ...snapshot.data() });
+      if (current.status === 'rejected') {
+        throw new Error('الطلب مرفوض نهائيًا ولا يمكن تغيير حالته.');
+      }
+      if (current.status === 'draft' || current.status === 'authenticated') {
+        throw new Error('لا يمكن رفض مسودة أو عقد مكتمل.');
+      }
+      transaction.update(contractRef, {
+        status: 'rejected',
+        customerVisibleNote: '',
+        rejectionReason: note,
+        rejectedAt: serverTimestamp(),
+        rejectedBy: admin.uid,
+        timeline: arrayUnion(timelineEventFor('rejected', note)),
+        updatedAt: serverTimestamp(),
+      });
+      transaction.set(doc(collection(db, 'auditLogs')), auditData(admin, {
+        action: 'contract.status.update',
+        entityId: contract.id,
+        before: { status: current.status, customerVisibleNote: current.customerVisibleNote ?? '' },
+        after: { status: 'rejected', rejectionReason: note },
+        message: 'رفض طلب العقد نهائيًا من لوحة التحكم',
+      }));
+    });
+    return;
+  }
+
+  const batch = writeBatch(db);
   const timelineItem = timelineEventFor(status, note);
   const patch: Record<string, unknown> = {
     status,
@@ -79,18 +126,6 @@ export async function updateContractStatus(
     await ensurePendingPaymentArtifacts(batch, contract, uid);
   }
 
-  if (uid) {
-    batch.set(doc(collection(db, 'notifications')), notificationData({
-      uid,
-      contractId: contract.id,
-      title: timelineItem.title,
-      body: notificationBodyForStatus(status, note),
-      type: notificationTypeForStatus(status),
-      priority: ['awaitingPayment', 'authenticated', 'rejected'].includes(status) ? 'high' : 'normal',
-      adminUid: admin.uid,
-    }));
-  }
-
   batch.set(doc(collection(db, 'auditLogs')), auditData(admin, {
     action: 'contract.status.update',
     entityId: contract.id,
@@ -107,12 +142,15 @@ export async function addMissingItem(
   contract: Contract,
   item: MissingRequirementInput,
 ) {
+  assertContractMutable(contract);
   const description = (item.description ?? '').trim();
+  assertLogicalMissingRequirement({ ...item, description });
   const missingRequirement: MissingRequirement = {
     id: crypto.randomUUID(),
     title: item.title.trim(),
     description,
     type: item.type || 'field',
+    issueCode: item.issueCode,
     fieldPath: item.fieldPath?.trim() ?? '',
     required: true,
     resolved: false,
@@ -128,19 +166,6 @@ export async function addMissingItem(
     timeline: arrayUnion(timelineItem),
     updatedAt: serverTimestamp(),
   });
-
-  const uid = contractUid(contract);
-  if (uid) {
-    batch.set(doc(collection(db, 'notifications')), notificationData({
-      uid,
-      contractId: contract.id,
-      title: 'يوجد نقص مطلوب في طلبك',
-      body: description || missingRequirement.title,
-      type: 'missingRequirement',
-      priority: 'high',
-      adminUid: admin.uid,
-    }));
-  }
 
   batch.set(doc(collection(db, 'auditLogs')), auditData(admin, {
     action: 'contract.missing.add',
@@ -158,6 +183,7 @@ export async function setMissingRequirementResolved(
   requirementId: string,
   resolved = true,
 ) {
+  assertContractMutable(contract);
   const current = contract.missingRequirements ?? [];
   const next = current.map((item) => item.id === requirementId ? { ...item, resolved } : item);
   const allResolved = next.length > 0 && next.every((item) => item.resolved === true);
@@ -167,8 +193,8 @@ export async function setMissingRequirementResolved(
   };
   if (allResolved && contract.status === 'missingData') {
     patch.status = 'processing';
-    patch.customerVisibleNote = '?? ?????? ??????? ???????? ????? ???? ??? ????????.';
-    patch.timeline = arrayUnion(timelineEventFor('processing', '?? ?????? ??????? ??????? ?? ??????.'));
+    patch.customerVisibleNote = 'تم اعتماد متطلبات المراجعة واستؤنفت معالجة الطلب.';
+    patch.timeline = arrayUnion(timelineEventFor('processing', 'تم اعتماد متطلبات المراجعة المرسلة من العميل.'));
   }
   await updateDoc(doc(db, 'contracts', contract.id), patch);
   await writeAuditLog(admin, {
@@ -176,8 +202,61 @@ export async function setMissingRequirementResolved(
     entityType: 'contract',
     entityId: contract.id,
     after: { requirementId, resolved },
-    message: '?????? ??????? ??? ?? ??????',
+    message: 'تعليم متطلب المراجعة على أنه محلول',
   });
+}
+
+export async function reviewMissingRequirementResponse(
+  admin: AdminUser,
+  contract: Contract,
+  response: MissingRequirementResponse,
+  decision: 'accepted' | 'returned',
+  reviewNote = '',
+) {
+  assertContractMutable(contract);
+  const note = reviewNote.trim();
+  if (decision === 'returned' && !note) {
+    throw new Error('اكتب سبب إعادة الاستكمال للعميل.');
+  }
+  if (response.status === decision) return;
+
+  const batch = writeBatch(db);
+  const responseRef = doc(db, `contracts/${contract.id}/missingResponses`, response.id);
+  batch.update(responseRef, {
+    status: decision,
+    reviewNote: note,
+    reviewedBy: admin.uid,
+    reviewedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  if (decision === 'accepted') {
+    const requirements = contract.missingRequirements ?? [];
+    const next = requirements.map((item) =>
+      item.id === response.missingRequirementId ? { ...item, resolved: true } : item,
+    );
+    const allResolved = next.length > 0 && next.every((item) => item.resolved === true);
+    const patch: Record<string, unknown> = {
+      missingRequirements: next,
+      updatedAt: serverTimestamp(),
+      notificationContext: `missingResponseAccepted:${response.id}`,
+    };
+    if (allResolved && contract.status === 'missingData') {
+      patch.status = 'processing';
+      patch.customerVisibleNote = 'تم اعتماد البيانات المستكملة واستؤنفت معالجة الطلب.';
+      patch.timeline = arrayUnion(timelineEventFor('processing', 'تم اعتماد البيانات المستكملة واستئناف المعالجة.'));
+    }
+    batch.update(doc(db, 'contracts', contract.id), patch);
+  }
+
+  batch.set(doc(collection(db, 'auditLogs')), auditData(admin, {
+    action: `contract.missing.response.${decision}`,
+    entityId: contract.id,
+    before: { responseId: response.id, status: response.status ?? 'pendingAdminReview' },
+    after: { responseId: response.id, status: decision, reviewNote: note },
+    message: decision === 'accepted' ? 'اعتماد استكمال نواقص العميل' : 'إعادة استكمال النواقص للعميل',
+  }));
+  await batch.commit();
 }
 
 export async function addInternalNote(admin: AdminUser, contractId: string, note: string) {
@@ -217,6 +296,7 @@ export async function markFinalPdfUploaded(
   fileUrl: string,
   storagePath = '',
 ) {
+  assertContractMutable(contract);
   const batch = writeBatch(db);
   const contractRef = doc(db, 'contracts', contract.id);
   const fileRef = doc(collection(db, `contracts/${contract.id}/files`));
@@ -248,19 +328,6 @@ export async function markFinalPdfUploaded(
     uploadedAt: serverTimestamp(),
   });
 
-  const uid = contractUid(contract);
-  if (uid) {
-    batch.set(doc(collection(db, 'notifications')), notificationData({
-      uid,
-      contractId: contract.id,
-      title: 'تم إصدار العقد النهائي',
-      body: 'يمكنك الآن تحميل ملف العقد النهائي من تفاصيل الطلب.',
-      type: 'finalPdfUploaded',
-      priority: 'high',
-      adminUid: admin.uid,
-    }));
-  }
-
   batch.set(doc(collection(db, 'auditLogs')), auditData(admin, {
     action: 'contract.finalPdf.upload',
     entityId: contract.id,
@@ -274,6 +341,12 @@ export async function markFinalPdfUploaded(
 
 function contractUid(contract: Contract) {
   return String(contract.uid || contract.userId || '').trim();
+}
+
+function assertContractMutable(contract: Contract) {
+  if (contract.status === 'rejected') {
+    throw new Error('الطلب مرفوض نهائيًا ولا يمكن تنفيذ هذا الإجراء.');
+  }
 }
 
 async function ensurePendingPaymentArtifacts(batch: ReturnType<typeof writeBatch>, contract: Contract, uid: string) {
@@ -337,6 +410,7 @@ function timelineEventFor(status: ContractStatus, note = '') {
     completed: status === 'authenticated',
     current: status !== 'authenticated',
     status,
+    eventStatus: status,
     createdAt: now.toISOString(),
   };
 }
@@ -433,7 +507,7 @@ function timelineTitleForStatus(status: ContractStatus) {
     processing: 'قيد المعالجة',
     missingData: 'يوجد نقص مطلوب',
     authenticated: 'تم إصدار العقد النهائي',
-    rejected: 'تم رفض الطلب',
+    rejected: 'تم رفض الطلب نهائيًا',
   };
   return map[status];
 }
@@ -459,10 +533,88 @@ function formatTimeLabel(value: Date) {
 }
 
 function normalizeContract(input: Record<string, unknown>): Contract {
+  const status = normalizeStatus(input.status);
+  const customerVisibleNote = String(input.customerVisibleNote ?? '').trim();
+  const rejectionReason = String(
+    input.rejectionReason ?? (status === 'rejected' ? customerVisibleNote : ''),
+  ).trim();
   return {
     ...input,
-    status: normalizeStatus(input.status),
+    status,
+    customerVisibleNote,
+    rejectionReason,
+    timeline: normalizeRejectedTimeline(status, input.timeline, rejectionReason),
+    missingRequirements: Array.isArray(input.missingRequirements)
+      ? input.missingRequirements.map(normalizeLegacyMissingRequirement)
+      : [],
   } as Contract;
+}
+
+function normalizeRejectedTimeline(
+  status: ContractStatus,
+  rawTimeline: unknown,
+  rejectionReason: string,
+): TimelineItem[] {
+  const items = Array.isArray(rawTimeline)
+    ? rawTimeline.filter(
+      (item): item is TimelineItem => Boolean(item) && typeof item === 'object',
+    )
+    : [];
+  if (status !== 'rejected') return items;
+  const normalized: TimelineItem[] = [];
+  let rejectedItem: TimelineItem | undefined;
+  for (const item of items) {
+    const title = String(item.title ?? '');
+    const eventStatus = String(item.eventStatus ?? item.status ?? '');
+    if (
+      eventStatus === 'authenticated' ||
+      title === 'مكتمل' ||
+      title.includes('العقد النهائي')
+    ) continue;
+    if (eventStatus === 'rejected' || title.includes('رفض')) {
+      rejectedItem = item;
+      continue;
+    }
+    normalized.push({ ...item, current: false, completed: true });
+  }
+  normalized.push({
+    ...rejectedItem,
+    title: 'تم رفض الطلب نهائيًا',
+    subtitle: rejectionReason
+      ? `سبب الرفض: ${rejectionReason}`
+      : 'تم رفض الطلب نهائيًا بعد مراجعته.',
+    completed: false,
+    current: true,
+    status: 'rejected',
+    eventStatus: 'rejected',
+  });
+  return normalized;
+}
+
+function normalizeLegacyMissingRequirement(value: unknown): MissingRequirement {
+  const item = value && typeof value === 'object' ? value as MissingRequirement : {
+    id: '',
+    title: 'متطلب مراجعة',
+  };
+  if (item.issueCode) return item;
+  const raw = `${item.title ?? ''} ${item.description ?? ''} ${item.fieldPath ?? ''}`;
+  if (/السجل التجاري|commercial/i.test(raw) && /غير\s+مرفق|إرفاق صورة/i.test(raw)) {
+    return {
+      ...item,
+      title: 'السجل التجاري',
+      issueCode: 'unclear',
+      description: buildMissingReviewDescription('السجل التجاري', 'unclear'),
+    };
+  }
+  if (/عداد الكهرباء|electricityMeter/i.test(raw) && /غير\s+مكتمل|أدخل رقم/i.test(raw)) {
+    return {
+      ...item,
+      title: 'رقم عداد الكهرباء',
+      issueCode: 'unverifiable',
+      description: buildMissingReviewDescription('رقم عداد الكهرباء', 'unverifiable'),
+    };
+  }
+  return item;
 }
 
 function normalizeStatus(value: unknown): ContractStatus {

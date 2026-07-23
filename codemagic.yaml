@@ -1,0 +1,68 @@
+workflows:
+  ios-testflight-demo:
+    name: iOS TestFlight Demo
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+
+    integrations:
+      app_store_connect: darvoo_appstore
+
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: sa.aqoodpro.app
+      vars:
+        BUNDLE_ID: sa.aqoodpro.app
+        APP_VERSION: 1.0.0
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+
+    cache:
+      cache_paths:
+        - $FLUTTER_ROOT/.pub-cache
+        - $HOME/Library/Caches/CocoaPods
+
+    scripts:
+      - name: Validate iOS release files
+        script: |
+          set -e
+          test -f ios/Runner/GoogleService-Info.plist
+          test -f ios/Runner/PrivacyInfo.xcprivacy
+          test -f ios/Runner/RunnerRelease.entitlements
+          test "$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' ios/Runner/GoogleService-Info.plist)" = "$BUNDLE_ID"
+
+      - name: Get Flutter packages
+        script: flutter pub get
+
+      - name: Install CocoaPods dependencies
+        script: find . -name "Podfile" -execdir pod install \;
+
+      - name: Set up iOS code signing
+        script: xcode-project use-profiles
+
+      - name: Flutter analyze
+        script: flutter analyze
+
+      - name: Flutter tests
+        script: flutter test
+
+      - name: Build signed TestFlight IPA
+        script: |
+          flutter build ipa --release \
+            --build-name="$APP_VERSION" \
+            --build-number="$PROJECT_BUILD_NUMBER" \
+            --export-options-plist=/Users/builder/export_options.plist \
+            --dart-define=EJARZ_DEMO_MODE=true \
+            --dart-define=EJARZ_LOCAL_DEMO_MODE=false
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false
+        submit_to_app_store: false

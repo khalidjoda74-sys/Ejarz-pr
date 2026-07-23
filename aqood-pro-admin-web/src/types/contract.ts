@@ -27,6 +27,7 @@ export interface TimelineItem {
   subtitle?: string;
   description?: string;
   status?: string;
+  eventStatus?: ContractStatus;
   date?: unknown;
   time?: unknown;
   completed?: boolean;
@@ -81,6 +82,7 @@ export interface MissingRequirement {
   title: string;
   description?: string;
   type?: string;
+  issueCode?: string;
   fieldPath?: string;
   required?: boolean;
   resolved?: boolean;
@@ -96,6 +98,9 @@ export interface MissingRequirementResponse {
   message?: string;
   fileName?: string;
   status?: 'pendingAdminReview' | 'accepted' | 'returned';
+  reviewNote?: string;
+  reviewedBy?: string;
+  reviewedAt?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -138,6 +143,9 @@ export interface Contract {
   internalNotes?: InternalNote[];
   customerVisibleNote?: string;
   customerNote?: string;
+  rejectionReason?: string;
+  rejectedAt?: unknown;
+  rejectedBy?: string;
   assignedAdminUid?: string;
   assignedAdminName?: string;
   finalPdfUrl?: string;

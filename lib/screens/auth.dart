@@ -223,19 +223,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     width: double.infinity,
                     child: FilledButton(
                       onPressed: _next,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: <Widget>[
-                          Text(
-                            _index == _pages.length - 1
-                                ? 'ابدأ الآن'
-                                : 'التالي',
-                          ),
-                          const Align(
-                            alignment: Alignment.centerLeft,
-                            child: Icon(Icons.west_rounded, size: 21),
-                          ),
-                        ],
+                      child: Text(
+                        _index == _pages.length - 1 ? 'ابدأ الآن' : 'التالي',
                       ),
                     ),
                   ),

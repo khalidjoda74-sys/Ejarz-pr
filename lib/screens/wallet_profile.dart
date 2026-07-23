@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_controller.dart';
+import '../core/demo_config.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
 import '../widgets/common.dart';
@@ -120,236 +122,679 @@ class PropertiesScreen extends StatelessWidget {
   }
 
   void _showAddProperty(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => const _PropertyEditorSheet(),
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const _PropertyEditorScreen(),
+      ),
     );
   }
 }
 
-class _PropertyEditorSheet extends StatefulWidget {
+class _PropertyEditorScreen extends StatefulWidget {
   final PropertyRecord? existing;
 
-  const _PropertyEditorSheet({this.existing});
+  const _PropertyEditorScreen({this.existing});
 
   @override
-  State<_PropertyEditorSheet> createState() => _PropertyEditorSheetState();
+  State<_PropertyEditorScreen> createState() => _PropertyEditorScreenState();
 }
 
-class _PropertyEditorSheetState extends State<_PropertyEditorSheet> {
+class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _scrollController = ScrollController();
+  final _ownershipNumberKey = GlobalKey();
+  final _ownershipDateKey = GlobalKey();
+  final _streetKey = GlobalKey();
+  final _buildingNumberKey = GlobalKey();
+  final _additionalNumberKey = GlobalKey();
+  final _postalCodeKey = GlobalKey();
+  final _cityKey = GlobalKey();
+  final _districtKey = GlobalKey();
+  final _floorsKey = GlobalKey();
+  final _totalUnitsKey = GlobalKey();
+  final _unitsPerFloorKey = GlobalKey();
+  final _unitNumberKey = GlobalKey();
+  final _unitNameKey = GlobalKey();
+  final _floorKey = GlobalKey();
+  final _unitAreaKey = GlobalKey();
+  final _roomsCountKey = GlobalKey();
+  final _bathroomsCountKey = GlobalKey();
+  final _hallsCountKey = GlobalKey();
+  final _electricityMeterKey = GlobalKey();
+  final _waterMeterKey = GlobalKey();
+  final _acKey = GlobalKey<FormFieldState<bool>>();
   late final TextEditingController _title;
   late final TextEditingController _city;
   late final TextEditingController _district;
+  late final TextEditingController _street;
+  late final TextEditingController _buildingNumber;
+  late final TextEditingController _additionalNumber;
+  late final TextEditingController _postalCode;
+  late final TextEditingController _ownershipNumber;
+  late final TextEditingController _ownershipDate;
   late final TextEditingController _floors;
+  late final TextEditingController _unitsPerFloor;
   late final TextEditingController _totalUnits;
   late final TextEditingController _unitNumber;
+  late final TextEditingController _unitName;
+  late final TextEditingController _floor;
   late final TextEditingController _unitArea;
+  late final TextEditingController _roomsCount;
+  late final TextEditingController _bathroomsCount;
+  late final TextEditingController _hallsCount;
+  late final TextEditingController _electricityMeter;
+  late final TextEditingController _waterMeter;
+  late final TextEditingController _gasMeter;
+  late final TextEditingController _notes;
+  String _ownershipType = 'صك إلكتروني';
   String _propertyType = 'عمارة';
   String _usage = 'سكن عوائل';
   String _unitType = 'شقة';
+  String _furnishingStatus = 'غير مؤثثة';
+  bool _maidRoom = false;
+  bool _kitchen = true;
+  bool _storage = false;
+  bool _majlis = false;
+  bool _acWindow = false;
+  bool _acSplit = true;
+  bool _acCentral = false;
+  bool _privateParking = false;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     final existing = widget.existing;
+    final data = existing?.data;
     final firstUnit =
         existing?.units.isNotEmpty == true ? existing!.units.first : null;
-    _title = TextEditingController(text: existing?.title ?? '');
-    _city = TextEditingController(text: existing?.city ?? 'الرياض');
-    _district = TextEditingController(text: existing?.district ?? '');
-    _floors = TextEditingController(text: existing?.floors.toString() ?? '1');
-    _totalUnits =
-        TextEditingController(text: existing?.totalUnits.toString() ?? '1');
-    _unitNumber = TextEditingController(text: firstUnit?.number ?? '');
+    _title = TextEditingController(
+      text: _prefer(data?.buildingName, existing?.title ?? ''),
+    );
+    _city = TextEditingController(
+      text: _prefer(data?.city, existing?.city ?? 'الرياض'),
+    );
+    _district = TextEditingController(
+      text: _prefer(data?.district, existing?.district ?? ''),
+    );
+    _street = TextEditingController(text: data?.street ?? '');
+    _buildingNumber = TextEditingController(text: data?.buildingNumber ?? '');
+    _additionalNumber =
+        TextEditingController(text: data?.additionalNumber ?? '');
+    _postalCode = TextEditingController(text: data?.postalCode ?? '');
+    _ownershipNumber =
+        TextEditingController(text: data?.ownershipDocumentNumber ?? '');
+    _ownershipDate =
+        TextEditingController(text: data?.ownershipDocumentDate ?? '');
+    _floors = TextEditingController(
+      text: _prefer(data?.floorsCount, existing?.floors.toString() ?? '1'),
+    );
+    _unitsPerFloor = TextEditingController(
+      text: _prefer(data?.unitsPerFloor, '1'),
+    );
+    _totalUnits = TextEditingController(
+        text:
+            _prefer(data?.totalUnits, existing?.totalUnits.toString() ?? '1'));
+    _unitNumber = TextEditingController(
+      text: _prefer(data?.unitNumber, firstUnit?.number ?? ''),
+    );
+    _unitName = TextEditingController(
+      text: _prefer(data?.unitName, firstUnit?.name ?? ''),
+    );
+    _floor = TextEditingController(
+      text: _prefer(data?.floor, firstUnit?.floor ?? ''),
+    );
     _unitArea = TextEditingController(
-        text: firstUnit?.area.replaceAll(' م²', '') ?? '');
-    _propertyType =
-        existing?.type.trim().isNotEmpty == true ? existing!.type : 'عمارة';
-    _usage = existing?.usage.trim().isNotEmpty == true
-        ? existing!.usage
-        : 'سكن عوائل';
-    _unitType =
-        firstUnit?.type.trim().isNotEmpty == true ? firstUnit!.type : 'شقة';
+      text: _prefer(data?.area, firstUnit?.area.replaceAll(' م²', '') ?? ''),
+    );
+    _roomsCount = TextEditingController(text: _prefer(data?.roomsCount, '3'));
+    _bathroomsCount =
+        TextEditingController(text: _prefer(data?.bathroomsCount, '1'));
+    _hallsCount = TextEditingController(text: _prefer(data?.hallsCount, '1'));
+    _electricityMeter =
+        TextEditingController(text: data?.electricityMeter ?? '');
+    _waterMeter = TextEditingController(text: data?.waterMeter ?? '');
+    _gasMeter = TextEditingController(text: data?.gasMeter ?? '');
+    _notes = TextEditingController(text: data?.notes ?? '');
+    _ownershipType = _prefer(data?.ownershipDocumentType, 'صك إلكتروني');
+    _propertyType = _prefer(data?.propertyType, existing?.type ?? 'عمارة');
+    _usage = _prefer(data?.propertyUsage, existing?.usage ?? 'سكن عوائل');
+    _unitType = _prefer(data?.unitType, firstUnit?.type ?? 'شقة');
+    _furnishingStatus = _prefer(data?.furnishingStatus, 'غير مؤثثة');
+    _maidRoom = data?.maidRoom ?? false;
+    _kitchen = data?.kitchen ?? true;
+    _storage = data?.storage ?? false;
+    _majlis = data?.majlis ?? false;
+    _acWindow = data?.acWindow ?? false;
+    _acSplit = data?.acSplit ?? true;
+    _acCentral = data?.acCentral ?? false;
+    _privateParking = data?.privateParking ?? false;
   }
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _title.dispose();
     _city.dispose();
     _district.dispose();
+    _street.dispose();
+    _buildingNumber.dispose();
+    _additionalNumber.dispose();
+    _postalCode.dispose();
+    _ownershipNumber.dispose();
+    _ownershipDate.dispose();
     _floors.dispose();
+    _unitsPerFloor.dispose();
     _totalUnits.dispose();
     _unitNumber.dispose();
+    _unitName.dispose();
+    _floor.dispose();
     _unitArea.dispose();
+    _roomsCount.dispose();
+    _bathroomsCount.dispose();
+    _hallsCount.dispose();
+    _electricityMeter.dispose();
+    _waterMeter.dispose();
+    _gasMeter.dispose();
+    _notes.dispose();
     super.dispose();
+  }
+
+  String _prefer(String? value, String fallback) {
+    final text = value?.trim() ?? '';
+    return text.isEmpty || text == '-' ? fallback : text;
   }
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 18,
-        ),
-        child: ResponsiveContent(
-          maxWidth: 640,
-          padding: EdgeInsets.zero,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                AppPageHeader(
-                  title: widget.existing == null ? 'إضافة عقار' : 'تعديل عقار',
-                  subtitle: 'احفظ بيانات العقار والوحدة لاستخدامها في العقود.',
-                  icon: Icons.add_home_work_outlined,
-                ),
-                const SizedBox(height: 12),
-                AppTextField(
-                  label: 'اسم العقار',
-                  hint: 'مثال: عمارة الياسمين',
-                  controller: _title,
-                  icon: Icons.apartment_outlined,
-                  required: true,
-                ),
-                const SizedBox(height: 10),
-                Row(
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.existing == null ? 'إضافة عقار' : 'تعديل العقار'),
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 18,
+          ),
+          child: ResponsiveContent(
+            maxWidth: 700,
+            padding: EdgeInsets.zero,
+            child: Form(
+              key: _formKey,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    Expanded(
-                      child: AppTextField(
-                        label: 'المدينة',
-                        hint: 'الرياض',
-                        controller: _city,
-                        icon: Icons.location_city_outlined,
-                        required: true,
+                    Text(
+                      'احفظ بيانات العقار والوحدة لاستخدامها لاحقًا في العقود.',
+                      style: TextStyle(
+                        color: context.ejarzTheme.muted,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: AppTextField(
-                        label: 'الحي',
-                        hint: 'العليا',
-                        controller: _district,
-                        icon: Icons.location_on_outlined,
-                        required: true,
+                    const SizedBox(height: 12),
+                    const SectionTitle(
+                      title: 'بيانات الملكية',
+                      icon: Icons.verified_outlined,
+                    ),
+                    const SizedBox(height: 10),
+                    FieldGrid(
+                      children: <Widget>[
+                        AppDropdownField(
+                          label: 'نوع الإثبات',
+                          value: _ownershipType,
+                          items: const <String>['صك إلكتروني', 'تسجيل عيني'],
+                          icon: Icons.fact_check_outlined,
+                          required: true,
+                          onChanged: (value) => setState(
+                              () => _ownershipType = value ?? _ownershipType),
+                        ),
+                        AppTextField(
+                          key: _ownershipNumberKey,
+                          label: 'رقم الوثيقة',
+                          hint: 'أدخل رقم الوثيقة',
+                          controller: _ownershipNumber,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: <TextInputFormatter>[
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(20),
+                          ],
+                          icon: Icons.description_outlined,
+                          required: true,
+                          validator: _ownershipNumberValidator,
+                        ),
+                        AppTextField(
+                          key: _ownershipDateKey,
+                          label: 'تاريخ الوثيقة',
+                          hint: 'YYYY/MM/DD',
+                          controller: _ownershipDate,
+                          keyboardType: TextInputType.datetime,
+                          icon: Icons.date_range_outlined,
+                          required: true,
+                          validator: _ownershipDateValidator,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    const SectionTitle(
+                      title: 'بيانات العقار والعنوان',
+                      icon: Icons.business_outlined,
+                    ),
+                    const SizedBox(height: 10),
+                    AppTextField(
+                      label: 'اسم العقار',
+                      hint: 'مثال: عمارة الياسمين',
+                      controller: _title,
+                      icon: Icons.apartment_outlined,
+                    ),
+                    const SizedBox(height: 10),
+                    FieldGrid(
+                      children: <Widget>[
+                        AppTextField(
+                          key: _streetKey,
+                          label: 'الشارع',
+                          hint: 'اسم الشارع',
+                          controller: _street,
+                          icon: Icons.signpost_outlined,
+                          required: true,
+                          validator: _requiredValidator,
+                        ),
+                        AppTextField(
+                          key: _buildingNumberKey,
+                          label: 'رقم المبنى',
+                          hint: '4 أرقام',
+                          controller: _buildingNumber,
+                          keyboardType: TextInputType.number,
+                          icon: Icons.numbers_rounded,
+                          required: true,
+                          validator: (value) => _fixedDigitsValidator(value, 4),
+                        ),
+                        AppTextField(
+                          key: _additionalNumberKey,
+                          label: 'الرقم الإضافي',
+                          hint: '4 أرقام',
+                          controller: _additionalNumber,
+                          keyboardType: TextInputType.number,
+                          icon: Icons.add_box_outlined,
+                          required: true,
+                          validator: (value) => _fixedDigitsValidator(value, 4),
+                        ),
+                        AppTextField(
+                          key: _postalCodeKey,
+                          label: 'الرمز البريدي',
+                          hint: '5 أرقام',
+                          controller: _postalCode,
+                          keyboardType: TextInputType.number,
+                          icon: Icons.markunread_mailbox_outlined,
+                          required: true,
+                          validator: (value) => _fixedDigitsValidator(value, 5),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: AppTextField(
+                            key: _cityKey,
+                            label: 'المدينة',
+                            hint: 'الرياض',
+                            controller: _city,
+                            icon: Icons.location_city_outlined,
+                            required: true,
+                            validator: _requiredValidator,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: AppTextField(
+                            key: _districtKey,
+                            label: 'الحي',
+                            hint: 'العليا',
+                            controller: _district,
+                            icon: Icons.location_on_outlined,
+                            required: true,
+                            validator: _requiredValidator,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: AppDropdownField(
+                            label: 'نوع العقار',
+                            value: _propertyType,
+                            items: const <String>[
+                              'عمارة',
+                              'برج',
+                              'أرض',
+                              'شقة',
+                              'فيلا'
+                            ],
+                            icon: Icons.home_work_outlined,
+                            onChanged: (value) => setState(
+                                () => _propertyType = value ?? _propertyType),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: AppDropdownField(
+                            label: 'الاستخدام',
+                            value: _usage,
+                            items: const <String>[
+                              'سكن عوائل',
+                              'سكن أفراد',
+                              'سكن جماعي',
+                              'تجاري'
+                            ],
+                            icon: Icons.category_outlined,
+                            onChanged: (value) =>
+                                setState(() => _usage = value ?? _usage),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: AppTextField(
+                            key: _floorsKey,
+                            label: 'عدد الأدوار',
+                            hint: '1',
+                            controller: _floors,
+                            keyboardType: TextInputType.number,
+                            icon: Icons.layers_outlined,
+                            required: true,
+                            validator: (value) => _integerValidator(
+                              value,
+                              min: 1,
+                              max: 200,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: AppTextField(
+                            key: _totalUnitsKey,
+                            label: 'إجمالي الوحدات',
+                            hint: '1',
+                            controller: _totalUnits,
+                            keyboardType: TextInputType.number,
+                            icon: Icons.numbers_outlined,
+                            required: true,
+                            validator: (value) => _integerValidator(
+                              value,
+                              min: 1,
+                              max: 9999,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    AppTextField(
+                      key: _unitsPerFloorKey,
+                      label: 'عدد الوحدات في كل دور',
+                      hint: '1',
+                      controller: _unitsPerFloor,
+                      keyboardType: TextInputType.number,
+                      icon: Icons.grid_view_outlined,
+                      required: true,
+                      validator: (value) => _integerValidator(
+                        value,
+                        min: 1,
+                        max: 200,
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: AppDropdownField(
-                        label: 'نوع العقار',
-                        value: _propertyType,
-                        items: const <String>[
-                          'عمارة',
-                          'برج',
-                          'أرض',
-                          'شقة',
-                          'فيلا'
+                    const SizedBox(height: 14),
+                    const SectionTitle(
+                      title: 'بيانات الوحدة',
+                      icon: Icons.home_outlined,
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: AppTextField(
+                            key: _unitNumberKey,
+                            label: 'رقم الوحدة',
+                            hint: '12',
+                            controller: _unitNumber,
+                            icon: Icons.tag_outlined,
+                            required: true,
+                            validator: _requiredValidator,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: AppDropdownField(
+                            label: 'نوع الوحدة',
+                            value: _unitType,
+                            items: const <String>[
+                              'شقة',
+                              'استديو',
+                              'دور',
+                              'فيلا',
+                              'محل',
+                              'مستودع',
+                              'مكتب إداري'
+                            ],
+                            icon: Icons.meeting_room_outlined,
+                            onChanged: (value) =>
+                                setState(() => _unitType = value ?? _unitType),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    FieldGrid(
+                      children: <Widget>[
+                        AppTextField(
+                          key: _unitNameKey,
+                          label: 'اسم الوحدة',
+                          hint: 'شقة 12',
+                          controller: _unitName,
+                          icon: Icons.drive_file_rename_outline,
+                          required: true,
+                          validator: _requiredValidator,
+                        ),
+                        AppTextField(
+                          key: _floorKey,
+                          label: 'رقم الدور',
+                          hint: '1',
+                          controller: _floor,
+                          icon: Icons.layers_outlined,
+                          required: true,
+                          validator: _requiredValidator,
+                        ),
+                        AppDropdownField(
+                          label: 'حالة التأثيث',
+                          value: _furnishingStatus,
+                          items: const <String>[
+                            'غير مؤثثة',
+                            'مؤثثة بأثاث جديد',
+                            'مؤثثة بأثاث مستخدم',
+                          ],
+                          icon: Icons.chair_outlined,
+                          onChanged: (value) => setState(() =>
+                              _furnishingStatus = value ?? _furnishingStatus),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    AppTextField(
+                      key: _unitAreaKey,
+                      label: 'مساحة الوحدة (م²)',
+                      hint: '120',
+                      controller: _unitArea,
+                      keyboardType: TextInputType.number,
+                      icon: Icons.square_foot_outlined,
+                      required: true,
+                      validator: _positiveNumberValidator,
+                    ),
+                    const SizedBox(height: 10),
+                    FieldGrid(
+                      children: <Widget>[
+                        AppTextField(
+                          key: _roomsCountKey,
+                          label: 'عدد الغرف',
+                          hint: '3',
+                          controller: _roomsCount,
+                          keyboardType: TextInputType.number,
+                          icon: Icons.bed_outlined,
+                          required: true,
+                          validator: (value) => _integerValidator(
+                            value,
+                            min: 1,
+                            max: 50,
+                          ),
+                        ),
+                        AppTextField(
+                          key: _bathroomsCountKey,
+                          label: 'دورات المياه',
+                          hint: '1',
+                          controller: _bathroomsCount,
+                          keyboardType: TextInputType.number,
+                          icon: Icons.bathtub_outlined,
+                          required: true,
+                          validator: (value) => _integerValidator(
+                            value,
+                            min: 1,
+                            max: 50,
+                          ),
+                        ),
+                        AppTextField(
+                          key: _hallsCountKey,
+                          label: 'الصالات',
+                          hint: '1',
+                          controller: _hallsCount,
+                          keyboardType: TextInputType.number,
+                          icon: Icons.weekend_outlined,
+                          required: true,
+                          validator: (value) => _integerValidator(
+                            value,
+                            min: 0,
+                            max: 50,
+                          ),
+                        ),
+                        AppTextField(
+                          key: _electricityMeterKey,
+                          label: 'رقم عداد الكهرباء',
+                          hint: 'أدخل رقم العداد',
+                          controller: _electricityMeter,
+                          keyboardType: TextInputType.number,
+                          icon: Icons.bolt_outlined,
+                          required: true,
+                          validator: (value) =>
+                              _integerValidator(value, min: 1),
+                        ),
+                        AppTextField(
+                          key: _waterMeterKey,
+                          label: 'رقم عداد المياه',
+                          hint: 'أدخل رقم العداد',
+                          controller: _waterMeter,
+                          keyboardType: TextInputType.number,
+                          icon: Icons.water_drop_outlined,
+                          required: true,
+                          validator: (value) =>
+                              _integerValidator(value, min: 1),
+                        ),
+                        AppTextField(
+                          label: 'رقم عداد الغاز',
+                          hint: 'إن وجد',
+                          controller: _gasMeter,
+                          keyboardType: TextInputType.number,
+                          icon: Icons.local_fire_department_outlined,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    const SectionTitle(title: 'مرافق الوحدة'),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: <Widget>[
+                        _featureChip('غرفة خادمة', _maidRoom,
+                            (value) => setState(() => _maidRoom = value)),
+                        _featureChip('مطبخ', _kitchen,
+                            (value) => setState(() => _kitchen = value)),
+                        _featureChip('مخزن', _storage,
+                            (value) => setState(() => _storage = value)),
+                        _featureChip('مجلس', _majlis,
+                            (value) => setState(() => _majlis = value)),
+                        _featureChip('موقف خاص', _privateParking,
+                            (value) => setState(() => _privateParking = value)),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    const SectionTitle(title: 'التكييف'),
+                    const SizedBox(height: 8),
+                    FormField<bool>(
+                      key: _acKey,
+                      initialValue: _hasAirConditioning,
+                      validator: (_) => _hasAirConditioning
+                          ? null
+                          : 'اختر نوع تكييف واحدًا على الأقل',
+                      builder: (field) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: <Widget>[
+                              _featureChip('شباك', _acWindow, (value) {
+                                setState(() => _acWindow = value);
+                                field.didChange(_hasAirConditioning);
+                              }),
+                              _featureChip('سبليت', _acSplit, (value) {
+                                setState(() => _acSplit = value);
+                                field.didChange(_hasAirConditioning);
+                              }),
+                              _featureChip('مركزي', _acCentral, (value) {
+                                setState(() => _acCentral = value);
+                                field.didChange(_hasAirConditioning);
+                              }),
+                            ],
+                          ),
+                          if (field.hasError) ...<Widget>[
+                            const SizedBox(height: 6),
+                            Text(
+                              field.errorText!,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                                fontSize: context.sp(11.5),
+                              ),
+                            ),
+                          ],
                         ],
-                        icon: Icons.home_work_outlined,
-                        onChanged: (value) => setState(
-                            () => _propertyType = value ?? _propertyType),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: AppDropdownField(
-                        label: 'الاستخدام',
-                        value: _usage,
-                        items: const <String>[
-                          'سكن عوائل',
-                          'سكن أفراد',
-                          'سكن جماعي',
-                          'تجاري'
-                        ],
-                        icon: Icons.category_outlined,
-                        onChanged: (value) =>
-                            setState(() => _usage = value ?? _usage),
-                      ),
+                    const SizedBox(height: 14),
+                    AppTextField(
+                      label: 'ملاحظات على الوحدة',
+                      hint: 'أي تفاصيل إضافية مهمة',
+                      controller: _notes,
+                      icon: Icons.notes_rounded,
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 14),
+                    PrimaryButton(
+                      label: _saving ? 'جاري الحفظ...' : 'حفظ العقار',
+                      icon: Icons.save_outlined,
+                      loading: _saving,
+                      onPressed: _save,
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: AppTextField(
-                        label: 'عدد الأدوار',
-                        hint: '1',
-                        controller: _floors,
-                        keyboardType: TextInputType.number,
-                        icon: Icons.layers_outlined,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: AppTextField(
-                        label: 'إجمالي الوحدات',
-                        hint: '1',
-                        controller: _totalUnits,
-                        keyboardType: TextInputType.number,
-                        icon: Icons.numbers_outlined,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: AppTextField(
-                        label: 'رقم الوحدة',
-                        hint: '12',
-                        controller: _unitNumber,
-                        icon: Icons.tag_outlined,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: AppDropdownField(
-                        label: 'نوع الوحدة',
-                        value: _unitType,
-                        items: const <String>[
-                          'شقة',
-                          'استديو',
-                          'دور',
-                          'فيلا',
-                          'محل',
-                          'مستودع',
-                          'مكتب إداري'
-                        ],
-                        icon: Icons.meeting_room_outlined,
-                        onChanged: (value) =>
-                            setState(() => _unitType = value ?? _unitType),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                AppTextField(
-                  label: 'مساحة الوحدة',
-                  hint: '120',
-                  controller: _unitArea,
-                  keyboardType: TextInputType.number,
-                  icon: Icons.square_foot_outlined,
-                ),
-                const SizedBox(height: 14),
-                PrimaryButton(
-                  label: _saving ? 'جاري الحفظ...' : 'حفظ العقار',
-                  icon: Icons.save_outlined,
-                  loading: _saving,
-                  onPressed: _save,
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -357,34 +802,80 @@ class _PropertyEditorSheetState extends State<_PropertyEditorSheet> {
     );
   }
 
+  Widget _featureChip(
+    String label,
+    bool selected,
+    ValueChanged<bool> onSelected,
+  ) {
+    return FilterChip(
+      selected: selected,
+      showCheckmark: true,
+      label: Text(label),
+      avatar: Icon(
+        selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+        size: 16,
+        color: selected ? AppColors.primary : context.ejarzTheme.muted,
+      ),
+      selectedColor: AppColors.primaryLight,
+      side: BorderSide(
+        color: selected ? AppColors.primary : context.ejarzTheme.border,
+      ),
+      onSelected: onSelected,
+    );
+  }
+
   Future<void> _save() async {
-    if (_title.text.trim().isEmpty ||
-        _city.text.trim().isEmpty ||
-        _district.text.trim().isEmpty) {
-      showAppSnackBar(context, 'أدخل اسم العقار والمدينة والحي');
+    final valid = _formKey.currentState?.validate() ?? false;
+    if (!valid) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scrollToFirstInvalidField();
+      });
+      showAppSnackBar(
+        context,
+        'راجع الحقول الموضحة وأكمل بيانات العقار المطلوبة.',
+      );
       return;
     }
     setState(() => _saving = true);
     final data = PropertyData()
+      ..ownershipDocumentType = _ownershipType
+      ..ownershipDocumentNumber = _ownershipNumber.text.trim()
+      ..ownershipDocumentDate = _ownershipDate.text.trim()
       ..buildingName = _title.text.trim()
       ..city = _city.text.trim()
       ..district = _district.text.trim()
+      ..street = _street.text.trim()
+      ..buildingNumber = _buildingNumber.text.trim()
+      ..additionalNumber = _additionalNumber.text.trim()
+      ..postalCode = _postalCode.text.trim()
       ..propertyType = _propertyType
       ..propertyUsage = _usage
       ..floorsCount = _floors.text.trim().isEmpty ? '1' : _floors.text.trim()
-      ..unitsPerFloor = '1'
+      ..unitsPerFloor =
+          _unitsPerFloor.text.trim().isEmpty ? '1' : _unitsPerFloor.text.trim()
       ..totalUnits =
           _totalUnits.text.trim().isEmpty ? '1' : _totalUnits.text.trim()
       ..unitNumber = _unitNumber.text.trim()
-      ..unitName = _unitType
+      ..unitName = _unitName.text.trim()
       ..unitType = _unitType
-      ..floor = '1'
+      ..floor = _floor.text.trim()
       ..area = _unitArea.text.trim()
-      ..roomsCount = _unitType == 'شقة' ? '3' : '0'
-      ..bathroomsCount = '1'
-      ..hallsCount = '1'
-      ..electricityMeter = 'غير محدد'
-      ..waterMeter = 'غير محدد';
+      ..roomsCount = _roomsCount.text.trim()
+      ..bathroomsCount = _bathroomsCount.text.trim()
+      ..hallsCount = _hallsCount.text.trim()
+      ..furnishingStatus = _furnishingStatus
+      ..maidRoom = _maidRoom
+      ..kitchen = _kitchen
+      ..storage = _storage
+      ..majlis = _majlis
+      ..privateParking = _privateParking
+      ..acWindow = _acWindow
+      ..acSplit = _acSplit
+      ..acCentral = _acCentral
+      ..electricityMeter = _electricityMeter.text.trim()
+      ..waterMeter = _waterMeter.text.trim()
+      ..gasMeter = _gasMeter.text.trim()
+      ..notes = _notes.text.trim();
     try {
       final controller = AppScope.of(context, listen: false);
       final saved = await controller.saveProperty(
@@ -405,6 +896,168 @@ class _PropertyEditorSheetState extends State<_PropertyEditorSheet> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  bool get _hasAirConditioning => _acWindow || _acSplit || _acCentral;
+
+  String? _requiredValidator(String? value) {
+    return (value?.trim().isEmpty ?? true) ? 'هذا الحقل مطلوب' : null;
+  }
+
+  String? _ownershipNumberValidator(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return 'هذا الحقل مطلوب';
+    if (RegExp(r'^\d{8,20}$').hasMatch(text)) return null;
+    return 'أدخل رقم وثيقة صحيحًا من 8 إلى 20 رقمًا';
+  }
+
+  String? _ownershipDateValidator(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return 'هذا الحقل مطلوب';
+    final date = _parsePropertyDate(text);
+    if (date == null) return 'أدخل التاريخ بالصيغة YYYY/MM/DD';
+    if (date.isAfter(DateTime.now())) {
+      return 'لا يمكن أن يكون التاريخ مستقبليًا';
+    }
+    return null;
+  }
+
+  String? _fixedDigitsValidator(String? value, int length) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return 'هذا الحقل مطلوب';
+    if (_fixedDigits(text, length) == null) {
+      return 'يجب أن يتكون من $length أرقام';
+    }
+    return null;
+  }
+
+  String? _integerValidator(
+    String? value, {
+    required int min,
+    int? max,
+  }) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return 'هذا الحقل مطلوب';
+    if (_positiveInt(text, min: min, max: max) == null) {
+      if (max != null) return 'أدخل عددًا صحيحًا من $min إلى $max';
+      return 'أدخل رقمًا صحيحًا لا يقل عن $min';
+    }
+    return null;
+  }
+
+  String? _positiveNumberValidator(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return 'هذا الحقل مطلوب';
+    return _positiveNumber(text) == null ? 'أدخل رقمًا أكبر من صفر' : null;
+  }
+
+  void _scrollToFirstInvalidField() {
+    final key = _firstInvalidFieldKey();
+    final fieldContext = key?.currentContext;
+    if (fieldContext == null) return;
+    Scrollable.ensureVisible(
+      fieldContext,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+      alignment: 0.15,
+    );
+  }
+
+  GlobalKey? _firstInvalidFieldKey() {
+    final ownershipDate = _parsePropertyDate(_ownershipDate.text);
+    final fields = <MapEntry<GlobalKey, bool>>[
+      MapEntry(
+        _ownershipNumberKey,
+        _ownershipNumberValidator(_ownershipNumber.text) != null,
+      ),
+      MapEntry(
+        _ownershipDateKey,
+        _ownershipDate.text.trim().isEmpty ||
+            ownershipDate == null ||
+            ownershipDate.isAfter(DateTime.now()),
+      ),
+      MapEntry(_streetKey, _street.text.trim().isEmpty),
+      MapEntry(
+          _buildingNumberKey, _fixedDigits(_buildingNumber.text, 4) == null),
+      MapEntry(
+        _additionalNumberKey,
+        _fixedDigits(_additionalNumber.text, 4) == null,
+      ),
+      MapEntry(_postalCodeKey, _fixedDigits(_postalCode.text, 5) == null),
+      MapEntry(_cityKey, _city.text.trim().isEmpty),
+      MapEntry(_districtKey, _district.text.trim().isEmpty),
+      MapEntry(
+          _floorsKey, _positiveInt(_floors.text, min: 1, max: 200) == null),
+      MapEntry(
+        _totalUnitsKey,
+        _positiveInt(_totalUnits.text, min: 1, max: 9999) == null,
+      ),
+      MapEntry(
+        _unitsPerFloorKey,
+        _positiveInt(_unitsPerFloor.text, min: 1, max: 200) == null,
+      ),
+      MapEntry(_unitNumberKey, _unitNumber.text.trim().isEmpty),
+      MapEntry(_unitNameKey, _unitName.text.trim().isEmpty),
+      MapEntry(_floorKey, _floor.text.trim().isEmpty),
+      MapEntry(_unitAreaKey, _positiveNumber(_unitArea.text) == null),
+      MapEntry(
+        _roomsCountKey,
+        _positiveInt(_roomsCount.text, min: 1, max: 50) == null,
+      ),
+      MapEntry(
+        _bathroomsCountKey,
+        _positiveInt(_bathroomsCount.text, min: 1, max: 50) == null,
+      ),
+      MapEntry(
+        _hallsCountKey,
+        _positiveInt(_hallsCount.text, min: 0, max: 50) == null,
+      ),
+      MapEntry(
+        _electricityMeterKey,
+        _positiveInt(_electricityMeter.text, min: 1) == null,
+      ),
+      MapEntry(
+        _waterMeterKey,
+        _positiveInt(_waterMeter.text, min: 1) == null,
+      ),
+      MapEntry(_acKey, !_hasAirConditioning),
+    ];
+    for (final field in fields) {
+      if (field.value) return field.key;
+    }
+    return null;
+  }
+
+  int? _positiveInt(String value, {required int min, int? max}) {
+    final parsed = int.tryParse(value.trim());
+    if (parsed == null || parsed < min || (max != null && parsed > max)) {
+      return null;
+    }
+    return parsed;
+  }
+
+  int? _fixedDigits(String value, int length) {
+    final text = value.trim();
+    return RegExp('^\\d{$length}\$').hasMatch(text) ? int.parse(text) : null;
+  }
+
+  double? _positiveNumber(String value) {
+    final parsed = double.tryParse(value.trim().replaceAll(',', ''));
+    return parsed != null && parsed > 0 ? parsed : null;
+  }
+
+  DateTime? _parsePropertyDate(String value) {
+    final parts = value.trim().replaceAll('-', '/').split('/');
+    if (parts.length != 3) return null;
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final day = int.tryParse(parts[2]);
+    if (year == null || month == null || day == null) return null;
+    final date = DateTime(year, month, day);
+    if (date.year != year || date.month != month || date.day != day) {
+      return null;
+    }
+    return date;
   }
 }
 
@@ -482,14 +1135,38 @@ class _ManagedPropertyCard extends StatelessWidget {
   }
 
   void _showDetails(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _PropertyDetailsScreen(initialProperty: property),
+      ),
+    );
+  }
+}
+
+class _PropertyDetailsScreen extends StatelessWidget {
+  final PropertyRecord initialProperty;
+
+  const _PropertyDetailsScreen({required this.initialProperty});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = AppScope.of(context);
+    var property = initialProperty;
+    for (final item in controller.properties) {
+      if (item.id == initialProperty.id) {
+        property = item;
+        break;
+      }
+    }
+    final details = property.data;
+
+    return Scaffold(
+      appBar: const DetailAppBar(title: 'تفاصيل العقار'),
+      bottomNavigationBar: _accountBottomNavigation(context),
+      body: SafeArea(
         child: ResponsiveContent(
-          maxWidth: 640,
-          padding: const EdgeInsets.fromLTRB(16, 6, 16, 18),
+          maxWidth: 700,
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
@@ -498,30 +1175,234 @@ class _ManagedPropertyCard extends StatelessWidget {
                 subtitle: '${property.location} • ${property.type}',
                 icon: Icons.apartment_outlined,
               ),
-              const SizedBox(height: 12),
-              const SectionTitle(title: 'الوحدات المرتبطة'),
+              const SizedBox(height: 14),
+              const SectionTitle(
+                title: 'بيانات العقار',
+                icon: Icons.business_outlined,
+              ),
               const SizedBox(height: 8),
-              for (final unit in property.units) _UnitPreview(unit: unit),
-              const SizedBox(height: 12),
+              _propertyDetailsCard(<Widget>[
+                _PropertyDetailLine(label: 'اسم العقار', value: property.title),
+                _PropertyDetailLine(
+                  label: 'مصدر العقار',
+                  value: details == null ? '-' : _dash(details.propertySource),
+                ),
+                _PropertyDetailLine(label: 'نوع العقار', value: property.type),
+                _PropertyDetailLine(label: 'الاستخدام', value: property.usage),
+                _PropertyDetailLine(
+                  label: 'عدد الأدوار',
+                  value: '${property.floors}',
+                ),
+                _PropertyDetailLine(
+                  label: 'الوحدات في الدور',
+                  value: details == null ? '-' : _dash(details.unitsPerFloor),
+                ),
+                _PropertyDetailLine(
+                  label: 'إجمالي الوحدات',
+                  value: '${property.totalUnits}',
+                ),
+              ]),
+              const SizedBox(height: 14),
+              const SectionTitle(
+                title: 'بيانات الملكية',
+                icon: Icons.verified_outlined,
+              ),
+              const SizedBox(height: 8),
+              _propertyDetailsCard(<Widget>[
+                _PropertyDetailLine(
+                  label: 'نوع الإثبات',
+                  value: details == null
+                      ? '-'
+                      : _dash(details.ownershipDocumentType),
+                ),
+                _PropertyDetailLine(
+                  label: 'رقم الوثيقة',
+                  value: details == null
+                      ? '-'
+                      : _dash(details.ownershipDocumentNumber),
+                ),
+                _PropertyDetailLine(
+                  label: 'تاريخ الوثيقة',
+                  value: details == null
+                      ? '-'
+                      : _dash(details.ownershipDocumentDate),
+                ),
+              ]),
+              const SizedBox(height: 14),
+              const SectionTitle(
+                title: 'العنوان الوطني',
+                icon: Icons.location_on_outlined,
+              ),
+              const SizedBox(height: 8),
+              _propertyDetailsCard(<Widget>[
+                _PropertyDetailLine(
+                  label: 'المدينة',
+                  value: details == null ? property.city : _dash(details.city),
+                ),
+                _PropertyDetailLine(
+                  label: 'الحي',
+                  value: details == null
+                      ? property.district
+                      : _dash(details.district),
+                ),
+                _PropertyDetailLine(
+                  label: 'الشارع',
+                  value: details == null ? '-' : _dash(details.street),
+                ),
+                _PropertyDetailLine(
+                  label: 'رقم المبنى',
+                  value: details == null ? '-' : _dash(details.buildingNumber),
+                ),
+                _PropertyDetailLine(
+                  label: 'الرقم الإضافي',
+                  value:
+                      details == null ? '-' : _dash(details.additionalNumber),
+                ),
+                _PropertyDetailLine(
+                  label: 'الرمز البريدي',
+                  value: details == null ? '-' : _dash(details.postalCode),
+                ),
+              ]),
+              const SizedBox(height: 14),
+              const SectionTitle(
+                title: 'بيانات الوحدة',
+                icon: Icons.home_outlined,
+              ),
+              const SizedBox(height: 8),
+              _propertyDetailsCard(<Widget>[
+                _PropertyDetailLine(
+                  label: 'رقم الوحدة',
+                  value: details == null ? '-' : _dash(details.unitNumber),
+                ),
+                _PropertyDetailLine(
+                  label: 'اسم الوحدة',
+                  value: details == null ? '-' : _dash(details.unitName),
+                ),
+                _PropertyDetailLine(
+                  label: 'نوع الوحدة',
+                  value: details == null ? '-' : _dash(details.unitType),
+                ),
+                _PropertyDetailLine(
+                  label: 'الدور',
+                  value: details == null ? '-' : _dash(details.floor),
+                ),
+                _PropertyDetailLine(
+                  label: 'المساحة',
+                  value: details == null ? '-' : '${_dash(details.area)} م²',
+                ),
+                _PropertyDetailLine(
+                  label: 'حالة التأثيث',
+                  value:
+                      details == null ? '-' : _dash(details.furnishingStatus),
+                ),
+                _PropertyDetailLine(
+                  label: 'عدد الغرف',
+                  value: details == null ? '-' : _dash(details.roomsCount),
+                ),
+                _PropertyDetailLine(
+                  label: 'دورات المياه',
+                  value: details == null ? '-' : _dash(details.bathroomsCount),
+                ),
+                _PropertyDetailLine(
+                  label: 'الصالات',
+                  value: details == null ? '-' : _dash(details.hallsCount),
+                ),
+              ]),
+              const SizedBox(height: 14),
+              const SectionTitle(
+                title: 'المرافق والعدادات',
+                icon: Icons.tune_outlined,
+              ),
+              const SizedBox(height: 8),
+              _propertyDetailsCard(<Widget>[
+                _PropertyDetailLine(
+                  label: 'المطبخ',
+                  value: details == null ? '-' : _yesNo(details.kitchen),
+                ),
+                _PropertyDetailLine(
+                  label: 'غرفة خادمة',
+                  value: details == null ? '-' : _yesNo(details.maidRoom),
+                ),
+                _PropertyDetailLine(
+                  label: 'مخزن',
+                  value: details == null ? '-' : _yesNo(details.storage),
+                ),
+                _PropertyDetailLine(
+                  label: 'مجلس',
+                  value: details == null ? '-' : _yesNo(details.majlis),
+                ),
+                _PropertyDetailLine(
+                  label: 'موقف خاص',
+                  value: details == null ? '-' : _yesNo(details.privateParking),
+                ),
+                _PropertyDetailLine(
+                  label: 'تكييف شباك',
+                  value: details == null ? '-' : _yesNo(details.acWindow),
+                ),
+                _PropertyDetailLine(
+                  label: 'تكييف سبليت',
+                  value: details == null ? '-' : _yesNo(details.acSplit),
+                ),
+                _PropertyDetailLine(
+                  label: 'تكييف مركزي',
+                  value: details == null ? '-' : _yesNo(details.acCentral),
+                ),
+                _PropertyDetailLine(
+                  label: 'عداد الكهرباء',
+                  value:
+                      details == null ? '-' : _dash(details.electricityMeter),
+                ),
+                _PropertyDetailLine(
+                  label: 'عداد المياه',
+                  value: details == null ? '-' : _dash(details.waterMeter),
+                ),
+                _PropertyDetailLine(
+                  label: 'عداد الغاز',
+                  value: details == null ? '-' : _dash(details.gasMeter),
+                ),
+                _PropertyDetailLine(
+                  label: 'الملاحظات',
+                  value: details == null ? '-' : _dash(details.notes),
+                ),
+              ]),
+              if (property.units.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 14),
+                const SectionTitle(title: 'الوحدات المرتبطة'),
+                const SizedBox(height: 8),
+                for (final unit in property.units) _UnitPreview(unit: unit),
+              ],
+              const SizedBox(height: 16),
               SecondaryButton(
                 label: 'تعديل العقار',
                 icon: Icons.edit_outlined,
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  showModalBottomSheet<void>(
-                    context: context,
-                    showDragHandle: true,
-                    isScrollControlled: true,
-                    builder: (_) => _PropertyEditorSheet(existing: property),
-                  );
-                },
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => _PropertyEditorScreen(existing: property),
+                  ),
+                ),
               ),
+              const SizedBox(height: 18),
             ],
           ),
         ),
       ),
     );
   }
+
+  Widget _propertyDetailsCard(List<Widget> children) {
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      shadows: const <BoxShadow>[],
+      child: Column(children: children),
+    );
+  }
+
+  String _dash(String value) {
+    final text = value.trim();
+    return text.isEmpty ? '-' : text;
+  }
+
+  String _yesNo(bool value) => value ? 'نعم' : 'لا';
 }
 
 class _PropertyMeta extends StatelessWidget {
@@ -545,6 +1426,46 @@ class _PropertyMeta extends StatelessWidget {
           fontSize: context.sp(10.8),
           fontWeight: FontWeight.w800,
         ),
+      ),
+    );
+  }
+}
+
+class _PropertyDetailLine extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _PropertyDetailLine({
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SizedBox(
+            width: 112,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: context.ejarzTheme.muted,
+                fontSize: context.sp(11.5),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -589,8 +1510,8 @@ class _UnitPreview extends StatelessWidget {
   }
 }
 
-class _WalletStandaloneScreen extends StatelessWidget {
-  const _WalletStandaloneScreen();
+class WalletStandaloneScreen extends StatelessWidget {
+  const WalletStandaloneScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -636,7 +1557,8 @@ class WalletScreen extends StatelessWidget {
               onMenu: onMenu,
               onNotifications: onNotifications,
               showMenu: true,
-              menuIcon: Icons.arrow_back_rounded,
+              menuIcon: Icons.arrow_forward_rounded,
+              placeMenuAtStart: true,
               showNotification: false,
               showLogo: false,
             ),
@@ -1334,7 +2256,7 @@ class ProfileScreen extends StatelessWidget {
                   TextButton(
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => const _WalletStandaloneScreen(),
+                        builder: (_) => const WalletStandaloneScreen(),
                       ),
                     ),
                     child: const Text('المدفوعات'),
@@ -1377,7 +2299,7 @@ class ProfileScreen extends StatelessWidget {
                     subtitle: 'الفواتير وطرق الدفع وسجل العمليات',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => const _WalletStandaloneScreen(),
+                        builder: (_) => const WalletStandaloneScreen(),
                       ),
                     ),
                   ),
@@ -1704,6 +2626,19 @@ class _NotificationTile extends StatelessWidget {
         final controller = AppScope.of(context, listen: false);
         await controller.markNotificationRead(item);
         if (!context.mounted) return;
+        if (item.actionType == 'payments') {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const WalletStandaloneScreen(),
+            ),
+          );
+          return;
+        }
+        if (item.actionType == 'profile') {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+          controller.setNavigationIndex(3);
+          return;
+        }
         if (item.actionType == 'supportTicket') {
           Navigator.of(context).push(
             MaterialPageRoute<void>(
@@ -1872,19 +2807,36 @@ class SettingsScreen extends StatelessWidget {
 
 class SupportScreen extends StatefulWidget {
   final String? initialTicketId;
+  final String initialSubject;
+  final String initialMessage;
+  final String initialPriority;
 
-  const SupportScreen({super.key, this.initialTicketId});
+  const SupportScreen({
+    super.key,
+    this.initialTicketId,
+    this.initialSubject = '',
+    this.initialMessage = '',
+    this.initialPriority = 'عادية',
+  });
 
   @override
   State<SupportScreen> createState() => _SupportScreenState();
 }
 
 class _SupportScreenState extends State<SupportScreen> {
-  final TextEditingController _subject = TextEditingController();
-  final TextEditingController _message = TextEditingController();
-  String _priority = 'عادية';
+  late final TextEditingController _subject;
+  late final TextEditingController _message;
+  late String _priority;
   bool _sending = false;
   bool _openedInitialTicket = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _subject = TextEditingController(text: widget.initialSubject);
+    _message = TextEditingController(text: widget.initialMessage);
+    _priority = widget.initialPriority == 'عالية' ? 'عالية' : 'عادية';
+  }
 
   @override
   void dispose() {
@@ -2072,6 +3024,10 @@ class _SupportScreenState extends State<SupportScreen> {
                     showAppSnackBar(context, 'اكتب رسالتك أولًا');
                     return;
                   }
+                  if (kEjarzDemoMode) {
+                    await _showDemoSupportNotice(context);
+                    return;
+                  }
                   setState(() => _sending = true);
                   try {
                     await AppScope.of(context, listen: false)
@@ -2116,6 +3072,56 @@ class _SupportScreenState extends State<SupportScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDemoSupportNotice(BuildContext context) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        contentPadding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.10),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.support_agent_rounded,
+                color: AppColors.primary,
+                size: 38,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'الدعم الفني غير متاح في النسخة التجريبية',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'هذه الواجهة مخصصة لاستعراض تجربة إرسال طلبات الدعم. لن يتم إرسال أو حفظ هذا الطلب حاليًا، وسيتم تفعيل الخدمة في النسخة التشغيلية.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: context.ejarzTheme.muted,
+                height: 1.6,
+              ),
+            ),
+            const SizedBox(height: 18),
+            PrimaryButton(
+              label: 'حسنًا، فهمت',
+              icon: Icons.check_rounded,
+              onPressed: () => Navigator.of(dialogContext).pop(),
+            ),
+          ],
         ),
       ),
     );
@@ -2299,14 +3305,66 @@ class _FaqTile extends StatelessWidget {
   }
 }
 
-class LegalScreen extends StatelessWidget {
+class LegalScreen extends StatefulWidget {
   const LegalScreen({super.key});
+
+  @override
+  State<LegalScreen> createState() => _LegalScreenState();
+}
+
+class _LegalScreenState extends State<LegalScreen> {
+  bool _deletingAccount = false;
 
   Future<void> _open(BuildContext context, String url) async {
     final uri = Uri.parse(url);
     final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened && context.mounted) {
       showAppSnackBar(context, 'تعذر فتح الرابط الآن');
+    }
+  }
+
+  Future<void> _requestAccountDeletion(BuildContext context) async {
+    if (_deletingAccount) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => const _AccountDeletionConfirmationDialog(),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final controller = AppScope.of(context, listen: false);
+    setState(() => _deletingAccount = true);
+    try {
+      await controller.deleteOwnAccount();
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.check_circle_rounded,
+              color: AppColors.primary, size: 42),
+          title: const Text('تم حذف الحساب'),
+          content: const Text(
+            kEjarzDemoMode
+                ? 'اكتمل حذف حساب التجربة وبياناته التجريبية. سيتم الآن تسجيل خروجك، ويمكنك بدء تجربة جديدة لاحقًا.'
+                : 'اكتمل حذف حسابك والبيانات المرتبطة به من الخدمة. سيتم الآن تسجيل خروجك.',
+          ),
+          actions: <Widget>[
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('تم'),
+            ),
+          ],
+        ),
+      );
+      await controller.completeDeletedAccountSignOut();
+    } catch (error) {
+      if (!context.mounted) return;
+      showAppSnackBar(
+        context,
+        'تعذر إكمال حذف الحساب الآن. لم يُغلق الحساب ويمكنك إعادة المحاولة.',
+      );
+    } finally {
+      if (mounted) setState(() => _deletingAccount = false);
     }
   }
 
@@ -2361,10 +3419,24 @@ class LegalScreen extends StatelessWidget {
                 onTap: _open,
               ),
               const SizedBox(height: 14),
-              _LegalLinkTile(
-                title: 'طلب حذف الحساب والبيانات',
-                url: controller.legalAccountDeletionUrl,
+              _LegalActionTile(
+                title: _deletingAccount
+                    ? 'جارٍ حذف الحساب والبيانات...'
+                    : 'حذف الحساب والبيانات نهائيًا',
+                subtitle: _deletingAccount
+                    ? 'يرجى عدم إغلاق التطبيق حتى اكتمال العملية'
+                    : kEjarzDemoMode
+                        ? 'يحذف حساب التجربة الحالي وبياناته التجريبية فقط'
+                        : 'حذف مباشر وآمن من داخل التطبيق بعد التأكيد',
                 icon: Icons.delete_outline_rounded,
+                loading: _deletingAccount,
+                onTap: _requestAccountDeletion,
+              ),
+              const SizedBox(height: 8),
+              _LegalLinkTile(
+                title: 'فتح صفحة حذف الحساب',
+                url: controller.legalAccountDeletionUrl,
+                icon: Icons.open_in_new_rounded,
                 onTap: _open,
               ),
               const SizedBox(height: 14),
@@ -2377,6 +3449,69 @@ class LegalScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AccountDeletionConfirmationDialog extends StatefulWidget {
+  const _AccountDeletionConfirmationDialog();
+
+  @override
+  State<_AccountDeletionConfirmationDialog> createState() =>
+      _AccountDeletionConfirmationDialogState();
+}
+
+class _AccountDeletionConfirmationDialogState
+    extends State<_AccountDeletionConfirmationDialog> {
+  final TextEditingController _controller = TextEditingController();
+  bool _canDelete = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('حذف الحساب نهائيًا'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const Text(
+              kEjarzDemoMode
+                  ? 'سيُحذف حساب التجربة الحالي وكل العقود والعقارات والمرفقات والبيانات التجريبية المرتبطة به. يمكنك بدء تجربة جديدة بعد تسجيل الدخول مرة أخرى.'
+                  : 'سيُحذف حسابك وملفك الشخصي وعقودك وعقاراتك ومرفقاتك وإشعاراتك وطلبات الدعم وبيانات الدفع المرتبطة بالحساب. لا يمكن التراجع عن هذا الإجراء.',
+            ),
+            const SizedBox(height: 14),
+            const Text('للتأكيد اكتب كلمة: حذف'),
+            const SizedBox(height: 7),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(hintText: 'حذف'),
+              onChanged: (value) {
+                setState(() => _canDelete = value.trim() == 'حذف');
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('إلغاء'),
+        ),
+        FilledButton(
+          onPressed: _canDelete ? () => Navigator.of(context).pop(true) : null,
+          style: FilledButton.styleFrom(backgroundColor: AppColors.red),
+          child: const Text('حذف نهائي'),
+        ),
+      ],
     );
   }
 }
@@ -2426,6 +3561,66 @@ class _LegalLinkTile extends StatelessWidget {
           ),
           Icon(Icons.open_in_new_rounded,
               color: context.ejarzTheme.muted, size: 18),
+        ],
+      ),
+    );
+  }
+}
+
+class _LegalActionTile extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool loading;
+  final Future<void> Function(BuildContext context) onTap;
+
+  const _LegalActionTile({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    this.loading = false,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      onTap: loading ? null : () => onTap(context),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      shadows: const <BoxShadow>[],
+      child: Row(
+        children: <Widget>[
+          if (loading)
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.4),
+            )
+          else
+            Icon(icon, color: AppColors.red, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: context.ejarzTheme.muted,
+                    fontSize: context.sp(10.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (!loading)
+            Icon(Icons.chevron_left_rounded,
+                color: context.ejarzTheme.muted, size: 20),
         ],
       ),
     );
@@ -2485,9 +3680,10 @@ class SavedPropertiesScreen extends StatelessWidget {
               SecondaryButton(
                 label: 'إضافة عقار',
                 icon: Icons.add_home_work_outlined,
-                onPressed: () => showAppSnackBar(
-                  context,
-                  'يمكن إضافة العقار تلقائيًا أثناء إنشاء عقد جديد.',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const _PropertyEditorScreen(),
+                  ),
                 ),
               ),
             ],

@@ -6,6 +6,7 @@ import '../core/theme.dart';
 import '../widgets/common.dart';
 import '../widgets/illustrations.dart';
 import 'contracts.dart';
+import 'create_contract.dart';
 
 class HomeScreen extends StatelessWidget {
   final VoidCallback onMenu;
@@ -112,7 +113,10 @@ class HomeScreen extends StatelessWidget {
                         icon: Icons.home_work_outlined,
                         title: controller.serviceResidentialTitle,
                         subtitle: controller.serviceResidentialSubtitle,
-                        onTap: onCreate,
+                        onTap: () => _openNewContract(
+                          context,
+                          ContractType.residential,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 7),
@@ -121,7 +125,10 @@ class HomeScreen extends StatelessWidget {
                         icon: Icons.storefront_outlined,
                         title: controller.serviceCommercialTitle,
                         subtitle: controller.serviceCommercialSubtitle,
-                        onTap: onCreate,
+                        onTap: () => _openNewContract(
+                          context,
+                          ContractType.commercial,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 7),
@@ -130,10 +137,7 @@ class HomeScreen extends StatelessWidget {
                         icon: Icons.refresh_rounded,
                         title: controller.serviceRenewalTitle,
                         subtitle: controller.serviceRenewalSubtitle,
-                        onTap: () => showAppSnackBar(
-                          context,
-                          controller.serviceRenewalMessage,
-                        ),
+                        onTap: () => _openRenewalContracts(context),
                       ),
                     ),
                     const SizedBox(width: 7),
@@ -201,6 +205,199 @@ class HomeScreen extends StatelessWidget {
               ],
           ],
         ),
+      ),
+    );
+  }
+
+  void _openNewContract(BuildContext context, ContractType type) {
+    final draft = createContractDraftForType(type);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CreateContractScreen(
+          initialDraft: draft,
+          initialStep: 0,
+        ),
+      ),
+    );
+  }
+
+  void _openRenewalContracts(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const RenewContractSelectionScreen(),
+      ),
+    );
+  }
+}
+
+class RenewContractSelectionScreen extends StatelessWidget {
+  const RenewContractSelectionScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = AppScope.of(context);
+    final renewableContracts = controller.contracts
+        .where((contract) => contract.status == ContractStatus.authenticated)
+        .toList();
+
+    return Scaffold(
+      appBar: const DetailAppBar(title: 'تجديد عقد'),
+      body: SafeArea(
+        child: ResponsiveContent(
+          maxWidth: 700,
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              const AppPageHeader(
+                title: 'اختر العقد المراد تجديده',
+                subtitle:
+                    'سننسخ بيانات العقد ونوعه إلى طلب جديد لتراجعها قبل الإرسال.',
+                icon: Icons.refresh_rounded,
+              ),
+              const SizedBox(height: 14),
+              if (renewableContracts.isEmpty)
+                EmptyState(
+                  icon: Icons.event_busy_outlined,
+                  title: 'لا توجد عقود متاحة للتجديد',
+                  subtitle:
+                      'يظهر هنا العقد المكتمل بعد صدوره. يمكنك إنشاء عقد جديد الآن.',
+                  actionLabel: 'إنشاء عقد جديد',
+                  onAction: () => Navigator.of(context).pushReplacement(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const CreateContractScreen(),
+                    ),
+                  ),
+                )
+              else ...<Widget>[
+                const InfoBanner(
+                  text:
+                      'التجديد ينشئ طلبًا جديدًا ولا يغيّر العقد السابق. راجع التواريخ والمبالغ والمرفقات قبل الإرسال.',
+                  icon: Icons.info_outline_rounded,
+                ),
+                const SizedBox(height: 12),
+                for (var index = 0;
+                    index < renewableContracts.length;
+                    index++) ...<Widget>[
+                  _RenewableContractCard(
+                    contract: renewableContracts[index],
+                    onTap: () => _renew(context, renewableContracts[index]),
+                  ),
+                  if (index != renewableContracts.length - 1)
+                    const SizedBox(height: 10),
+                ],
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _renew(BuildContext context, ContractRecord contract) {
+    final draft = _renewalDraft(contract);
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => CreateContractScreen(
+          initialDraft: draft,
+          initialStep: 0,
+          renewalMode: true,
+          renewalSourceNumber: contract.requestNumber,
+        ),
+      ),
+    );
+  }
+
+  ContractDraft _renewalDraft(ContractRecord contract) {
+    final savedDraft = contract.draftData;
+    final draft = savedDraft == null
+        ? createContractDraftForType(contract.type)
+        : ContractDraft.copyOf(savedDraft);
+    draft
+      ..type = contract.type
+      ..role = contract.role
+      ..acceptAccuracyDeclaration = false
+      ..acceptDataSharing = false
+      ..acceptTerms = false;
+
+    if (savedDraft == null) {
+      draft.lessor.fullName = contract.lessorName;
+      draft.tenant.fullName = contract.tenantName;
+      final address = contract.property
+          .split('-')
+          .map((part) => part.trim())
+          .where((part) => part.isNotEmpty)
+          .toList();
+      if (address.isNotEmpty) draft.property.city = address.first;
+      if (address.length > 1) draft.property.district = address[1];
+      if (address.length > 2) draft.property.street = address[2];
+    }
+    return draft;
+  }
+}
+
+class _RenewableContractCard extends StatelessWidget {
+  final ContractRecord contract;
+  final VoidCallback onTap;
+
+  const _RenewableContractCard({
+    required this.contract,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      key: ValueKey<String>('renew-contract-${contract.id}'),
+      onTap: onTap,
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(contract.type.icon, color: AppColors.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  contract.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${contract.requestNumber} • ${contract.type.label}',
+                  style: TextStyle(
+                    color: context.ejarzTheme.muted,
+                    fontSize: context.sp(11.5),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  contract.property,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.ejarzTheme.muted,
+                    fontSize: context.sp(11),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.arrow_back_ios_new_rounded, size: 17),
+        ],
       ),
     );
   }

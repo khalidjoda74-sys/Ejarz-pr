@@ -317,6 +317,7 @@ class PropertyRecord {
   final int floors;
   final int totalUnits;
   final List<UnitRecord> units;
+  final PropertyData? data;
 
   const PropertyRecord({
     required this.id,
@@ -328,6 +329,7 @@ class PropertyRecord {
     required this.floors,
     required this.totalUnits,
     required this.units,
+    this.data,
   });
 
   String get location => '$city - $district';
@@ -473,6 +475,150 @@ class ContractDraft {
           ),
         ];
 
+  factory ContractDraft.copyOf(ContractDraft source) {
+    final copy = ContractDraft()
+      ..type = source.type
+      ..role = source.role
+      ..property = PropertyData(
+        propertySource: source.property.propertySource,
+        ownershipDocumentNumber: source.property.ownershipDocumentNumber,
+        ownershipDocumentType: source.property.ownershipDocumentType,
+        ownershipDocumentDate: source.property.ownershipDocumentDate,
+        propertyUsage: source.property.propertyUsage,
+        propertyType: source.property.propertyType,
+        floorsCount: source.property.floorsCount,
+        unitsPerFloor: source.property.unitsPerFloor,
+        totalUnits: source.property.totalUnits,
+        city: source.property.city,
+        district: source.property.district,
+        street: source.property.street,
+        buildingNumber: source.property.buildingNumber,
+        additionalNumber: source.property.additionalNumber,
+        postalCode: source.property.postalCode,
+        buildingName: source.property.buildingName,
+        unitNumber: source.property.unitNumber,
+        unitName: source.property.unitName,
+        unitType: source.property.unitType,
+        floor: source.property.floor,
+        area: source.property.area,
+        roomsCount: source.property.roomsCount,
+        bathroomsCount: source.property.bathroomsCount,
+        hallsCount: source.property.hallsCount,
+        maidRoom: source.property.maidRoom,
+        kitchen: source.property.kitchen,
+        storage: source.property.storage,
+        majlis: source.property.majlis,
+        furnishingStatus: source.property.furnishingStatus,
+        acWindow: source.property.acWindow,
+        acSplit: source.property.acSplit,
+        acCentral: source.property.acCentral,
+        privateParking: source.property.privateParking,
+        electricityMeter: source.property.electricityMeter,
+        waterMeter: source.property.waterMeter,
+        gasMeter: source.property.gasMeter,
+        notes: source.property.notes,
+      )
+      ..lessor = _copyParty(source.lessor)
+      ..tenant = _copyParty(source.tenant)
+      ..representative = RepresentativeData(
+        enabled: source.representative.enabled,
+        represents: source.representative.represents,
+        type: source.representative.type,
+        fullName: source.representative.fullName,
+        idType: source.representative.idType,
+        idNumber: source.representative.idNumber,
+        birthDate: source.representative.birthDate,
+        mobile: source.representative.mobile,
+        authorizationNumber: source.representative.authorizationNumber,
+        authorizationDate: source.representative.authorizationDate,
+        issuer: source.representative.issuer,
+        expiryDate: source.representative.expiryDate,
+      )
+      ..startDate = source.startDate
+      ..durationYears = source.durationYears
+      ..durationMonths = source.durationMonths
+      ..durationDays = source.durationDays
+      ..endDate = source.endDate
+      ..rentValue = source.rentValue
+      ..rentPeriod = source.rentPeriod
+      ..hasSecurityDeposit = source.hasSecurityDeposit
+      ..securityDeposit = source.securityDeposit
+      ..brokerageFee = source.brokerageFee
+      ..brokeragePayer = source.brokeragePayer
+      ..ownerSubjectToVat = source.ownerSubjectToVat
+      ..vatValue = source.vatValue
+      ..otherAmounts = source.otherAmounts
+      ..paymentScheduleType = source.paymentScheduleType
+      ..paymentFrequency = source.paymentFrequency
+      ..paymentCount = source.paymentCount
+      ..firstPaymentDate = source.firstPaymentDate
+      ..paymentChannel = source.paymentChannel
+      ..officialFeePayer = source.officialFeePayer
+      ..serviceFeePayer = source.serviceFeePayer
+      ..electricity = _copyService(source.electricity)
+      ..water = _copyService(source.water)
+      ..gas = _copyService(source.gas)
+      ..otherServices = source.otherServices
+      ..allowSublease = source.allowSublease
+      ..autoRenewal = source.autoRenewal
+      ..specialTerms = source.specialTerms
+      ..acceptAccuracyDeclaration = source.acceptAccuracyDeclaration
+      ..acceptDataSharing = source.acceptDataSharing
+      ..acceptTerms = source.acceptTerms
+      ..paymentMethod = source.paymentMethod
+      ..installments = source.installments
+          .map(
+            (item) => InstallmentData(
+              index: item.index,
+              amount: item.amount,
+              dueDate: item.dueDate,
+              note: item.note,
+            ),
+          )
+          .toList()
+      ..attachments = source.attachments
+          .map(
+            (item) => AttachmentData(
+              keyName: item.keyName,
+              title: item.title,
+              required: item.required,
+              uploaded: item.uploaded,
+              fileName: item.fileName,
+              sizeLabel: item.sizeLabel,
+            ),
+          )
+          .toList();
+    return copy;
+  }
+
+  static PartyData _copyParty(PartyData source) => PartyData(
+        kind: source.kind,
+        fullName: source.fullName,
+        idType: source.idType,
+        idNumber: source.idNumber,
+        birthDate: source.birthDate,
+        mobile: source.mobile,
+        email: source.email,
+        city: source.city,
+        district: source.district,
+        nationalAddress: source.nationalAddress,
+        mobileRegisteredInAbsher: source.mobileRegisteredInAbsher,
+        commercialRegistration: source.commercialRegistration,
+        unifiedNumber: source.unifiedNumber,
+        authorizedPersonName: source.authorizedPersonName,
+        authorizedPersonId: source.authorizedPersonId,
+        iban: source.iban,
+        bankName: source.bankName,
+        accountOwner: source.accountOwner,
+      );
+
+  static ServiceCharge _copyService(ServiceCharge source) => ServiceCharge(
+        enabled: source.enabled,
+        calculationMethod: source.calculationMethod,
+        fixedAmount: source.fixedAmount,
+        currentReading: source.currentReading,
+      );
+
   double get rentValueNumber =>
       double.tryParse(rentValue.replaceAll(',', '')) ?? 0;
 
@@ -508,6 +654,18 @@ class ContractDraft {
   }
 }
 
+class DraftProgress {
+  final int lastStep;
+  final List<String> touchedSections;
+
+  const DraftProgress({
+    this.lastStep = 0,
+    this.touchedSections = const <String>[],
+  });
+
+  bool touched(String section) => touchedSections.contains(section);
+}
+
 class ContractRecord {
   final String id;
   final String requestNumber;
@@ -523,6 +681,9 @@ class ContractRecord {
   final double totalFees;
   final List<StatusTimelineItem> timeline;
   final String customerVisibleNote;
+  final String rejectionReason;
+  final DateTime? rejectedAt;
+  final String rejectedBy;
   final String finalPdfUrl;
   final String finalPdfFileName;
   final List<MissingRequirement> missingRequirements;
@@ -542,6 +703,8 @@ class ContractRecord {
   final Map<String, String> propertyDetails;
   final Map<String, String> attachmentFiles;
   final bool pendingSync;
+  final ContractDraft? draftData;
+  final DraftProgress draftProgress;
 
   ContractRecord({
     required this.id,
@@ -558,6 +721,9 @@ class ContractRecord {
     required this.totalFees,
     required this.timeline,
     this.customerVisibleNote = '',
+    this.rejectionReason = '',
+    this.rejectedAt,
+    this.rejectedBy = '',
     this.finalPdfUrl = '',
     this.finalPdfFileName = '',
     this.missingRequirements = const <MissingRequirement>[],
@@ -577,6 +743,8 @@ class ContractRecord {
     this.propertyDetails = const <String, String>{},
     this.attachmentFiles = const <String, String>{},
     this.pendingSync = false,
+    this.draftData,
+    this.draftProgress = const DraftProgress(),
   });
 
   ContractRecord copyWith({
@@ -584,6 +752,9 @@ class ContractRecord {
     double? totalFees,
     List<StatusTimelineItem>? timeline,
     String? customerVisibleNote,
+    String? rejectionReason,
+    DateTime? rejectedAt,
+    String? rejectedBy,
     String? finalPdfUrl,
     String? finalPdfFileName,
     String? paymentStatus,
@@ -603,6 +774,8 @@ class ContractRecord {
     Map<String, String>? propertyDetails,
     Map<String, String>? attachmentFiles,
     bool? pendingSync,
+    ContractDraft? draftData,
+    DraftProgress? draftProgress,
   }) {
     return ContractRecord(
       id: id,
@@ -619,6 +792,9 @@ class ContractRecord {
       totalFees: totalFees ?? this.totalFees,
       timeline: timeline ?? this.timeline,
       customerVisibleNote: customerVisibleNote ?? this.customerVisibleNote,
+      rejectionReason: rejectionReason ?? this.rejectionReason,
+      rejectedAt: rejectedAt ?? this.rejectedAt,
+      rejectedBy: rejectedBy ?? this.rejectedBy,
       finalPdfUrl: finalPdfUrl ?? this.finalPdfUrl,
       finalPdfFileName: finalPdfFileName ?? this.finalPdfFileName,
       missingRequirements: missingRequirements ?? this.missingRequirements,
@@ -638,6 +814,8 @@ class ContractRecord {
       propertyDetails: propertyDetails ?? this.propertyDetails,
       attachmentFiles: attachmentFiles ?? this.attachmentFiles,
       pendingSync: pendingSync ?? this.pendingSync,
+      draftData: draftData ?? this.draftData,
+      draftProgress: draftProgress ?? this.draftProgress,
     );
   }
 
@@ -670,6 +848,7 @@ class MissingRequirement {
   final String title;
   final String description;
   final String type;
+  final String issueCode;
   final String fieldPath;
   final bool required;
   final bool resolved;
@@ -679,6 +858,7 @@ class MissingRequirement {
     required this.title,
     required this.description,
     required this.type,
+    this.issueCode = '',
     this.fieldPath = '',
     this.required = true,
     this.resolved = false,
@@ -737,6 +917,7 @@ class StatusTimelineItem {
   final String time;
   final bool completed;
   final bool current;
+  final ContractStatus? eventStatus;
 
   const StatusTimelineItem({
     required this.title,
@@ -745,6 +926,7 @@ class StatusTimelineItem {
     required this.time,
     this.completed = false,
     this.current = false,
+    this.eventStatus,
   });
 }
 
