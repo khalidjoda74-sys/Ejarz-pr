@@ -40,6 +40,9 @@ workflows:
       - name: Analyze Flutter project
         script: flutter analyze
 
+      - name: Run Flutter tests
+        script: flutter test
+
       - name: Set up iOS code signing
         script: xcode-project use-profiles
 
@@ -49,13 +52,79 @@ workflows:
           IOS_BUILD_NAME=${PUBSPEC_VERSION%%+*}
           IOS_BUILD_NUMBER=${PUBSPEC_VERSION##*+}
           if [ "$IOS_BUILD_NUMBER" = "$PUBSPEC_VERSION" ] || ! [[ "$IOS_BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
-            IOS_BUILD_NUMBER=11
+            echo "A numeric iOS build number is required in pubspec.yaml."
+            exit 1
           fi
-          if [ "$IOS_BUILD_NUMBER" -lt 11 ]; then
-            IOS_BUILD_NUMBER=11
+          if [ "$IOS_BUILD_NUMBER" -lt 18 ]; then
+            echo "Build number must be 18 or newer. Found: $IOS_BUILD_NUMBER"
+            exit 1
           fi
           echo "Building iOS $IOS_BUILD_NAME ($IOS_BUILD_NUMBER)"
           flutter build ipa --release --build-name=$IOS_BUILD_NAME --build-number=$IOS_BUILD_NUMBER --export-options-plist=/Users/builder/export_options.plist
+
+      - name: Verify signed iOS release
+        script: |
+          set -euo pipefail
+
+          IPA_PATH=$(find build/ios/ipa -maxdepth 1 -name '*.ipa' -print -quit)
+          if [ -z "$IPA_PATH" ]; then
+            echo "No signed IPA was found."
+            exit 1
+          fi
+
+          CHECK_DIR=$(mktemp -d)
+          trap 'rm -rf "$CHECK_DIR"' EXIT
+          unzip -q "$IPA_PATH" -d "$CHECK_DIR"
+
+          APP_PATH=$(find "$CHECK_DIR/Payload" -maxdepth 1 -name '*.app' -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "No signed app bundle was found inside the IPA."
+            exit 1
+          fi
+
+          PUBSPEC_VERSION=$(awk '/^version:/ {print $2; exit}' pubspec.yaml)
+          EXPECTED_BUILD_NAME=${PUBSPEC_VERSION%%+*}
+          EXPECTED_BUILD_NUMBER=${PUBSPEC_VERSION##*+}
+          SIGNED_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")
+          SIGNED_BUILD_NAME=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Info.plist")
+          SIGNED_BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Info.plist")
+          if [ "$SIGNED_BUNDLE_ID" != "$BUNDLE_ID" ]; then
+            echo "Unexpected bundle ID: $SIGNED_BUNDLE_ID"
+            exit 1
+          fi
+          if [ "$SIGNED_BUILD_NAME" != "$EXPECTED_BUILD_NAME" ]; then
+            echo "Unexpected App Store version: $SIGNED_BUILD_NAME (expected $EXPECTED_BUILD_NAME)"
+            exit 1
+          fi
+          if [ "$SIGNED_BUILD_NUMBER" != "$EXPECTED_BUILD_NUMBER" ]; then
+            echo "Unexpected build number: $SIGNED_BUILD_NUMBER (expected $EXPECTED_BUILD_NUMBER)"
+            exit 1
+          fi
+
+          SIGNED_ENTITLEMENTS="$CHECK_DIR/signed-entitlements.plist"
+          codesign -d --entitlements :- "$APP_PATH" > "$SIGNED_ENTITLEMENTS" 2>/dev/null
+          SIGNED_APPLE_SIGN_IN_MODE=$(/usr/libexec/PlistBuddy -c 'Print :com.apple.developer.applesignin:0' "$SIGNED_ENTITLEMENTS")
+          if [ "$SIGNED_APPLE_SIGN_IN_MODE" != "Default" ]; then
+            echo "Unexpected Sign in with Apple signed entitlement: $SIGNED_APPLE_SIGN_IN_MODE"
+            exit 1
+          fi
+
+          PROFILE_PLIST="$CHECK_DIR/profile.plist"
+          security cms -D -i "$APP_PATH/embedded.mobileprovision" > "$PROFILE_PLIST"
+          PROFILE_APPLE_SIGN_IN_MODE=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.applesignin:0' "$PROFILE_PLIST")
+          if [ "$PROFILE_APPLE_SIGN_IN_MODE" != "Default" ]; then
+            echo "Unexpected Sign in with Apple provisioning value: $PROFILE_APPLE_SIGN_IN_MODE"
+            exit 1
+          fi
+
+          SIGNED_APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :application-identifier' "$SIGNED_ENTITLEMENTS")
+          PROFILE_APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$PROFILE_PLIST")
+          if [ "$SIGNED_APP_ID" != "$PROFILE_APP_ID" ] || [[ "$SIGNED_APP_ID" != *".$BUNDLE_ID" ]]; then
+            echo "The signed application identifier does not match $BUNDLE_ID."
+            exit 1
+          fi
+
+          echo "Verified $SIGNED_BUNDLE_ID version $SIGNED_BUILD_NAME ($SIGNED_BUILD_NUMBER), Sign in with Apple, and the App Store provisioning profile."
 
     artifacts:
       - build/ios/ipa/*.ipa
