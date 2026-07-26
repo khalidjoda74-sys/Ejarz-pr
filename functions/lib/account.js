@@ -223,6 +223,7 @@ exports.deleteMyAccount = (0, https_1.onCall)({ region: "us-central1" }, async (
     const writer = db.bulkWriter();
     if (nicknameKey)
         writer.delete(db.collection("nicknames").doc(nicknameKey));
+    writer.delete(db.collection("publicProfiles").doc(uid));
     writer.delete(userRef);
     await writer.close();
     await (0, auth_1.getAuth)().deleteUser(uid);

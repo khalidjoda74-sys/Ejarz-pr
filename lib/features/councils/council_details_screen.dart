@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/auth/auth_guard.dart';
 import '../../core/moderation/content_moderation.dart';
 import '../../core/navigation/app_focus.dart';
+import '../../core/navigation/profile_navigation.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -17,6 +18,7 @@ import '../../core/utils/opportunity_vote_copy.dart';
 import '../../core/widgets/avatar_badge.dart';
 import '../../core/widgets/custom_app_bar.dart';
 import '../../core/widgets/optimized_network_image.dart';
+import '../../core/widgets/opportunity_owner_identity.dart';
 import '../../core/widgets/premium_background.dart';
 import '../../core/widgets/result_bar.dart';
 import '../../core/widgets/relative_time_text.dart';
@@ -110,6 +112,7 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen>
         }
         final voteCopy = OpportunityVoteCopy.forCouncil(council);
         final isOwner = repo.isCouncilOwner(council);
+        final showContact = _canContactOwner(council);
         final commentThreads = _threadComments(council.comments);
         return Scaffold(
           backgroundColor: AppColors.background,
@@ -138,15 +141,22 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen>
                         ),
                         sliver: SliverList(
                           delegate: SliverChildListDelegate([
-                            _QuestionPanel(council: council),
+                            _QuestionPanel(
+                              council: council,
+                              onOwnerTap: () =>
+                                  ProfileNavigation.openCouncilOwner(
+                                context,
+                                council,
+                              ),
+                            ),
                             if (council.imageUrls.isNotEmpty) ...[
                               const SizedBox(height: 8),
                               _CouncilImagesGrid(council: council),
                             ],
-                            if (_canContactOwner(council) || isOwner) ...[
+                            if (showContact || isOwner) ...[
                               const SizedBox(height: 8),
                               _CouncilQuickActions(
-                                showContact: _canContactOwner(council),
+                                showContact: showContact,
                                 showOwnerActions: isOwner,
                                 contactLoading: _openingConversation,
                                 onContact: () => _openConversation(council),
@@ -302,9 +312,7 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen>
               )
           : null,
       allowReplies: council.allowComments,
-      onAuthorTap: comment.isSeedContent
-          ? () => unawaited(_showEditorialNotice(account: true))
-          : null,
+      onAuthorTap: () => ProfileNavigation.openCommentAuthor(context, comment),
       isOwnComment: _isOwnComment(comment),
       isConvinced: repo.hasConvincingVote(council.id, comment.id),
       onReport: () => AuthGuard.requireAuth(
@@ -399,11 +407,10 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen>
   }
 
   bool _canContactOwner(CouncilModel council) {
-    if (council.isSeedContent) return false;
+    if (repo.canManageCouncil(council)) return false;
+    if (_isDemoCouncil(council)) return true;
     final ownerId = council.createdBy?.trim() ?? '';
-    return ownerId.isNotEmpty &&
-        council.status == CouncilStatus.active &&
-        !repo.canManageCouncil(council);
+    return ownerId.isNotEmpty && council.status == CouncilStatus.active;
   }
 
   Future<void> _reportCouncil(CouncilModel council) async {
@@ -421,7 +428,7 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen>
   }
 
   Future<void> _openConversation(CouncilModel council) async {
-    if (council.isSeedContent) {
+    if (_isDemoCouncil(council)) {
       await _showEditorialNotice();
       return;
     }
@@ -445,9 +452,14 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen>
           );
         } catch (error) {
           if (!mounted) return;
-          final message = error.toString().contains('self-message')
+          final rawError = error.toString();
+          final message = rawError.contains('self-message')
               ? 'لا يمكنك مراسلة نفسك.'
-              : 'تعذر فتح المحادثة. حاول مرة أخرى.';
+              : rawError.contains('inactive-council')
+                  ? 'هذه الفرصة غير متاحة للمراسلة حاليًا.'
+                  : rawError.contains('missing-owner')
+                      ? 'تعذر تحديد صاحب الفرصة.'
+                      : 'تعذر فتح المحادثة. حاول مرة أخرى.';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(message)),
           );
@@ -1320,8 +1332,13 @@ class _CouncilSponsorLogo extends StatelessWidget {
 }
 
 class _QuestionPanel extends StatelessWidget {
-  const _QuestionPanel({required this.council});
+  const _QuestionPanel({
+    required this.council,
+    required this.onOwnerTap,
+  });
+
   final CouncilModel council;
+  final VoidCallback onOwnerTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1376,6 +1393,22 @@ class _QuestionPanel extends StatelessWidget {
                   createdAt: council.createdAt,
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.primaryGreen.withValues(alpha: .055),
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(
+                color: AppColors.primaryGreen.withValues(alpha: .12),
+              ),
+            ),
+            child: OpportunityOwnerIdentity(
+              council: council,
+              onTap: onOwnerTap,
             ),
           ),
           const SizedBox(height: 8),
@@ -1506,14 +1539,13 @@ class _CouncilQuickActions extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.start,
         children: [
           if (showContact)
-            _CouncilActionIcon(
-              icon: Icons.chat_bubble_outline_rounded,
-              tooltip: 'تواصل',
-              loading: contactLoading,
-              backgroundColor: AppColors.primaryDarkGreen,
-              foregroundColor: AppColors.cardWhite,
-              onTap: onContact,
+            Expanded(
+              child: _CouncilContactButton(
+                loading: contactLoading,
+                onTap: onContact,
+              ),
             ),
+          if (showContact && showOwnerActions) const SizedBox(width: 8),
           if (showOwnerActions) ...[
             _CouncilActionIcon(
               icon: Icons.refresh_rounded,
@@ -1537,6 +1569,78 @@ class _CouncilQuickActions extends StatelessWidget {
   }
 }
 
+class _CouncilContactButton extends StatelessWidget {
+  const _CouncilContactButton({
+    required this.loading,
+    required this.onTap,
+  });
+
+  final bool loading;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'مراسلة صاحب الفرصة',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(13),
+          onTap: loading ? null : onTap,
+          child: Ink(
+            height: 42,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              gradient: AppColors.headerGradient,
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(
+                color: AppColors.gold.withValues(alpha: .56),
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x160F4A35),
+                  blurRadius: 8,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (loading)
+                  const SizedBox(
+                    width: 17,
+                    height: 17,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.cardWhite,
+                    ),
+                  )
+                else
+                  const Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    color: AppColors.cardWhite,
+                    size: 18,
+                  ),
+                const SizedBox(width: 8),
+                Text(
+                  loading ? 'جارٍ فتح المحادثة...' : 'مراسلة صاحب الفرصة',
+                  style: AppTextStyles.body.copyWith(
+                    color: AppColors.cardWhite,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CouncilActionIcon extends StatelessWidget {
   const _CouncilActionIcon({
     required this.icon,
@@ -1544,7 +1648,6 @@ class _CouncilActionIcon extends StatelessWidget {
     required this.backgroundColor,
     required this.foregroundColor,
     required this.onTap,
-    this.loading = false,
   });
 
   final IconData icon;
@@ -1552,7 +1655,6 @@ class _CouncilActionIcon extends StatelessWidget {
   final Color backgroundColor;
   final Color foregroundColor;
   final VoidCallback onTap;
-  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -1562,7 +1664,7 @@ class _CouncilActionIcon extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
-          onTap: loading ? null : onTap,
+          onTap: onTap,
           child: Container(
             width: 32,
             height: 32,
@@ -1572,16 +1674,7 @@ class _CouncilActionIcon extends StatelessWidget {
               border: Border.all(color: foregroundColor.withValues(alpha: .22)),
             ),
             child: Center(
-              child: loading
-                  ? SizedBox(
-                      width: 13,
-                      height: 13,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: foregroundColor,
-                      ),
-                    )
-                  : Icon(icon, size: 16, color: foregroundColor),
+              child: Icon(icon, size: 16, color: foregroundColor),
             ),
           ),
         ),
@@ -2048,11 +2141,15 @@ class _CommentTileState extends State<_CommentTile> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      comment.authorName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.cardTitle.copyWith(fontSize: 12.5),
+                    InkWell(
+                      onTap: onAuthorTap,
+                      borderRadius: BorderRadius.circular(7),
+                      child: Text(
+                        comment.authorName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.cardTitle.copyWith(fontSize: 12.5),
+                      ),
                     ),
                     const SizedBox(height: 1),
                     Text(
@@ -2108,7 +2205,6 @@ class _CommentTileState extends State<_CommentTile> {
               replies: visibleReplies,
               remainingReplies: remainingReplies,
               onShowMore: onShowMoreReplies,
-              onAuthorTap: onAuthorTap,
             ),
           ],
         ],
@@ -2122,13 +2218,11 @@ class _CommentReplies extends StatelessWidget {
     required this.replies,
     required this.remainingReplies,
     required this.onShowMore,
-    this.onAuthorTap,
   });
 
   final List<CommentModel> replies;
   final int remainingReplies;
   final VoidCallback? onShowMore;
-  final VoidCallback? onAuthorTap;
 
   @override
   Widget build(BuildContext context) {
@@ -2145,7 +2239,11 @@ class _CommentReplies extends StatelessWidget {
         children: [
           for (var index = 0; index < replies.length; index++) ...[
             if (index > 0) const SizedBox(height: 7),
-            _ReplyTile(reply: replies[index], onAuthorTap: onAuthorTap),
+            _ReplyTile(
+              reply: replies[index],
+              onAuthorTap: () =>
+                  ProfileNavigation.openCommentAuthor(context, replies[index]),
+            ),
           ],
           if (remainingReplies > 0 && onShowMore != null) ...[
             const SizedBox(height: 3),
@@ -2188,7 +2286,7 @@ class _ReplyTile extends StatelessWidget {
       children: [
         GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: reply.isSeedContent ? onAuthorTap : null,
+          onTap: onAuthorTap,
           child: AvatarBadge(label: reply.avatarEmoji, size: 26),
         ),
         const SizedBox(width: 7),
@@ -2199,11 +2297,15 @@ class _ReplyTile extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      reply.authorName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.cardTitle.copyWith(fontSize: 11.5),
+                    child: InkWell(
+                      onTap: onAuthorTap,
+                      borderRadius: BorderRadius.circular(7),
+                      child: Text(
+                        reply.authorName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.cardTitle.copyWith(fontSize: 11.5),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 6),

@@ -61,11 +61,13 @@ export const addComment = onCall({region: "us-central1"}, async (request) => {
   const commentsRef = db.collection("comments");
   const commentRef = commentsRef.doc();
   const userRef = db.collection("users").doc(uid);
+  const publicProfileRef = db.collection("publicProfiles").doc(uid);
 
   const notificationContext = await db.runTransaction(async (transaction) => {
-    const [councilSnap, userSnap] = await Promise.all([
+    const [councilSnap, userSnap, publicProfileSnap] = await Promise.all([
       transaction.get(councilRef),
       transaction.get(userRef),
+      transaction.get(publicProfileRef),
     ]);
 
     if (!councilSnap.exists) {
@@ -103,19 +105,40 @@ export const addComment = onCall({region: "us-central1"}, async (request) => {
         typeof parent.authorId === "string" ? parent.authorId : null;
     }
 
-    const user = userSnap.exists ? userSnap.data() ?? {} : {};
-    const displayName =
-      typeof user.displayName === "string" && user.displayName.trim()
-        ? user.displayName.trim()
-        : request.auth?.token.name ?? "عضو فرصتي";
-    const photoUrl =
-      typeof user.photoUrl === "string" && user.photoUrl.trim()
-        ? user.photoUrl.trim()
-        : request.auth?.token.picture ?? null;
+    if (!userSnap.exists || safeString(userSnap.data()?.status, "active") !== "active") {
+      throw new HttpsError(
+        "failed-precondition",
+        "الحساب غير متاح لإضافة تعليق.",
+      );
+    }
+    const publicProfile = publicProfileSnap.exists
+      ? publicProfileSnap.data() ?? {}
+      : {};
+    if (
+      !publicProfileSnap.exists ||
+      publicProfile.uid !== uid ||
+      publicProfile.isVisible !== true ||
+      publicProfile.demo === true
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "أكمل هويتك العامة داخل التطبيق قبل إضافة تعليق.",
+      );
+    }
+    const displayName = safeString(
+      publicProfile.displayName,
+      "عضو فرصة برو",
+    );
+    const publicPhotoUrl =
+      typeof publicProfile.publicPhotoUrl === "string" &&
+      publicProfile.publicPhotoUrl.trim()
+        ? publicProfile.publicPhotoUrl.trim()
+        : null;
     const avatarEmoji =
-      typeof user.avatarEmoji === "string" && user.avatarEmoji.trim()
-        ? user.avatarEmoji.trim()
-        : "👤";
+      typeof publicProfile.avatarEmoji === "string" &&
+      publicProfile.avatarEmoji.trim()
+        ? publicProfile.avatarEmoji.trim()
+        : "business:person_growth";
 
     transaction.set(commentRef, {
       councilId,
@@ -124,7 +147,7 @@ export const addComment = onCall({region: "us-central1"}, async (request) => {
       userId: uid,
       authorSnapshot: {
         displayName,
-        photoUrl,
+        ...(publicPhotoUrl ? {photoUrl: publicPhotoUrl} : {}),
         avatarEmoji,
       },
       userNickname: displayName,

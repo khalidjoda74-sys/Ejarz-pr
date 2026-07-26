@@ -22,6 +22,8 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>GIDClientID</key>
 	<string>163358763366-ooooamp4lkcd1ie1b185bl0gba2tsm7b.apps.googleusercontent.com</string>
 	<key>CFBundleURLTypes</key>

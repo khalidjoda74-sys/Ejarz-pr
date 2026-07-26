@@ -14,6 +14,7 @@ class CustomGreenHeader extends StatelessWidget {
     this.height = 96,
     this.showBack = false,
     this.onBack,
+    this.onTitleTap,
     this.trailing,
   });
 
@@ -22,6 +23,7 @@ class CustomGreenHeader extends StatelessWidget {
   final double height;
   final bool showBack;
   final VoidCallback? onBack;
+  final VoidCallback? onTitleTap;
   final Widget? trailing;
 
   @override
@@ -90,39 +92,54 @@ class CustomGreenHeader extends StatelessWidget {
                     child: Center(child: trailing!),
                   ),
                 Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: titleSidePadding),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          title,
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyles.pageTitle.copyWith(
-                            color: AppColors.cardWhite,
-                            fontSize:
-                                sizes.pageTitleFont.clamp(18, 19).toDouble(),
-                            fontWeight: FontWeight.w900,
-                          ),
+                  child: Semantics(
+                    button: onTitleTap != null,
+                    enabled: onTitleTap != null,
+                    label:
+                        onTitleTap == null ? null : 'فتح الملف العام لـ $title',
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onTitleTap,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: titleSidePadding,
+                          vertical: 8,
                         ),
-                        if (subtitle != null) ...[
-                          SizedBox(height: sizes.itemSpacing * .5),
-                          Text(
-                            subtitle!,
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTextStyles.caption.copyWith(
-                              color: AppColors.cardWhite.withValues(alpha: .78),
-                              fontSize: sizes.captionFont
-                                  .clamp(11.5, 12.5)
-                                  .toDouble(),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.pageTitle.copyWith(
+                                color: AppColors.cardWhite,
+                                fontSize: sizes.pageTitleFont
+                                    .clamp(18, 19)
+                                    .toDouble(),
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
-                          ),
-                        ],
-                      ],
+                            if (subtitle != null) ...[
+                              SizedBox(height: sizes.itemSpacing * .5),
+                              Text(
+                                subtitle!,
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.cardWhite
+                                      .withValues(alpha: .78),
+                                  fontSize: sizes.captionFont
+                                      .clamp(11.5, 12.5)
+                                      .toDouble(),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),

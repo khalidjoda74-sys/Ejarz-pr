@@ -15,6 +15,12 @@ const stringList = (value: unknown): string[] => {
     .filter((item) => item.length > 0);
 };
 
+const objectValue = (value: unknown): Record<string, unknown> => {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ?
+    value as Record<string, unknown> :
+    {};
+};
+
 const messageSnippet = (value: string): string => {
   const cleaned = value.replace(/\s+/g, " ").trim();
   if (!cleaned) return "وصلتك رسالة جديدة.";
@@ -52,9 +58,22 @@ export const notifyNewConversationMessage = onDocumentCreated(
     if (receiverIds.length === 0) return;
 
     const councilId = safeString(conversation.councilId);
+    const contextType = safeString(
+      conversation.contextType,
+      councilId ? "opportunity" : "direct",
+    );
+    const direct = contextType === "direct";
     const councilTitle = safeString(conversation.councilTitle, "فرصة");
+    const participantSnapshots = objectValue(conversation.participantSnapshots);
+    const senderSnapshot = objectValue(participantSnapshots[senderId]);
+    const senderName = safeString(
+      senderSnapshot.displayName,
+      "عضو Forsa Pro",
+    );
     const targetRoute = `/conversation/${conversationId}`;
-    const title = `رسالة جديدة عن: ${councilTitle}`;
+    const title = direct ?
+      `رسالة جديدة من ${senderName}` :
+      `رسالة جديدة عن: ${councilTitle}`;
     const body = messageSnippet(text);
 
     await Promise.all(
@@ -65,7 +84,7 @@ export const notifyNewConversationMessage = onDocumentCreated(
           title,
           body,
           targetRoute,
-          councilId,
+          councilId: direct || !councilId ? null : councilId,
           conversationId,
           messageId,
         }),

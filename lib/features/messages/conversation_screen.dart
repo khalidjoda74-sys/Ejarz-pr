@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/navigation/app_focus.dart';
 import '../../core/navigation/app_page_route.dart';
 import '../../core/navigation/app_route_observer.dart';
+import '../../core/navigation/profile_navigation.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/moderation/content_moderation.dart';
@@ -18,6 +19,7 @@ import '../../core/widgets/premium_background.dart';
 import '../../core/widgets/avatar_badge.dart';
 import '../../data/models/conversation_model.dart';
 import '../../data/models/message_model.dart';
+import '../../data/models/public_profile_model.dart';
 import '../../data/repositories/messaging_repository.dart';
 import '../councils/council_details_screen.dart';
 
@@ -26,10 +28,15 @@ class ConversationScreen extends StatefulWidget {
     super.key,
     required this.conversationId,
     this.initialConversation,
-  });
+    this.pendingCreation,
+  }) : assert(
+          pendingCreation == null || initialConversation != null,
+          'A pending conversation needs an initial draft.',
+        );
 
   final String conversationId;
   final ConversationModel? initialConversation;
+  final Future<ConversationModel>? pendingCreation;
 
   @override
   State<ConversationScreen> createState() => _ConversationScreenState();
@@ -42,8 +49,13 @@ class _ConversationScreenState extends State<ConversationScreen>
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _imagePicker = ImagePicker();
   late final String _currentUid;
-  late Stream<ConversationModel?> _conversationStream;
-  late Stream<List<MessageModel>> _messagesStream;
+  Stream<ConversationModel?>? _conversationStream;
+  Stream<List<MessageModel>>? _messagesStream;
+  ConversationModel? _confirmedConversation;
+  Object? _creationError;
+  bool _creationPending = false;
+  bool _creationConfirmed = false;
+  int _creationRequestId = 0;
   bool _sending = false;
   bool _pickingImage = false;
   bool _actionBusy = false;
@@ -57,25 +69,79 @@ class _ConversationScreenState extends State<ConversationScreen>
   void initState() {
     super.initState();
     _currentUid = _repo.viewerUid;
-    _initializeStreams();
+    _configureConversation();
     NotificationRouter.activeConversationId = widget.conversationId;
   }
 
   @override
   void didUpdateWidget(covariant ConversationScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.conversationId == widget.conversationId) return;
-    if (NotificationRouter.activeConversationId == oldWidget.conversationId) {
+    final idChanged = oldWidget.conversationId != widget.conversationId;
+    final pendingChanged =
+        !identical(oldWidget.pendingCreation, widget.pendingCreation);
+    if (!idChanged && !pendingChanged) return;
+    if (idChanged &&
+        NotificationRouter.activeConversationId == oldWidget.conversationId) {
       NotificationRouter.activeConversationId = widget.conversationId;
     }
     _initialMessageScrollDone = false;
     _lastMessageCount = 0;
-    _initializeStreams();
+    _readMarkScheduled = false;
+    _configureConversation();
   }
 
   void _initializeStreams() {
     _conversationStream = _repo.watchConversation(widget.conversationId);
     _messagesStream = _repo.watchMessages(widget.conversationId);
+  }
+
+  void _configureConversation() {
+    final pendingCreation = widget.pendingCreation;
+    final requestId = ++_creationRequestId;
+    if (pendingCreation == null) {
+      _creationPending = false;
+      _creationConfirmed = true;
+      _creationError = null;
+      _confirmedConversation = widget.initialConversation;
+      _initializeStreams();
+      return;
+    }
+
+    _creationPending = true;
+    _creationConfirmed = false;
+    _creationError = null;
+    _confirmedConversation = null;
+    _conversationStream = null;
+    _messagesStream = null;
+    unawaited(_confirmPendingCreation(pendingCreation, requestId));
+  }
+
+  Future<void> _confirmPendingCreation(
+    Future<ConversationModel> pendingCreation,
+    int requestId,
+  ) async {
+    try {
+      final conversation = await pendingCreation;
+      if (conversation.id != widget.conversationId) {
+        throw StateError(
+            'The created conversation ID does not match the draft.');
+      }
+      if (!mounted || requestId != _creationRequestId) return;
+      setState(() {
+        _confirmedConversation = conversation;
+        _creationPending = false;
+        _creationConfirmed = true;
+        _creationError = null;
+        _initializeStreams();
+      });
+    } catch (error) {
+      if (!mounted || requestId != _creationRequestId) return;
+      setState(() {
+        _creationPending = false;
+        _creationConfirmed = false;
+        _creationError = error;
+      });
+    }
   }
 
   @override
@@ -98,18 +164,41 @@ class _ConversationScreenState extends State<ConversationScreen>
     super.dispose();
   }
 
+  void _openOtherParticipantProfile(ConversationModel conversation) {
+    final uid = conversation.otherParticipantUid(_currentUid);
+    if (uid.isEmpty) return;
+    final participant = conversation.otherParticipant(_currentUid);
+    final seed = conversation.isDirect && participant != null
+        ? PublicProfileModel.seed(
+            uid: uid,
+            displayName: participant.displayName,
+            username: participant.username ?? '',
+            avatarEmoji: participant.avatarEmoji ?? 'business:person_growth',
+            publicPhotoUrl: participant.photoUrl,
+          )
+        : null;
+    unawaited(
+      ProfileNavigation.openTarget(
+        context,
+        PublicProfileTarget.member(uid: uid, seed: seed),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<ConversationModel?>(
       stream: _conversationStream,
-      initialData: widget.initialConversation,
+      initialData: _confirmedConversation ?? widget.initialConversation,
       builder: (context, conversationSnapshot) {
-        final conversation =
-            conversationSnapshot.data ?? widget.initialConversation;
+        final conversation = conversationSnapshot.data ??
+            _confirmedConversation ??
+            widget.initialConversation;
         final otherName =
             conversation?.otherParticipant(_currentUid)?.displayName;
         final blocked = conversation?.isBlocked == true;
-        if (conversation != null &&
+        if (_creationConfirmed &&
+            conversation != null &&
             conversation.unreadFor(_currentUid) > 0 &&
             !_readMarkScheduled) {
           _readMarkScheduled = true;
@@ -134,7 +223,11 @@ class _ConversationScreenState extends State<ConversationScreen>
                       : otherName,
                   subtitle: 'رسائل مباشرة',
                   showBack: true,
-                  trailing: conversation == null
+                  onTitleTap: conversation == null ||
+                          conversation.otherParticipantUid(_currentUid).isEmpty
+                      ? null
+                      : () => _openOtherParticipantProfile(conversation),
+                  trailing: !_creationConfirmed || conversation == null
                       ? null
                       : HeaderRoundButton(
                           icon: Icons.more_horiz_rounded,
@@ -142,58 +235,86 @@ class _ConversationScreenState extends State<ConversationScreen>
                         ),
                 ),
                 Expanded(
-                  child: StreamBuilder<List<MessageModel>>(
-                    stream: _messagesStream,
-                    builder: (context, snapshot) {
-                      final messages = snapshot.data ?? const <MessageModel>[];
-                      if (snapshot.connectionState == ConnectionState.waiting &&
-                          messages.isEmpty) {
-                        return const _ConversationMessagesSkeleton();
-                      }
-
-                      if (snapshot.hasError) {
-                        return const _EmptyConversationState(
-                          title: 'تعذر تحميل الرسائل',
+                  child: _creationPending
+                      ? const _EmptyConversationState(
+                          title: 'ابدأ المحادثة',
                           message:
-                              'راجع الاتصال أو صلاحيات الحساب ثم حاول مرة أخرى.',
-                        );
-                      }
+                              'اكتب رسالتك بوضوح وبدون مشاركة بيانات حساسة. سيتفعّل الإرسال تلقائيًا خلال لحظات.',
+                          icon: Icons.chat_bubble_outline_rounded,
+                        )
+                      : _creationError != null
+                          ? const _EmptyConversationState(
+                              title: 'تعذر بدء المحادثة',
+                              message:
+                                  'لم يتم إنشاء المحادثة ولم تُرسل أي رسالة. ارجع وحاول مرة أخرى.',
+                              icon: Icons.error_outline_rounded,
+                            )
+                          : StreamBuilder<List<MessageModel>>(
+                              stream: _messagesStream,
+                              builder: (context, snapshot) {
+                                final messages =
+                                    snapshot.data ?? const <MessageModel>[];
+                                if (snapshot.connectionState ==
+                                        ConnectionState.waiting &&
+                                    messages.isEmpty) {
+                                  return const _ConversationMessagesSkeleton();
+                                }
 
-                      if (messages.isEmpty && conversation == null) {
-                        return const _EmptyConversationState();
-                      }
+                                if (snapshot.hasError) {
+                                  return const _EmptyConversationState(
+                                    title: 'تعذر تحميل الرسائل',
+                                    message:
+                                        'راجع الاتصال أو صلاحيات الحساب ثم حاول مرة أخرى.',
+                                    icon: Icons.wifi_off_rounded,
+                                  );
+                                }
 
-                      _scheduleMessageScroll(messages.length);
+                                if (messages.isEmpty &&
+                                    (conversation == null ||
+                                        conversation.isDirect)) {
+                                  return _EmptyConversationState(
+                                    message: conversation?.isDirect == true
+                                        ? 'اكتب رسالتك الأولى بوضوح وبدون مشاركة بيانات حساسة.'
+                                        : null,
+                                  );
+                                }
 
-                      return ListView.builder(
-                        controller: _scrollController,
-                        padding: EdgeInsets.fromLTRB(
-                          AppSizes.of(context).horizontalPadding,
-                          12,
-                          AppSizes.of(context).horizontalPadding,
-                          12,
-                        ),
-                        itemCount:
-                            messages.length + (conversation == null ? 0 : 1),
-                        itemBuilder: (context, index) {
-                          if (conversation != null && index == 0) {
-                            return _ConversationOpportunityCard(
-                              conversation: conversation,
-                              onTap: () => _openCouncil(conversation.councilId),
-                            );
-                          }
-                          final message =
-                              messages[index - (conversation == null ? 0 : 1)];
-                          return _MessageBubble(
-                            message: message,
-                            mine: message.senderId == _currentUid,
-                            sender: conversation
-                                ?.participantSnapshots[message.senderId],
-                          );
-                        },
-                      );
-                    },
-                  ),
+                                _scheduleMessageScroll(messages.length);
+                                final showOpportunityCard =
+                                    conversation?.hasOpportunityContext == true;
+
+                                return ListView.builder(
+                                  controller: _scrollController,
+                                  padding: EdgeInsets.fromLTRB(
+                                    AppSizes.of(context).horizontalPadding,
+                                    12,
+                                    AppSizes.of(context).horizontalPadding,
+                                    12,
+                                  ),
+                                  itemCount: messages.length +
+                                      (showOpportunityCard ? 1 : 0),
+                                  itemBuilder: (context, index) {
+                                    if (showOpportunityCard && index == 0) {
+                                      return _ConversationOpportunityCard(
+                                        conversation: conversation!,
+                                        onTap: () => _openCouncil(
+                                          conversation.councilId!,
+                                        ),
+                                      );
+                                    }
+                                    final message = messages[
+                                        index - (showOpportunityCard ? 1 : 0)];
+                                    return _MessageBubble(
+                                      message: message,
+                                      mine: message.senderId == _currentUid,
+                                      sender:
+                                          conversation?.participantSnapshots[
+                                              message.senderId],
+                                    );
+                                  },
+                                );
+                              },
+                            ),
                 ),
                 if (blocked)
                   const _BlockedConversationNotice()
@@ -202,6 +323,10 @@ class _ConversationScreenState extends State<ConversationScreen>
                     controller: _messageController,
                     sending: _sending,
                     pickingImage: _pickingImage,
+                    enabled: _creationConfirmed,
+                    disabledHint: _creationError == null
+                        ? 'جاري تجهيز المحادثة...'
+                        : 'تعذر بدء المحادثة',
                     onSend: _sendMessage,
                     onPickImage: _sendImage,
                   ),
@@ -470,7 +595,9 @@ class _ConversationScreenState extends State<ConversationScreen>
 
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty || _sending || _pickingImage) return;
+    if (!_creationConfirmed || text.isEmpty || _sending || _pickingImage) {
+      return;
+    }
     if (text.length > 1000) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('الرسالة طويلة جدًا. الحد 1000 حرف.')),
@@ -495,7 +622,7 @@ class _ConversationScreenState extends State<ConversationScreen>
   }
 
   Future<void> _sendImage() async {
-    if (_sending || _pickingImage) return;
+    if (!_creationConfirmed || _sending || _pickingImage) return;
     dismissAppKeyboard();
     final image = await _imagePicker.pickImage(
       source: ImageSource.gallery,
@@ -560,12 +687,14 @@ class _ConversationScreenState extends State<ConversationScreen>
 class _EmptyConversationState extends StatelessWidget {
   const _EmptyConversationState({
     this.title = 'ابدأ المحادثة',
-    this.message =
-        'اكتب رسالتك الأولى بوضوح، واجعل التواصل مرتبطًا بتفاصيل الفرصة.',
-  });
+    String? message,
+    this.icon = Icons.chat_bubble_outline_rounded,
+  }) : message = message ??
+            'اكتب رسالتك الأولى بوضوح، واجعل التواصل مرتبطًا بتفاصيل الفرصة.';
 
   final String title;
   final String message;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -582,8 +711,8 @@ class _EmptyConversationState extends StatelessWidget {
                 color: AppColors.primaryDarkGreen.withValues(alpha: .08),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.chat_bubble_outline_rounded,
+              child: Icon(
+                icon,
                 color: AppColors.primaryDarkGreen,
                 size: 28,
               ),
@@ -699,7 +828,7 @@ class _ConversationOpportunityCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        conversation.councilTitle,
+                        conversation.councilTitle ?? 'فرصة',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: AppTextStyles.cardTitle.copyWith(
@@ -910,6 +1039,8 @@ class _MessageComposer extends StatelessWidget {
     required this.controller,
     required this.sending,
     required this.pickingImage,
+    required this.enabled,
+    required this.disabledHint,
     required this.onSend,
     required this.onPickImage,
   });
@@ -917,12 +1048,14 @@ class _MessageComposer extends StatelessWidget {
   final TextEditingController controller;
   final bool sending;
   final bool pickingImage;
+  final bool enabled;
+  final String disabledHint;
   final VoidCallback onSend;
   final VoidCallback onPickImage;
 
   @override
   Widget build(BuildContext context) {
-    final busy = sending || pickingImage;
+    final busy = !enabled || sending || pickingImage;
     return SafeArea(
       top: false,
       child: Container(
@@ -973,6 +1106,7 @@ class _MessageComposer extends StatelessWidget {
             Expanded(
               child: TextField(
                 controller: controller,
+                enabled: enabled,
                 minLines: 1,
                 maxLines: 4,
                 maxLength: 1000,
@@ -981,7 +1115,7 @@ class _MessageComposer extends StatelessWidget {
                 style: AppTextStyles.body.copyWith(fontSize: 13),
                 decoration: InputDecoration(
                   counterText: '',
-                  hintText: 'اكتب رسالة...',
+                  hintText: enabled ? 'اكتب رسالة...' : disabledHint,
                   hintStyle: AppTextStyles.caption.copyWith(fontSize: 11.5),
                   filled: true,
                   fillColor: AppColors.background,
@@ -1014,10 +1148,9 @@ class _MessageComposer extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  gradient: sending ? null : AppColors.headerGradient,
-                  color: sending
-                      ? AppColors.textGray.withValues(alpha: .28)
-                      : null,
+                  gradient: busy ? null : AppColors.headerGradient,
+                  color:
+                      busy ? AppColors.textGray.withValues(alpha: .28) : null,
                   shape: BoxShape.circle,
                 ),
                 child: sending

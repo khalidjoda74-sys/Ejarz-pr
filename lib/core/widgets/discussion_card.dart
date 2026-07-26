@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/models/council_model.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
+import 'opportunity_owner_identity.dart';
 import 'relative_time_text.dart';
 
 class DiscussionCard extends StatelessWidget {
@@ -10,12 +11,14 @@ class DiscussionCard extends StatelessWidget {
     super.key,
     required this.council,
     this.onTap,
+    this.onOwnerTap,
     this.compact = false,
     this.showRelativeTime = true,
   });
 
   final CouncilModel council;
   final VoidCallback? onTap;
+  final VoidCallback? onOwnerTap;
   final bool compact;
   final bool showRelativeTime;
 
@@ -105,6 +108,12 @@ class DiscussionCard extends StatelessWidget {
                       fontSize: compact ? 14.5 : 15,
                       height: 1.32,
                     ),
+                  ),
+                  const SizedBox(height: 7),
+                  OpportunityOwnerIdentity(
+                    council: council,
+                    compact: true,
+                    onTap: onOwnerTap,
                   ),
                   const SizedBox(height: 7),
                   Row(

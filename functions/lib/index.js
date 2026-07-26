@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ensureDemoOpportunity = exports.scheduledSyncSponsorshipCampaigns = exports.recordSponsorshipEvent = exports.createSponsorshipInterest = exports.termsOfUse = exports.privacyPolicy = exports.deleteMyAccount = exports.generateCouncilResult = exports.scheduledCloseExpiredCouncils = exports.createReport = exports.notifyNewConversationMessage = exports.toggleConvincingVote = exports.addComment = exports.castVote = void 0;
+exports.syncPublicProfile = exports.backfillPublicProfiles = exports.ensureDemoOpportunity = exports.scheduledSyncSponsorshipCampaigns = exports.recordSponsorshipEvent = exports.createSponsorshipInterest = exports.termsOfUse = exports.privacyPolicy = exports.deleteMyAccount = exports.generateCouncilResult = exports.scheduledCloseExpiredCouncils = exports.createReport = exports.notifyNewConversationMessage = exports.toggleConvincingVote = exports.addComment = exports.castVote = void 0;
 const app_1 = require("firebase-admin/app");
 (0, app_1.initializeApp)();
 var votes_1 = require("./votes");
@@ -26,4 +26,7 @@ Object.defineProperty(exports, "recordSponsorshipEvent", { enumerable: true, get
 Object.defineProperty(exports, "scheduledSyncSponsorshipCampaigns", { enumerable: true, get: function () { return sponsorships_1.scheduledSyncSponsorshipCampaigns; } });
 var opportunities_1 = require("./opportunities");
 Object.defineProperty(exports, "ensureDemoOpportunity", { enumerable: true, get: function () { return opportunities_1.ensureDemoOpportunity; } });
+var public_profiles_1 = require("./public_profiles");
+Object.defineProperty(exports, "backfillPublicProfiles", { enumerable: true, get: function () { return public_profiles_1.backfillPublicProfiles; } });
+Object.defineProperty(exports, "syncPublicProfile", { enumerable: true, get: function () { return public_profiles_1.syncPublicProfile; } });
 //# sourceMappingURL=index.js.map

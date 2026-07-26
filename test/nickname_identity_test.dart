@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:majalisna/core/auth/auth_controller.dart';
+import 'package:majalisna/data/models/user_model.dart';
 import 'package:majalisna/data/repositories/firebase_user_repository.dart';
 
 void main() {
@@ -90,6 +91,40 @@ void main() {
         isFalse,
       );
       expect(FirebaseUserRepository.hasCompletedIdentityData(null), isFalse);
+    });
+
+    test('never exposes a returning provider name as public identity', () {
+      final user = UserModel.fromMap({
+        'identityCompleted': true,
+        'displayName': 'Google Provider Name',
+        'name': 'Google Provider Name',
+        'photoUrl': 'https://example.com/provider-photo.jpg',
+      });
+
+      expect(user.hasChosenPublicIdentity, isFalse);
+    });
+
+    test('never publishes an explicitly incomplete placeholder nickname', () {
+      final user = UserModel.fromMap({
+        'identityCompleted': false,
+        'nickname': 'Google User',
+        'displayName': 'Google User',
+        'username': '@provider_user',
+      });
+
+      expect(user.hasChosenPublicIdentity, isFalse);
+    });
+
+    test('recognizes an explicitly chosen in-app identity as public', () {
+      final user = UserModel.fromMap({
+        'identityCompleted': true,
+        'nickname': 'صاحب فرصة',
+        'nicknameKey': 'صاحب_فرصة',
+        'username': '@صاحب_فرصة',
+        'displayName': 'صاحب فرصة',
+      });
+
+      expect(user.hasChosenPublicIdentity, isTrue);
     });
   });
 

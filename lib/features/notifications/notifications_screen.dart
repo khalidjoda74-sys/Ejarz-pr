@@ -8,7 +8,6 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/custom_app_bar.dart';
 import '../../core/widgets/premium_background.dart';
 import '../../data/models/notification_model.dart';
-import '../../data/repositories/council_repository.dart';
 import '../../data/repositories/firebase_notification_repository.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -21,7 +20,6 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  final repo = CouncilRepository.instance;
   final Set<String> _locallyReadNotificationIds = <String>{};
   Stream<List<NotificationModel>>? _notificationsStream;
   String? _notificationsUid;
@@ -90,21 +88,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           );
         }
 
-        final notifications = _withLocalReadState(repo.notifications);
         return _NotificationsScaffold(
           sizes: sizes,
           onBack: widget.onBack,
-          notifications: notifications,
-          onMarkAllAsRead: notifications.any((item) => !item.read)
-              ? () => _markAllAsRead(
-                    notifications: notifications,
-                    persistToFirestore: false,
-                  )
-              : null,
-          onNotificationTap: (notification) => _openLocalNotification(
-            context,
-            notification,
-          ),
+          notifications: const <NotificationModel>[],
+          onMarkAllAsRead: null,
+          onNotificationTap: (_) {},
         );
       },
     );
@@ -115,6 +104,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   ) {
     return notifications
         .where((notification) =>
+            !_isDemoNotification(notification) &&
             notification.type != 'best_comment' &&
             !notification.title.contains('أفضل مساهمة'))
         .map((notification) =>
@@ -122,6 +112,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ? _notificationWithRead(notification)
                 : notification)
         .toList(growable: false);
+  }
+
+  bool _isDemoNotification(NotificationModel notification) {
+    final references = <String?>[
+      notification.id,
+      notification.targetRoute,
+      notification.councilId,
+      notification.conversationId,
+      notification.messageId,
+    ];
+    return notification.type == 'demo' ||
+        references.whereType<String>().any((value) {
+          final normalized = value.trim().toLowerCase();
+          return normalized.startsWith('demo_') ||
+              normalized.contains('/demo_');
+        });
   }
 
   NotificationModel _notificationWithRead(NotificationModel notification) {
@@ -157,22 +163,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     if (persistToFirestore && uid != null) {
       await FirebaseNotificationRepository.instance.markAllAsRead(uid);
-    }
-  }
-
-  Future<void> _openLocalNotification(
-    BuildContext context,
-    NotificationModel notification,
-  ) async {
-    if (_openingNotification) return;
-    _openingNotification = true;
-    setState(() {
-      _locallyReadNotificationIds.add(notification.id);
-    });
-    try {
-      await NotificationRouter.openNotification(notification, context: context);
-    } finally {
-      _openingNotification = false;
     }
   }
 

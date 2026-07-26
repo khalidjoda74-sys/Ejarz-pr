@@ -118,22 +118,31 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> signOut() async {
+  Future<bool> signOut() async {
     _setBusy(true);
+    final uid = _user?.uid;
     try {
-      final uid = _user?.uid;
       if (uid != null) {
-        _identityReadyUids.remove(uid);
-        _identityRequiredUids.remove(uid);
         try {
           await NotificationService.instance.disableForSignedOutUser(uid);
         } catch (_) {}
       }
       await _service.signOut();
+      if (uid != null) {
+        _identityReadyUids.remove(uid);
+        _identityRequiredUids.remove(uid);
+      }
       _user = null;
       _errorMessage = null;
+      return true;
     } catch (error) {
-      _errorMessage = _friendlyError(error);
+      if (uid != null) {
+        try {
+          await NotificationService.instance.enableForSignedInUser(uid);
+        } catch (_) {}
+      }
+      _errorMessage = _friendlySignOutError(error);
+      return false;
     } finally {
       _setBusy(false);
     }
@@ -271,6 +280,14 @@ class AuthController extends ChangeNotifier {
     }
 
     return 'حدث خطأ غير متوقع. حاول مرة أخرى.';
+  }
+
+  String _friendlySignOutError(Object error) {
+    if (error is FirebaseAuthException &&
+        error.code == 'network-request-failed') {
+      return 'تعذر الاتصال. تحقق من الإنترنت ثم حاول تسجيل الخروج مرة أخرى.';
+    }
+    return 'تعذر تسجيل الخروج الآن. حاول مرة أخرى.';
   }
 
   bool _hasVisibleIdentity(User user) {

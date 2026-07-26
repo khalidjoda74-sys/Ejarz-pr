@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../core/moderation/content_moderation.dart';
 import '../../core/utils/reference_counted_watch_registry.dart';
@@ -12,7 +11,6 @@ import '../mock/mock_data.dart';
 import '../models/comment_model.dart';
 import '../models/council_model.dart';
 import '../models/council_result_model.dart';
-import '../models/notification_model.dart';
 import '../models/user_model.dart';
 import 'firebase_council_repository.dart';
 import 'firebase_user_repository.dart';
@@ -39,6 +37,17 @@ class CouncilUserState {
   final UserModel user;
 }
 
+@immutable
+class CouncilCreationResult {
+  const CouncilCreationResult({
+    required this.council,
+    this.pendingImageUpload,
+  });
+
+  final CouncilModel council;
+  final Future<void>? pendingImageUpload;
+}
+
 class CouncilRepository extends ChangeNotifier {
   CouncilRepository._();
 
@@ -46,7 +55,6 @@ class CouncilRepository extends ChangeNotifier {
     .._user = MockData.currentUser
     .._mockCouncils = MockData.councils()
     .._councils = MockData.councils()
-    .._notifications = MockData.notifications
     .._initializeStateNotifiers()
     .._startFirestoreSync()
     .._startUserSync();
@@ -55,7 +63,6 @@ class CouncilRepository extends ChangeNotifier {
   late List<CouncilModel> _mockCouncils;
   late List<CouncilModel> _councils;
   List<CouncilResultModel> _results = [];
-  late List<NotificationModel> _notifications;
   StreamSubscription<CouncilListSnapshot>? _councilsSubscription;
   StreamSubscription<List<CouncilResultModel>>? _resultsSubscription;
   StreamSubscription<User?>? _authSubscription;
@@ -133,8 +140,6 @@ class CouncilRepository extends ChangeNotifier {
   List<CouncilModel> get councils => List.unmodifiable(
         _councils.where((council) => !_isBlockedCouncil(council)),
       );
-  List<NotificationModel> get notifications =>
-      List.unmodifiable(_notifications);
   CouncilModel get todayCouncil {
     final active = activeCouncils;
     for (final council in active) {
@@ -369,6 +374,13 @@ class CouncilRepository extends ChangeNotifier {
         message: 'سجل دخولك لإضافة التعليق.',
       );
     }
+    if (!_user.hasChosenPublicIdentity) {
+      throw FirebaseException(
+        plugin: 'majlisna',
+        code: 'public-identity-required',
+        message: 'اختر اسمك المستعار والأفاتار داخل التطبيق قبل إضافة تعليق.',
+      );
+    }
 
     if (!council.allowComments) {
       throw FirebaseException(
@@ -578,18 +590,25 @@ class CouncilRepository extends ChangeNotifier {
     _emitFeedChange();
   }
 
-  Future<CouncilModel> createCouncil({
+  Future<CouncilCreationResult> createCouncil({
     required String title,
     required String description,
     required String category,
     required String city,
     required bool isPrivate,
     required bool allowComments,
-    List<XFile> imageFiles = const [],
+    List<CouncilImageUploadInput> images = const [],
   }) async {
     final firebaseUser = FirebaseAuth.instance.currentUser;
     if (firebaseUser == null || firebaseUser.isAnonymous) {
       throw StateError('يجب تسجيل الدخول لإنشاء فرصة.');
+    }
+    if (!_user.hasChosenPublicIdentity) {
+      throw FirebaseException(
+        plugin: 'majlisna',
+        code: 'public-identity-required',
+        message: 'اختر اسمك المستعار والأفاتار داخل التطبيق قبل نشر فرصة عامة.',
+      );
     }
 
     final titleText =
@@ -598,10 +617,11 @@ class CouncilRepository extends ChangeNotifier {
         ? 'شاركنا رأيك في هذه الفرصة.'
         : description.trim();
     ContentModeration.ensureAllowed(<String>[titleText, descriptionText]);
-    final ownerName = firebaseUser.displayName?.trim().isNotEmpty == true
-        ? firebaseUser.displayName!.trim()
-        : _user.name;
-    final ownerPhotoUrl = firebaseUser.photoURL;
+    final ownerName =
+        _user.name.trim().isEmpty ? 'عضو فرصة برو' : _user.name.trim();
+    // Provider names/photos (Google, Apple, etc.) are private account data.
+    // Public opportunity identity must come only from the in-app profile.
+    const String? ownerPhotoUrl = null;
     final createdCouncil =
         await FirebaseCouncilRepository.instance.createCouncil(
       title: titleText,
@@ -613,7 +633,7 @@ class CouncilRepository extends ChangeNotifier {
       ownerPhotoUrl: ownerPhotoUrl,
       ownerAvatarEmoji: _user.avatarEmoji,
       categoryId: _categoryId(category),
-      imageFiles: imageFiles,
+      images: images,
       isPrivate: isPrivate,
       allowComments: allowComments,
     );
@@ -638,24 +658,39 @@ class CouncilRepository extends ChangeNotifier {
       allowComments: allowComments,
       createdBy: firebaseUser.uid,
       createdByName: ownerName,
+      createdByPhotoUrl: ownerPhotoUrl,
+      createdByAvatarEmoji: _user.avatarEmoji,
       createdAt: DateTime.now().toUtc(),
-      coverImageUrl: createdCouncil.imageUrls.isNotEmpty
-          ? createdCouncil.imageUrls.first
-          : null,
-      coverThumbnailUrl: createdCouncil.thumbnailUrls.isNotEmpty
-          ? createdCouncil.thumbnailUrls.first
-          : null,
-      coverMediumUrl: createdCouncil.mediumImageUrls.isNotEmpty
-          ? createdCouncil.mediumImageUrls.first
-          : null,
-      imageUrls: createdCouncil.imageUrls,
-      thumbnailUrls: createdCouncil.thumbnailUrls,
-      mediumImageUrls: createdCouncil.mediumImageUrls,
     );
     _upsertLocalCouncil(council);
     _user.councils += 1;
     _emitFeedAndUserChange();
-    return council;
+
+    final pendingImageUpload =
+        createdCouncil.pendingImageUpload?.then<void>((uploadResult) {
+      final currentCouncil = _findCouncilById(council.id);
+      if (currentCouncil == null) return;
+
+      currentCouncil
+        ..coverImageUrl =
+            uploadResult.imageUrls.isEmpty ? null : uploadResult.imageUrls.first
+        ..coverThumbnailUrl = uploadResult.thumbnailUrls.isEmpty
+            ? currentCouncil.coverImageUrl
+            : uploadResult.thumbnailUrls.first
+        ..coverMediumUrl = uploadResult.mediumImageUrls.isEmpty
+            ? currentCouncil.coverImageUrl
+            : uploadResult.mediumImageUrls.first
+        ..imageUrls = uploadResult.imageUrls.toList(growable: false)
+        ..thumbnailUrls = uploadResult.thumbnailUrls.toList(growable: false)
+        ..mediumImageUrls =
+            uploadResult.mediumImageUrls.toList(growable: false);
+      _emitFeedChange();
+    });
+
+    return CouncilCreationResult(
+      council: council,
+      pendingImageUpload: pendingImageUpload,
+    );
   }
 
   Future<bool> updateNickname(String name, String avatarEmoji) async {
@@ -672,6 +707,7 @@ class CouncilRepository extends ChangeNotifier {
       _user.username = claim.username;
       _user.avatarEmoji = claim.avatarEmoji;
       _user.nicknameLocked = claim.nicknameLocked;
+      _user.hasChosenPublicIdentity = true;
     } else {
       final trimmed = name.trim();
       final changed = trimmed.isNotEmpty &&
@@ -684,6 +720,7 @@ class CouncilRepository extends ChangeNotifier {
       }
       _user.avatarEmoji = avatarEmoji;
       _user.nicknameLocked = true;
+      _user.hasChosenPublicIdentity = true;
     }
     _emitUserChange();
     return true;
@@ -871,7 +908,8 @@ class CouncilRepository extends ChangeNotifier {
         a.comments == b.comments &&
         a.councils == b.councils &&
         a.badge == b.badge &&
-        a.nicknameLocked == b.nicknameLocked;
+        a.nicknameLocked == b.nicknameLocked &&
+        a.hasChosenPublicIdentity == b.hasChosenPublicIdentity;
   }
 
   void _startResultsSync() {

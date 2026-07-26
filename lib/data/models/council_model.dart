@@ -87,6 +87,8 @@ class CouncilModel {
     this.isPinned = false,
     this.createdBy,
     this.createdByName,
+    this.createdByPhotoUrl,
+    this.createdByAvatarEmoji,
     this.createdAt,
     this.coverImageUrl,
     this.coverThumbnailUrl,
@@ -120,6 +122,8 @@ class CouncilModel {
   bool isPinned;
   String? createdBy;
   String? createdByName;
+  String? createdByPhotoUrl;
+  String? createdByAvatarEmoji;
   DateTime? createdAt;
   String? coverImageUrl;
   String? coverThumbnailUrl;
@@ -131,6 +135,20 @@ class CouncilModel {
   VoteOption? selectedOption;
 
   bool get isVotingClosed => status == CouncilStatus.closed;
+
+  bool get isEditorialContent => isSeedContent || id.startsWith('demo_');
+
+  String get ownerDisplayName {
+    final name = createdByName?.trim() ?? '';
+    if (name.isNotEmpty) return name;
+    return isEditorialContent ? 'فريق فرصة برو' : 'عضو فرصة برو';
+  }
+
+  String get ownerAvatarLabel {
+    final avatar = createdByAvatarEmoji?.trim() ?? '';
+    if (avatar.isNotEmpty) return avatar;
+    return isEditorialContent ? 'business:verified' : 'business:person_growth';
+  }
 
   String? get thumbnailCoverUrl =>
       coverThumbnailUrl ?? coverMediumUrl ?? coverImageUrl;
@@ -170,6 +188,7 @@ class CouncilModel {
     final coverImageUrl = _stringValue(data['coverImageUrl']);
     final coverThumbnailUrl = _stringValue(data['coverThumbnailUrl']);
     final coverMediumUrl = _stringValue(data['coverMediumUrl']);
+    final ownerSnapshot = _mapValue(data['ownerSnapshot']);
 
     return CouncilModel(
       id: id,
@@ -231,7 +250,18 @@ class CouncilModel {
       ),
       createdByName: _stringValue(
         data['createdByName'],
-        fallback: _stringValue(_mapValue(data['ownerSnapshot'])['displayName']),
+        fallback: _stringValue(ownerSnapshot['displayName']),
+      ),
+      createdByPhotoUrl: _stringValue(
+        data['createdByPhotoUrl'],
+        fallback: _stringValue(ownerSnapshot['photoUrl']),
+      ),
+      createdByAvatarEmoji: _stringValue(
+        data['createdByAvatarEmoji'],
+        fallback: _stringValue(
+          ownerSnapshot['avatarEmoji'],
+          fallback: _stringValue(ownerSnapshot['avatar']),
+        ),
       ),
       createdAt: _dateTimeValue(data['createdAt']),
       coverImageUrl: coverImageUrl.isNotEmpty
@@ -266,6 +296,17 @@ class CouncilModel {
       'isSeedContent': isSeedContent,
       if (createdBy != null) 'createdBy': createdBy,
       if (createdByName != null) 'createdByName': createdByName,
+      if (createdByPhotoUrl != null) 'createdByPhotoUrl': createdByPhotoUrl,
+      if (createdByAvatarEmoji != null)
+        'createdByAvatarEmoji': createdByAvatarEmoji,
+      if (createdByName != null ||
+          createdByPhotoUrl != null ||
+          createdByAvatarEmoji != null)
+        'ownerSnapshot': {
+          if (createdByName != null) 'displayName': createdByName,
+          if (createdByPhotoUrl != null) 'photoUrl': createdByPhotoUrl,
+          if (createdByAvatarEmoji != null) 'avatarEmoji': createdByAvatarEmoji,
+        },
       'status': councilStatusToFirestore(status),
       'visibility': isPrivate ? 'linkOnly' : 'public',
       'type': isPrivate ? 'private' : 'public',
@@ -336,6 +377,7 @@ class CouncilModel {
     if (value is bool) return value;
     return fallback;
   }
+
   static DateTime? _dateTimeValue(Object? value) {
     if (value is Timestamp) return value.toDate();
     if (value is DateTime) return value;

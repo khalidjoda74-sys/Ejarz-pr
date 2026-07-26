@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -6,8 +7,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:image_picker/image_picker.dart';
 
+import '../../core/utils/reusable_stream.dart';
 import '../models/comment_model.dart';
 import '../models/council_model.dart';
 import '../models/council_result_model.dart';
@@ -60,27 +61,45 @@ class CouncilListSnapshot {
 class CreatedCouncilResult {
   const CreatedCouncilResult({
     required this.id,
+    this.pendingImageUpload,
+  });
+
+  final String id;
+  final Future<CouncilImageUploadResult>? pendingImageUpload;
+}
+
+class CouncilImageUploadInput {
+  const CouncilImageUploadInput({
+    required this.bytes,
+    required this.name,
+    this.mimeType,
+  });
+
+  final Uint8List bytes;
+  final String name;
+  final String? mimeType;
+}
+
+class CouncilImageUploadResult {
+  const CouncilImageUploadResult({
     required this.imageUrls,
     required this.thumbnailUrls,
     required this.mediumImageUrls,
   });
 
-  final String id;
   final List<String> imageUrls;
   final List<String> thumbnailUrls;
   final List<String> mediumImageUrls;
 }
 
-class _CouncilImageUploadResult {
-  const _CouncilImageUploadResult({
-    required this.imageUrls,
-    required this.thumbnailUrls,
-    required this.mediumImageUrls,
+class _UploadedCouncilImage {
+  const _UploadedCouncilImage({
+    required this.imageUrl,
+    required this.thumbnailUrl,
   });
 
-  final List<String> imageUrls;
-  final List<String> thumbnailUrls;
-  final List<String> mediumImageUrls;
+  final String imageUrl;
+  final String thumbnailUrl;
 }
 
 class FirebaseCouncilRepository {
@@ -89,6 +108,10 @@ class FirebaseCouncilRepository {
   static final FirebaseCouncilRepository instance =
       FirebaseCouncilRepository._();
   static const publicDemoCouncilId = 'demo_laundry_public';
+  static const int _maxCouncilImageBytes = 5 * 1024 * 1024;
+  static const int _imageUploadAttempts = 2;
+  static const Duration _imageUploadTimeout = Duration(seconds: 90);
+  static const Duration _downloadUrlTimeout = Duration(seconds: 20);
 
   final FirestoreService _firestore = FirestoreService.instance;
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
@@ -249,6 +272,39 @@ class FirebaseCouncilRepository {
     return watchCouncils(status: CouncilStatus.active, limit: limit);
   }
 
+  Stream<List<CouncilModel>> watchPublicActiveCouncilsByOwner({
+    required String uid,
+    int limit = 40,
+  }) {
+    final safeUid = uid.trim();
+    if (safeUid.isEmpty) {
+      return reusableValueStream<List<CouncilModel>>(
+        const <CouncilModel>[],
+      );
+    }
+    final safeLimit = limit < 1 ? 1 : (limit > 80 ? 80 : limit);
+
+    return _firestore.councils
+        .where('createdBy', isEqualTo: safeUid)
+        .where('visibility', isEqualTo: 'public')
+        .where(
+          'status',
+          whereIn: const <String>['active', 'endingSoon'],
+        )
+        .orderBy('createdAt', descending: true)
+        .limit(safeLimit)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map(CouncilModel.fromFirestore)
+              .where(
+                (council) =>
+                    !council.isSeedContent && !council.id.startsWith('demo_'),
+              )
+              .toList(growable: false),
+        );
+  }
+
   Stream<List<CouncilModel>> watchClosedCouncils({int limit = 50}) {
     return watchCouncils(status: CouncilStatus.closed, limit: limit);
   }
@@ -257,6 +313,20 @@ class FirebaseCouncilRepository {
     required String uid,
     bool privateOnly = false,
     int limit = 80,
+  }) {
+    return reusableStream<List<CouncilModel>>(
+      () => _watchUserCouncils(
+        uid: uid,
+        privateOnly: privateOnly,
+        limit: limit,
+      ),
+    );
+  }
+
+  Stream<List<CouncilModel>> _watchUserCouncils({
+    required String uid,
+    required bool privateOnly,
+    required int limit,
   }) async* {
     final safeLimit = limit < 1 ? 1 : limit;
     final indexedQuery = _firestore.councils
@@ -553,13 +623,29 @@ class FirebaseCouncilRepository {
     String? ownerPhotoUrl,
     String? ownerAvatarEmoji,
     String? categoryId,
-    List<XFile> imageFiles = const [],
+    List<CouncilImageUploadInput> images = const [],
     bool isPrivate = false,
     bool allowComments = true,
   }) async {
     final doc = _firestore.councils.doc();
     final shareCode = isPrivate ? _shareCode(doc.id) : null;
-    final pendingImageFiles = imageFiles.take(10).toList(growable: false);
+    final pendingImages = images.take(10).toList(growable: false);
+    for (final image in pendingImages) {
+      if (image.bytes.isEmpty) {
+        throw FirebaseException(
+          plugin: 'majlisna',
+          code: 'invalid-image',
+          message: 'تعذر قراءة إحدى الصور المختارة.',
+        );
+      }
+      if (image.bytes.length > _maxCouncilImageBytes) {
+        throw FirebaseException(
+          plugin: 'majlisna',
+          code: 'image-too-large',
+          message: 'حجم إحدى الصور أكبر من الحد المسموح.',
+        );
+      }
+    }
 
     await doc.set({
       'title': title.trim(),
@@ -625,150 +711,276 @@ class FirebaseCouncilRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    if (pendingImageFiles.isNotEmpty) {
-      try {
-        final uploadResult = await _uploadCouncilImages(
-          councilId: doc.id,
-          ownerId: ownerId,
-          imageFiles: pendingImageFiles,
-        );
-        if (uploadResult.imageUrls.isNotEmpty) {
-          await doc.update({
-            'coverImageUrl': uploadResult.imageUrls.first,
-            'coverThumbnailUrl': uploadResult.thumbnailUrls.first,
-            'coverMediumUrl': uploadResult.mediumImageUrls.first,
-            'imageUrls': uploadResult.imageUrls,
-            'thumbnailUrls': uploadResult.thumbnailUrls,
-            'mediumImageUrls': uploadResult.mediumImageUrls,
-            'imagesCount': uploadResult.imageUrls.length,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-        }
-        return CreatedCouncilResult(
-          id: doc.id,
-          imageUrls: uploadResult.imageUrls,
-          thumbnailUrls: uploadResult.thumbnailUrls,
-          mediumImageUrls: uploadResult.mediumImageUrls,
-        );
-      } catch (_) {
-        await doc.delete();
-        rethrow;
-      }
-    }
+    final pendingImageUpload = pendingImages.isEmpty
+        ? null
+        : Future<CouncilImageUploadResult>.delayed(
+            Duration.zero,
+            () => _uploadAndAttachCouncilImagesWithRetry(
+              document: doc,
+              councilId: doc.id,
+              ownerId: ownerId,
+              images: pendingImages,
+            ),
+          );
 
     return CreatedCouncilResult(
       id: doc.id,
-      imageUrls: const <String>[],
-      thumbnailUrls: const <String>[],
-      mediumImageUrls: const <String>[],
+      pendingImageUpload: pendingImageUpload,
     );
   }
 
-  Future<_CouncilImageUploadResult> _uploadCouncilImages({
+  Future<CouncilImageUploadResult> _uploadAndAttachCouncilImagesWithRetry({
+    required DocumentReference<Map<String, dynamic>> document,
     required String councilId,
     required String ownerId,
-    required List<XFile> imageFiles,
+    required List<CouncilImageUploadInput> images,
   }) async {
-    if (imageFiles.isEmpty) {
-      return const _CouncilImageUploadResult(
+    Object? lastError;
+    StackTrace? lastStackTrace;
+    for (var attempt = 0; attempt < _imageUploadAttempts; attempt++) {
+      try {
+        return await _uploadAndAttachCouncilImages(
+          document: document,
+          councilId: councilId,
+          ownerId: ownerId,
+          images: images,
+        );
+      } catch (error, stackTrace) {
+        lastError = error;
+        lastStackTrace = stackTrace;
+        if (attempt + 1 < _imageUploadAttempts) {
+          await Future<void>.delayed(const Duration(seconds: 2));
+        }
+      }
+    }
+    Error.throwWithStackTrace(lastError!, lastStackTrace!);
+  }
+
+  Future<CouncilImageUploadResult> _uploadAndAttachCouncilImages({
+    required DocumentReference<Map<String, dynamic>> document,
+    required String councilId,
+    required String ownerId,
+    required List<CouncilImageUploadInput> images,
+  }) async {
+    final cleanupRefs = <Reference>[];
+    try {
+      final uploadResult = await _uploadCouncilImages(
+        councilId: councilId,
+        ownerId: ownerId,
+        images: images,
+        cleanupRefs: cleanupRefs,
+      );
+      if (uploadResult.imageUrls.isNotEmpty) {
+        await document.update({
+          'coverImageUrl': uploadResult.imageUrls.first,
+          'coverThumbnailUrl': uploadResult.thumbnailUrls.first,
+          'coverMediumUrl': uploadResult.mediumImageUrls.first,
+          'imageUrls': uploadResult.imageUrls,
+          'thumbnailUrls': uploadResult.thumbnailUrls,
+          'mediumImageUrls': uploadResult.mediumImageUrls,
+          'imagesCount': uploadResult.imageUrls.length,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      return uploadResult;
+    } catch (_) {
+      // The opportunity is already valid and published. Keep it as a text-only
+      // opportunity and remove any unattached files left by a partial upload.
+      await Future.wait(
+        cleanupRefs.map(_deleteStorageObjectSilently),
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> _deleteStorageObjectSilently(Reference reference) async {
+    try {
+      await reference.delete();
+    } catch (_) {
+      // A missing file or a transient cleanup failure must not hide the
+      // original upload error or delete the published opportunity.
+    }
+  }
+
+  Future<CouncilImageUploadResult> _uploadCouncilImages({
+    required String councilId,
+    required String ownerId,
+    required List<CouncilImageUploadInput> images,
+    required List<Reference> cleanupRefs,
+  }) async {
+    if (images.isEmpty) {
+      return const CouncilImageUploadResult(
         imageUrls: <String>[],
         thumbnailUrls: <String>[],
         mediumImageUrls: <String>[],
       );
     }
 
-    final urls = <String>[];
-    final thumbnailUrls = <String>[];
-    final mediumUrls = <String>[];
-    final limitedFiles = imageFiles.take(10).toList(growable: false);
-    for (var index = 0; index < limitedFiles.length; index++) {
-      final image = limitedFiles[index];
-      final bytes = await image.readAsBytes();
-      if (bytes.isEmpty) continue;
-      if (bytes.length > 5 * 1024 * 1024) {
-        throw FirebaseException(
-          plugin: 'majlisna',
-          code: 'image-too-large',
-          message: 'حجم الصورة أكبر من الحد المسموح.',
-        );
-      }
+    final limitedImages = images.take(10).toList(growable: false);
+    final uploadedImages = await _mapWithConcurrency<CouncilImageUploadInput,
+        _UploadedCouncilImage?>(
+      limitedImages,
+      concurrency: 2,
+      operation: (image, index) => _uploadCouncilImage(
+        councilId: councilId,
+        ownerId: ownerId,
+        image: image,
+        index: index,
+        cleanupRefs: cleanupRefs,
+      ),
+    );
+    final completed =
+        uploadedImages.whereType<_UploadedCouncilImage>().toList();
+    return CouncilImageUploadResult(
+      imageUrls: completed.map((image) => image.imageUrl).toList(),
+      thumbnailUrls: completed.map((image) => image.thumbnailUrl).toList(),
+      mediumImageUrls: completed.map((image) => image.imageUrl).toList(),
+    );
+  }
 
-      final extension = _imageExtension(image.name, image.mimeType);
-      final fileName =
-          '${DateTime.now().microsecondsSinceEpoch}_$index.$extension';
-      final ref = _firestore.councilImageRef(councilId, ownerId, fileName);
-      final thumbnailBytes = await _resizedPngBytes(bytes, maxLongSide: 360);
-      final thumbnailRef = thumbnailBytes == null
-          ? null
-          : _firestore.councilImageRef(
-              councilId,
-              ownerId,
-              'thumb_${DateTime.now().microsecondsSinceEpoch}_$index.png',
-            );
-      final originalUpload = ref
-          .putData(
-            bytes,
-            SettableMetadata(
-              contentType:
-                  image.mimeType ?? _contentTypeForExtension(extension),
-            ),
-          )
-          .then((_) => ref.getDownloadURL());
-      final thumbnailUpload = thumbnailBytes != null && thumbnailRef != null
-          ? thumbnailRef
-              .putData(
-                thumbnailBytes,
-                SettableMetadata(contentType: 'image/png'),
-              )
-              .then((_) => thumbnailRef.getDownloadURL())
-          : Future<String?>.value();
-      final uploadedUrls = await Future.wait<String?>([
-        originalUpload,
-        thumbnailUpload,
-      ]);
-      final imageUrl = uploadedUrls[0]!;
-      urls.add(imageUrl);
-      mediumUrls.add(imageUrl);
-      thumbnailUrls.add(uploadedUrls[1] ?? imageUrl);
+  Future<_UploadedCouncilImage?> _uploadCouncilImage({
+    required String councilId,
+    required String ownerId,
+    required CouncilImageUploadInput image,
+    required int index,
+    required List<Reference> cleanupRefs,
+  }) async {
+    final bytes = image.bytes;
+    if (bytes.isEmpty) return null;
+    if (bytes.length > _maxCouncilImageBytes) {
+      throw FirebaseException(
+        plugin: 'majlisna',
+        code: 'image-too-large',
+        message: 'حجم الصورة أكبر من الحد المسموح.',
+      );
     }
 
-    return _CouncilImageUploadResult(
-      imageUrls: urls,
-      thumbnailUrls: thumbnailUrls,
-      mediumImageUrls: mediumUrls,
+    final extension = _imageExtension(image.name, image.mimeType);
+    final uploadId = '${DateTime.now().microsecondsSinceEpoch}_$index';
+    final ref = _firestore.councilImageRef(
+      councilId,
+      ownerId,
+      '$uploadId.$extension',
     );
+    final thumbnailBytes = await _resizedPngBytes(bytes, maxLongSide: 360);
+    final thumbnailRef = thumbnailBytes == null
+        ? null
+        : _firestore.councilImageRef(
+            councilId,
+            ownerId,
+            'thumb_$uploadId.png',
+          );
+    cleanupRefs.add(ref);
+    if (thumbnailRef != null) cleanupRefs.add(thumbnailRef);
+
+    final originalUpload = _uploadBytes(
+      reference: ref,
+      bytes: bytes,
+      metadata: SettableMetadata(
+        contentType: image.mimeType ?? _contentTypeForExtension(extension),
+      ),
+    );
+    final thumbnailUpload = thumbnailBytes != null && thumbnailRef != null
+        ? _uploadBytes(
+            reference: thumbnailRef,
+            bytes: thumbnailBytes,
+            metadata: SettableMetadata(contentType: 'image/png'),
+          )
+        : Future<String?>.value();
+    final uploadedUrls = await Future.wait<String?>([
+      originalUpload,
+      thumbnailUpload,
+    ]);
+    final imageUrl = uploadedUrls[0]!;
+    return _UploadedCouncilImage(
+      imageUrl: imageUrl,
+      thumbnailUrl: uploadedUrls[1] ?? imageUrl,
+    );
+  }
+
+  Future<String> _uploadBytes({
+    required Reference reference,
+    required Uint8List bytes,
+    required SettableMetadata metadata,
+  }) async {
+    final task = reference.putData(bytes, metadata);
+    try {
+      await task.timeout(_imageUploadTimeout);
+    } on TimeoutException {
+      try {
+        await task.cancel();
+      } catch (_) {}
+      throw FirebaseException(
+        plugin: 'majlisna',
+        code: 'image-upload-timeout',
+        message: 'استغرق رفع الصور وقتًا أطول من المتوقع.',
+      );
+    }
+    return reference.getDownloadURL().timeout(_downloadUrlTimeout);
+  }
+
+  Future<List<R>> _mapWithConcurrency<T, R>(
+    List<T> values, {
+    required int concurrency,
+    required Future<R> Function(T value, int index) operation,
+  }) async {
+    if (values.isEmpty) return <R>[];
+
+    final results = List<R?>.filled(values.length, null);
+    var nextIndex = 0;
+    var failed = false;
+
+    Future<void> worker() async {
+      while (!failed && nextIndex < values.length) {
+        final index = nextIndex++;
+        try {
+          results[index] = await operation(values[index], index);
+        } catch (_) {
+          failed = true;
+          rethrow;
+        }
+      }
+    }
+
+    final workerCount = math.min(math.max(1, concurrency), values.length);
+    await Future.wait(
+      List<Future<void>>.generate(workerCount, (_) => worker()),
+    );
+    return results.cast<R>();
   }
 
   Future<Uint8List?> _resizedPngBytes(
     Uint8List bytes, {
     required int maxLongSide,
   }) async {
-    ui.Image? original;
+    ui.ImmutableBuffer? buffer;
+    ui.ImageDescriptor? descriptor;
+    ui.Codec? codec;
     ui.Image? resized;
     try {
-      final codec = await ui.instantiateImageCodec(bytes);
-      final frame = await codec.getNextFrame();
-      original = frame.image;
-      final sourceMaxSide = math.max(original.width, original.height);
+      buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      descriptor = await ui.ImageDescriptor.encoded(buffer);
+      final sourceMaxSide = math.max(descriptor.width, descriptor.height);
       if (sourceMaxSide <= maxLongSide) return null;
 
       final scale = maxLongSide / sourceMaxSide;
-      final targetWidth = math.max(1, (original.width * scale).round());
-      final targetHeight = math.max(1, (original.height * scale).round());
-      final resizedCodec = await ui.instantiateImageCodec(
-        bytes,
+      final targetWidth = math.max(1, (descriptor.width * scale).round());
+      final targetHeight = math.max(1, (descriptor.height * scale).round());
+      codec = await descriptor.instantiateCodec(
         targetWidth: targetWidth,
         targetHeight: targetHeight,
       );
-      final resizedFrame = await resizedCodec.getNextFrame();
+      final resizedFrame = await codec.getNextFrame();
       resized = resizedFrame.image;
       final byteData = await resized.toByteData(format: ui.ImageByteFormat.png);
       return byteData?.buffer.asUint8List();
     } catch (_) {
       return null;
     } finally {
-      original?.dispose();
       resized?.dispose();
+      codec?.dispose();
+      descriptor?.dispose();
+      buffer?.dispose();
     }
   }
 

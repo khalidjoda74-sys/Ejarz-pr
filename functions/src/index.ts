@@ -15,3 +15,7 @@ export {
   scheduledSyncSponsorshipCampaigns,
 } from "./sponsorships";
 export {ensureDemoOpportunity} from "./opportunities";
+export {
+  backfillPublicProfiles,
+  syncPublicProfile,
+} from "./public_profiles";

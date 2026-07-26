@@ -1,55 +1,160 @@
-import 'dart:async';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/moderation/content_moderation.dart';
+import '../../core/utils/reusable_stream.dart';
 
 import '../models/conversation_model.dart';
 import '../models/council_model.dart';
 import '../models/message_model.dart';
+import '../models/public_profile_model.dart';
 import '../services/firestore_service.dart';
+
+String directConversationDocumentId(String firstUid, String secondUid) {
+  final first = firstUid.trim();
+  final second = secondUid.trim();
+  if (first.isEmpty || second.isEmpty) {
+    throw ArgumentError('Both participant UIDs are required.');
+  }
+  final ordered = <String>[first, second]..sort();
+  return 'direct_${ordered[0]}_${ordered[1]}';
+}
 
 class MessagingRepository {
   MessagingRepository._();
 
   static final MessagingRepository instance = MessagingRepository._();
 
-  static const String _demoCurrentUid = 'demo_current_user';
-
   final FirestoreService _firestore = FirestoreService.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final Map<String, List<MessageModel>> _demoMessages =
-      <String, List<MessageModel>>{};
-  final Map<String, StreamController<List<MessageModel>>> _demoMessageStreams =
-      <String, StreamController<List<MessageModel>>>{};
-  final StreamController<void> _demoConversationChanges =
-      StreamController<void>.broadcast();
-  final Set<String> _demoArchivedConversationIds = <String>{};
-  final Set<String> _demoDeletedConversationIds = <String>{};
-  final Set<String> _demoBlockedConversationIds = <String>{};
-  final Set<String> _demoReadConversationIds = <String>{};
 
   String get viewerUid {
     final user = _auth.currentUser;
-    if (user == null || user.isAnonymous) return _demoCurrentUid;
+    if (user == null || user.isAnonymous) return '';
     return user.uid;
+  }
+
+  String directConversationId(String firstUid, String secondUid) {
+    return directConversationDocumentId(firstUid, secondUid);
+  }
+
+  ConversationModel buildDirectConversationDraft(
+    PublicProfileTarget target,
+  ) {
+    final user = _requireSignedInUser(
+      message: 'يجب تسجيل الدخول لبدء محادثة مباشرة.',
+    );
+    final targetUid = _directTargetUidOrThrow(target, user.uid);
+    return ConversationModel(
+      id: directConversationId(user.uid, targetUid),
+      contextType: ConversationContextType.direct,
+      targetId: targetUid,
+      initiatorId: user.uid,
+      participantIds: <String>[user.uid, targetUid],
+      participantSnapshots: <String, ParticipantSnapshot>{
+        user.uid: const ParticipantSnapshot(displayName: 'أنت'),
+        targetUid: _publicTargetSnapshot(target),
+      },
+      unreadCounts: <String, int>{
+        user.uid: 0,
+        targetUid: 0,
+      },
+      status: 'active',
+    );
+  }
+
+  Future<ConversationModel> getOrCreateDirectConversation(
+    PublicProfileTarget target,
+  ) async {
+    final user = _requireSignedInUser(
+      message: 'يجب تسجيل الدخول لبدء محادثة مباشرة.',
+    );
+    final targetUid = _directTargetUidOrThrow(target, user.uid);
+    final conversationId = directConversationId(user.uid, targetUid);
+    final ref = _firestore.conversation(conversationId);
+
+    final existing = await _readConversationForCreate(ref);
+    if (existing != null) {
+      _ensureExpectedDirectParticipants(
+        existing,
+        currentUid: user.uid,
+        targetUid: targetUid,
+      );
+      return existing;
+    }
+
+    final participantSnapshots = await Future.wait<ParticipantSnapshot>([
+      _fetchPublicParticipantSnapshot(user.uid),
+      _fetchPublicParticipantSnapshot(targetUid),
+    ]);
+    final initiatorSnapshot = participantSnapshots[0];
+    final targetSnapshot = participantSnapshots[1];
+    final participantIds = <String>[user.uid, targetUid];
+    final data = <String, dynamic>{
+      'contextType': conversationContextTypeToFirestore(
+        ConversationContextType.direct,
+      ),
+      'initiatorId': user.uid,
+      'targetId': targetUid,
+      'participantIds': participantIds,
+      'participantSnapshots': {
+        user.uid: initiatorSnapshot.toMap(),
+        targetUid: targetSnapshot.toMap(),
+      },
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'lastMessageText': '',
+      'lastMessageAt': null,
+      'lastSenderId': null,
+      'unreadCounts': {
+        user.uid: 0,
+        targetUid: 0,
+      },
+      'lastReadAt': <String, dynamic>{},
+      'status': 'active',
+      'blockedBy': <String>[],
+      'archivedBy': <String>[],
+      'deletedBy': <String>[],
+      'reportCount': 0,
+    };
+
+    try {
+      await ref.set(data);
+    } on FirebaseException catch (error) {
+      if (error.code != 'permission-denied' && error.code != 'already-exists') {
+        rethrow;
+      }
+      final raced = await _readConversationAfterCreateRace(ref);
+      if (raced != null) {
+        _ensureExpectedDirectParticipants(
+          raced,
+          currentUid: user.uid,
+          targetUid: targetUid,
+        );
+        return raced;
+      }
+      rethrow;
+    }
+
+    final created = await ref.get();
+    final conversation = ConversationModel.fromFirestore(created);
+    _ensureExpectedDirectParticipants(
+      conversation,
+      currentUid: user.uid,
+      targetUid: targetUid,
+    );
+    return conversation;
   }
 
   Future<ConversationModel> getOrCreateConversation(
       CouncilModel council) async {
-    final user = _auth.currentUser;
-    if (user == null || user.isAnonymous) {
-      throw FirebaseException(
-        plugin: 'majlisna',
-        code: 'unauthenticated',
-        message: 'يجب تسجيل الدخول للتواصل مع صاحب المنشور.',
-      );
-    }
+    final user = _requireSignedInUser(
+      message: 'يجب تسجيل الدخول للتواصل مع صاحب المنشور.',
+    );
 
-    if (council.isSeedContent) {
+    if (council.isEditorialContent) {
       throw FirebaseException(
         plugin: 'majlisna',
         code: 'editorial-content',
@@ -89,20 +194,22 @@ class MessagingRepository {
     );
     final ref = _firestore.conversation(conversationId);
 
-    final existing = await ref.get();
-    if (existing.exists) return ConversationModel.fromFirestore(existing);
+    final existing = await _readConversationForCreate(ref);
+    if (existing != null) return existing;
 
-    final ownerSnapshot = await _participantSnapshot(
-      ownerId,
-      fallbackName: council.createdByName,
-    );
-    final requesterSnapshot = await _participantSnapshot(
-      user.uid,
-      fallbackName: user.displayName,
-      fallbackPhotoUrl: user.photoURL,
-    );
+    final participantSnapshots = await Future.wait<ParticipantSnapshot>([
+      _fetchPublicParticipantSnapshot(ownerId),
+      _fetchPublicParticipantSnapshot(user.uid),
+    ]);
+    final ownerSnapshot = participantSnapshots[0];
+    final requesterSnapshot = participantSnapshots[1];
 
     final data = {
+      'contextType': conversationContextTypeToFirestore(
+        ConversationContextType.opportunity,
+      ),
+      'targetId': ownerId,
+      'initiatorId': user.uid,
       'councilId': council.id,
       'councilTitle': council.title,
       'ownerId': ownerId,
@@ -129,25 +236,25 @@ class MessagingRepository {
       'reportCount': 0,
     };
 
-    await ref.set(data);
+    try {
+      await ref.set(data);
+    } on FirebaseException catch (error) {
+      if (error.code != 'permission-denied' && error.code != 'already-exists') {
+        rethrow;
+      }
+
+      // A simultaneous tap/device may have created the same deterministic
+      // conversation after the first read. In that case the set is evaluated
+      // as a forbidden overwrite; read and reuse the winning document.
+      final raced = await _readConversationAfterCreateRace(ref);
+      if (raced != null) return raced;
+      rethrow;
+    }
     final created = await ref.get();
     return ConversationModel.fromFirestore(created);
   }
 
   Stream<ConversationModel?> watchConversation(String conversationId) {
-    if (_isDemoConversation(conversationId)) {
-      return Stream<ConversationModel?>.multi((controller) {
-        void emit() {
-          controller.add(_demoConversationById(conversationId, viewerUid));
-        }
-
-        emit();
-        final subscription =
-            _demoConversationChanges.stream.listen((_) => emit());
-        controller.onCancel = subscription.cancel;
-      });
-    }
-
     return _firestore.conversation(conversationId).snapshots().map((snapshot) {
       if (!snapshot.exists) return null;
       return ConversationModel.fromFirestore(snapshot);
@@ -158,74 +265,40 @@ class MessagingRepository {
     bool includeArchived = false,
   }) {
     final user = _auth.currentUser;
-    final currentUid =
-        user == null || user.isAnonymous ? _demoCurrentUid : user.uid;
+    if (user == null || user.isAnonymous) {
+      return reusableValueStream<List<ConversationModel>>(
+        const <ConversationModel>[],
+      );
+    }
 
-    return Stream<List<ConversationModel>>.multi((controller) {
-      List<ConversationModel>? firestoreConversations;
-
-      void emit() {
-        final remote = firestoreConversations;
-        if (remote != null && remote.isNotEmpty) {
-          controller.add(List<ConversationModel>.unmodifiable(remote));
-          return;
-        }
-        controller.add(_demoConversationsForView(currentUid, includeArchived));
-      }
-
-      emit();
-      final demoSubscription =
-          _demoConversationChanges.stream.listen((_) => emit());
-      StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
-          firestoreSubscription;
-
-      if (user != null && !user.isAnonymous) {
-        firestoreSubscription = _firestore.conversations
-            .where('participantIds', arrayContains: user.uid)
-            .snapshots()
-            .listen((snapshot) {
-          final conversations = snapshot.docs
-              .map(ConversationModel.fromFirestore)
-              .where((conversation) =>
-                  conversation.status == 'active' &&
-                  conversation.isArchivedFor(user.uid) == includeArchived &&
-                  !conversation.isDeletedFor(user.uid))
-              .toList(growable: false);
-          conversations.sort((a, b) {
-            final aTime = a.sortAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final bTime = b.sortAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-            return bTime.compareTo(aTime);
-          });
-          firestoreConversations = conversations;
-          emit();
-        }, onError: (_) {
-          firestoreConversations = const <ConversationModel>[];
-          emit();
-        });
-      }
-
-      controller.onCancel = () async {
-        await demoSubscription.cancel();
-        await firestoreSubscription?.cancel();
-      };
+    return _firestore.conversations
+        .where('participantIds', arrayContains: user.uid)
+        .snapshots()
+        .map((snapshot) {
+      final conversations = snapshot.docs
+          .map(ConversationModel.fromFirestore)
+          .where(
+            (conversation) =>
+                conversation.status == 'active' &&
+                conversation.isArchivedFor(user.uid) == includeArchived &&
+                !conversation.isDeletedFor(user.uid) &&
+                !_isDemoConversation(conversation),
+          )
+          .toList(growable: false);
+      conversations.sort((a, b) {
+        final aTime = a.sortAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bTime = b.sortAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bTime.compareTo(aTime);
+      });
+      return List<ConversationModel>.unmodifiable(conversations);
     });
-  }
-
-  List<ConversationModel> _demoConversationsForView(
-    String currentUid,
-    bool includeArchived,
-  ) {
-    final conversations = _demoConversations(currentUid)
-        .where((conversation) =>
-            conversation.isArchivedFor(currentUid) == includeArchived &&
-            !conversation.isDeletedFor(currentUid))
-        .toList(growable: false);
-    return List<ConversationModel>.unmodifiable(conversations);
   }
 
   Stream<int> watchUnreadTotal() {
     final user = _auth.currentUser;
-    if (user == null || user.isAnonymous) return Stream.value(0);
+    if (user == null || user.isAnonymous) {
+      return reusableValueStream<int>(0);
+    }
     return watchMyConversations()
         .map(
           (conversations) => conversations.fold<int>(
@@ -237,10 +310,6 @@ class MessagingRepository {
   }
 
   Stream<List<MessageModel>> watchMessages(String conversationId) {
-    if (_isDemoConversation(conversationId)) {
-      return _watchDemoMessages(conversationId);
-    }
-
     return _firestore
         .conversationMessages(conversationId)
         .orderBy('createdAt')
@@ -265,11 +334,6 @@ class MessagingRepository {
 
     ContentModeration.ensureAllowed(<String>[trimmed]);
 
-    if (_isDemoConversation(conversationId)) {
-      _addDemoMessage(conversationId, trimmed);
-      return;
-    }
-
     await _sendMessageRecord(
       conversationId: conversationId,
       lastMessageText: trimmed,
@@ -284,13 +348,6 @@ class MessagingRepository {
     String conversationId,
     XFile image,
   ) async {
-    if (_isDemoConversation(conversationId)) {
-      return const UploadedMessageImage(
-        url: 'demo-image',
-        path: 'demo-image',
-      );
-    }
-
     final user = _auth.currentUser;
     if (user == null || user.isAnonymous) {
       throw FirebaseException(plugin: 'majlisna', code: 'unauthenticated');
@@ -330,11 +387,6 @@ class MessagingRepository {
     required String imageUrl,
     required String imagePath,
   }) async {
-    if (_isDemoConversation(conversationId)) {
-      _addDemoMessage(conversationId, 'تم إرفاق صورة ضمن محادثة تجريبية.');
-      return;
-    }
-
     final cleanUrl = imageUrl.trim();
     final cleanPath = imagePath.trim();
     if (cleanUrl.isEmpty || cleanPath.isEmpty) {
@@ -354,12 +406,6 @@ class MessagingRepository {
   }
 
   Future<void> markConversationRead(String conversationId) async {
-    if (_isDemoConversation(conversationId)) {
-      _demoReadConversationIds.add(conversationId);
-      _demoConversationChanges.add(null);
-      return;
-    }
-
     final user = _auth.currentUser;
     if (user == null || user.isAnonymous) return;
 
@@ -370,12 +416,6 @@ class MessagingRepository {
   }
 
   Future<void> archiveConversation(String conversationId) async {
-    if (_isDemoConversation(conversationId)) {
-      _demoArchivedConversationIds.add(conversationId);
-      _demoConversationChanges.add(null);
-      return;
-    }
-
     final user = _auth.currentUser;
     if (user == null || user.isAnonymous) return;
 
@@ -386,12 +426,6 @@ class MessagingRepository {
   }
 
   Future<void> unarchiveConversation(String conversationId) async {
-    if (_isDemoConversation(conversationId)) {
-      _demoArchivedConversationIds.remove(conversationId);
-      _demoConversationChanges.add(null);
-      return;
-    }
-
     final user = _auth.currentUser;
     if (user == null || user.isAnonymous) return;
 
@@ -402,12 +436,6 @@ class MessagingRepository {
   }
 
   Future<void> deleteConversationForMe(String conversationId) async {
-    if (_isDemoConversation(conversationId)) {
-      _demoDeletedConversationIds.add(conversationId);
-      _demoConversationChanges.add(null);
-      return;
-    }
-
     final user = _auth.currentUser;
     if (user == null || user.isAnonymous) return;
 
@@ -420,12 +448,6 @@ class MessagingRepository {
   }
 
   Future<void> blockConversation(String conversationId) async {
-    if (_isDemoConversation(conversationId)) {
-      _demoBlockedConversationIds.add(conversationId);
-      _demoConversationChanges.add(null);
-      return;
-    }
-
     final user = _auth.currentUser;
     if (user == null || user.isAnonymous) {
       throw FirebaseException(plugin: 'majlisna', code: 'unauthenticated');
@@ -468,12 +490,6 @@ class MessagingRepository {
   }
 
   Future<void> unblockConversation(String conversationId) async {
-    if (_isDemoConversation(conversationId)) {
-      _demoBlockedConversationIds.remove(conversationId);
-      _demoConversationChanges.add(null);
-      return;
-    }
-
     final user = _auth.currentUser;
     if (user == null || user.isAnonymous) {
       throw FirebaseException(plugin: 'majlisna', code: 'unauthenticated');
@@ -514,8 +530,6 @@ class MessagingRepository {
     required String reason,
     String? details,
   }) async {
-    if (_isDemoConversation(conversationId)) return;
-
     final user = _auth.currentUser;
     if (user == null || user.isAnonymous) {
       throw FirebaseException(plugin: 'majlisna', code: 'unauthenticated');
@@ -540,13 +554,26 @@ class MessagingRepository {
         throw FirebaseException(plugin: 'majlisna', code: 'permission-denied');
       }
 
+      final councilId = _stringValue(data['councilId']);
+      final contextType = conversationContextTypeFromFirestore(
+        data['contextType'],
+        hasLegacyOpportunityContext: councilId.isNotEmpty ||
+            data.containsKey('ownerId') ||
+            data.containsKey('requesterId'),
+      );
+      final targetPreview = contextType == ConversationContextType.direct
+          ? _directConversationPreview(data, user.uid)
+          : _stringValue(
+              data['councilTitle'],
+              fallback: conversationId,
+            );
+
       transaction.set(reportRef, {
         'targetType': 'conversation',
         'targetId': conversationId,
-        'targetPreview':
-            _stringValue(data['councilTitle'], fallback: conversationId),
+        'targetPreview': targetPreview,
         'conversationId': conversationId,
-        'councilId': _stringValue(data['councilId']),
+        if (councilId.isNotEmpty) 'councilId': councilId,
         'reason': cleanReason,
         'description': cleanDetails.length > 500
             ? cleanDetails.substring(0, 500)
@@ -654,33 +681,148 @@ class MessagingRepository {
     return raw.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
   }
 
-  Future<ParticipantSnapshot> _participantSnapshot(
-    String uid, {
-    String? fallbackName,
-    String? fallbackPhotoUrl,
-  }) async {
-    try {
-      final snapshot = await _firestore.user(uid).get();
-      final data = snapshot.data() ?? const <String, dynamic>{};
-      return ParticipantSnapshot.fromMap({
-        'displayName': _stringValue(
-          data['nickname'],
-          fallback: _stringValue(
-            data['displayName'],
-            fallback: _stringValue(fallbackName, fallback: 'عضو Forsa Pro'),
-          ),
-        ),
-        'avatarEmoji': _stringValue(data['avatarEmoji'],
-            fallback: _stringValue(data['avatar'])),
-        'photoUrl': _stringValue(data['photoUrl'],
-            fallback: _stringValue(fallbackPhotoUrl)),
-      });
-    } catch (_) {
-      return ParticipantSnapshot(
-        displayName: _stringValue(fallbackName, fallback: 'عضو Forsa Pro'),
-        photoUrl: _stringValue(fallbackPhotoUrl),
+  User _requireSignedInUser({required String message}) {
+    final user = _auth.currentUser;
+    if (user == null || user.isAnonymous) {
+      throw FirebaseException(
+        plugin: 'majlisna',
+        code: 'unauthenticated',
+        message: message,
       );
     }
+    return user;
+  }
+
+  String _directTargetUidOrThrow(
+      PublicProfileTarget target, String currentUid) {
+    final targetUid = target.uid?.trim() ?? '';
+    if (target.isDemo || targetUid.isEmpty) {
+      throw FirebaseException(
+        plugin: 'majlisna',
+        code: 'invalid-direct-target',
+        message: 'لا يمكن بدء محادثة مع هذا الحساب.',
+      );
+    }
+    if (targetUid == currentUid) {
+      throw FirebaseException(
+        plugin: 'majlisna',
+        code: 'self-message',
+        message: 'لا يمكنك مراسلة نفسك.',
+      );
+    }
+    return targetUid;
+  }
+
+  ParticipantSnapshot _publicTargetSnapshot(PublicProfileTarget target) {
+    return ParticipantSnapshot(
+      displayName: _stringValue(
+        target.displayName,
+        fallback: 'عضو Forsa Pro',
+      ),
+      username: _stringValue(target.username),
+      avatarEmoji: _stringValue(target.avatarEmoji),
+      photoUrl: _stringValue(target.publicPhotoUrl),
+    );
+  }
+
+  Future<ParticipantSnapshot> _fetchPublicParticipantSnapshot(
+    String uid,
+  ) async {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final snapshot = await _firestore.publicProfile(uid).get();
+      if (snapshot.exists) {
+        final profile = PublicProfileModel.fromFirestore(snapshot);
+        if (profile.isVisible && !profile.demo && profile.uid == uid) {
+          return ParticipantSnapshot(
+            displayName: profile.displayName,
+            username: profile.username,
+            avatarEmoji: profile.avatarEmoji,
+            photoUrl: profile.publicPhotoUrl,
+          );
+        }
+        throw FirebaseException(
+          plugin: 'majlisna',
+          code: 'invalid-public-profile',
+          message: 'هذا الملف غير متاح للمراسلة المباشرة.',
+        );
+      }
+      if (attempt < 2) {
+        await Future<void>.delayed(
+          Duration(milliseconds: 250 * (attempt + 1)),
+        );
+      }
+    }
+    throw FirebaseException(
+      plugin: 'majlisna',
+      code: 'missing-public-profile',
+      message: 'تعذر العثور على الملف العام لهذا العضو.',
+    );
+  }
+
+  Future<ConversationModel?> _readConversationForCreate(
+    DocumentReference<Map<String, dynamic>> ref,
+  ) async {
+    try {
+      final existing = await ref.get();
+      if (!existing.exists) return null;
+      return ConversationModel.fromFirestore(existing);
+    } on FirebaseException catch (error) {
+      // Firestore evaluates a get on a missing document against resource.data.
+      // The read can therefore be denied even when create is allowed.
+      if (error.code != 'permission-denied') rethrow;
+      return null;
+    }
+  }
+
+  Future<ConversationModel?> _readConversationAfterCreateRace(
+    DocumentReference<Map<String, dynamic>> ref,
+  ) async {
+    try {
+      final raced = await ref.get();
+      if (!raced.exists) return null;
+      return ConversationModel.fromFirestore(raced);
+    } catch (_) {
+      // Preserve the original create failure when no readable winner exists.
+      return null;
+    }
+  }
+
+  void _ensureExpectedDirectParticipants(
+    ConversationModel conversation, {
+    required String currentUid,
+    required String targetUid,
+  }) {
+    final participants = conversation.participantIds.toSet();
+    if (!conversation.isDirect ||
+        participants.length != 2 ||
+        !participants.contains(currentUid) ||
+        !participants.contains(targetUid)) {
+      throw FirebaseException(
+        plugin: 'majlisna',
+        code: 'conversation-id-conflict',
+        message: 'تعذر التحقق من المحادثة المباشرة.',
+      );
+    }
+  }
+
+  String _directConversationPreview(
+    Map<String, dynamic> data,
+    String currentUid,
+  ) {
+    final participants = _stringList(data['participantIds']);
+    final otherUid = participants.firstWhere(
+      (uid) => uid != currentUid,
+      orElse: () => '',
+    );
+    final snapshots = data['participantSnapshots'];
+    if (otherUid.isNotEmpty && snapshots is Map) {
+      final other = snapshots[otherUid];
+      if (other is Map) {
+        final name = _stringValue(other['displayName']);
+        if (name.isNotEmpty) return 'محادثة مباشرة مع $name';
+      }
+    }
+    return 'محادثة مباشرة';
   }
 
   List<String> _stringList(Object? value) {
@@ -709,319 +851,9 @@ class MessagingRepository {
     return 'image/jpeg';
   }
 
-  bool _isDemoConversation(String conversationId) {
-    return conversationId.startsWith('demo_message_');
-  }
-
-  List<ConversationModel> _demoConversations(String currentUid) {
-    final conversations = <ConversationModel>[
-      _demoConversation(
-        id: 'demo_message_partner_riyadh',
-        currentUid: currentUid,
-        otherUid: 'demo_noura',
-        otherName: 'نورة العتيبي',
-        otherAvatar: 'business:handshake',
-        councilId: 'demo_council_partner_riyadh',
-        councilTitle: 'شراكة لتوسعة مطعم صحي قائم في شمال الرياض',
-        lastMessageText: 'ممتاز، أرسل لي تفاصيل المبيعات الشهرية وموقع الفرع.',
-        unread: 2,
-        minutesAgo: 7,
-      ),
-      _demoConversation(
-        id: 'demo_message_transfer_jeddah',
-        currentUid: currentUid,
-        otherUid: 'demo_fahad',
-        otherName: 'فهد الزهراني',
-        otherAvatar: 'business:transfer',
-        councilId: 'demo_council_transfer_jeddah',
-        councilTitle: 'فرصة تقبيل مغسلة سيارات في جدة مع عقود ثابتة',
-        lastMessageText: 'هل يشمل التقبيل المعدات والعمالة الحالية؟',
-        unread: 1,
-        minutesAgo: 32,
-      ),
-      _demoConversation(
-        id: 'demo_message_funding_dammam',
-        currentUid: currentUid,
-        otherUid: 'demo_sara',
-        otherName: 'سارة القحطاني',
-        otherAvatar: 'business:funding',
-        councilId: 'demo_council_funding_dammam',
-        councilTitle: 'أبحث عن فرصة تشغيلية بمبلغ 180 ألف في الدمام',
-        lastMessageText: 'الأهم عندي وضوح المصاريف قبل الدخول.',
-        unread: 0,
-        minutesAgo: 118,
-      ),
-      _demoConversation(
-        id: 'demo_message_market_makkah',
-        currentUid: currentUid,
-        otherUid: 'demo_mansour',
-        otherName: 'منصور الحربي',
-        otherAvatar: 'business:experience',
-        councilId: 'demo_council_market_makkah',
-        councilTitle: 'تجربة تشغيل متجر قهوة مختصة داخل مجمع تجاري',
-        lastMessageText: 'التجربة مفيدة، خصوصًا نقطة الإيجار ونسبة العمالة.',
-        unread: 0,
-        minutesAgo: 260,
-      ),
-    ];
-    conversations.sort((a, b) {
-      final aTime = a.sortAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final bTime = b.sortAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      return bTime.compareTo(aTime);
-    });
-    return conversations;
-  }
-
-  ConversationModel _demoConversationById(String id, String currentUid) {
-    return _demoConversations(currentUid).firstWhere(
-      (conversation) => conversation.id == id,
-      orElse: () => _demoConversations(currentUid).first,
-    );
-  }
-
-  ConversationModel _demoConversation({
-    required String id,
-    required String currentUid,
-    required String otherUid,
-    required String otherName,
-    required String otherAvatar,
-    required String councilId,
-    required String councilTitle,
-    required String lastMessageText,
-    required int unread,
-    required int minutesAgo,
-  }) {
-    final now = DateTime.now();
-    return ConversationModel(
-      id: id,
-      councilId: councilId,
-      councilTitle: councilTitle,
-      ownerId: otherUid,
-      requesterId: currentUid,
-      participantIds: <String>[currentUid, otherUid],
-      participantSnapshots: <String, ParticipantSnapshot>{
-        currentUid: const ParticipantSnapshot(
-          displayName: 'أنت',
-          avatarEmoji: 'business:person_growth',
-        ),
-        otherUid: ParticipantSnapshot(
-          displayName: otherName,
-          avatarEmoji: otherAvatar,
-        ),
-      },
-      unreadCounts: <String, int>{
-        currentUid: _demoReadConversationIds.contains(id) ? 0 : unread,
-        otherUid: 0,
-      },
-      status: 'active',
-      blockedBy: _demoBlockedConversationIds.contains(id)
-          ? <String>[currentUid]
-          : const <String>[],
-      archivedBy: _demoArchivedConversationIds.contains(id)
-          ? <String>[currentUid]
-          : const <String>[],
-      deletedBy: _demoDeletedConversationIds.contains(id)
-          ? <String>[currentUid]
-          : const <String>[],
-      lastMessageText: lastMessageText,
-      lastMessageAt: now.subtract(Duration(minutes: minutesAgo)),
-      lastSenderId: unread > 0 ? otherUid : currentUid,
-      createdAt: now.subtract(Duration(days: 2, hours: minutesAgo ~/ 60)),
-      updatedAt: now.subtract(Duration(minutes: minutesAgo)),
-    );
-  }
-
-  Stream<List<MessageModel>> _watchDemoMessages(String conversationId) async* {
-    yield List<MessageModel>.unmodifiable(
-      _demoMessagesFor(conversationId, viewerUid),
-    );
-    final controller = _demoMessageStreams.putIfAbsent(
-      conversationId,
-      () => StreamController<List<MessageModel>>.broadcast(),
-    );
-    yield* controller.stream;
-  }
-
-  List<MessageModel> _demoMessagesFor(
-      String conversationId, String currentUid) {
-    final existing = _demoMessages[conversationId];
-    if (existing != null) return existing;
-
-    final otherUid = _demoConversationById(conversationId, currentUid)
-        .participantIds
-        .firstWhere((uid) => uid != currentUid, orElse: () => 'demo_member');
-    final now = DateTime.now();
-    List<MessageModel> messages;
-
-    switch (conversationId) {
-      case 'demo_message_partner_riyadh':
-        messages = <MessageModel>[
-          _demoMessage(
-              'm1',
-              otherUid,
-              'السلام عليكم، شفت فرصة الشراكة لتوسعة المطعم. هل التوسعة لفرع جديد أو زيادة الطاقة الحالية؟',
-              now,
-              95,
-              currentUid),
-          _demoMessage(
-              'm2',
-              currentUid,
-              'وعليكم السلام. الخطة فرع ثاني داخل نفس النطاق، والمطبخ المركزي موجود.',
-              now,
-              82,
-              currentUid),
-          _demoMessage(
-              'm3',
-              otherUid,
-              'ممتاز. كم متوسط المبيعات الشهرية للفرع الحالي؟ وهل يوجد قوائم مالية مختصرة؟',
-              now,
-              54,
-              currentUid),
-          _demoMessage(
-              'm4',
-              currentUid,
-              'المتوسط قريب من 165 ألف، وصافي التشغيل يتغير حسب المواسم. أقدر أرسل ملخص بدون بيانات حساسة.',
-              now,
-              26,
-              currentUid),
-          _demoMessage(
-              'm5',
-              otherUid,
-              'ممتاز، أرسل لي تفاصيل المبيعات الشهرية وموقع الفرع.',
-              now,
-              7,
-              currentUid),
-        ];
-        break;
-      case 'demo_message_transfer_jeddah':
-        messages = <MessageModel>[
-          _demoMessage(
-              'm1',
-              currentUid,
-              'مرحبًا فهد، هل فرصة المغسلة لا تزال متاحة للتقبيل؟',
-              now,
-              190,
-              currentUid),
-          _demoMessage(
-              'm2',
-              otherUid,
-              'نعم متاحة. الموقع على شارع نشط وفيه عقود شهرية مع شركتين.',
-              now,
-              160,
-              currentUid),
-          _demoMessage(
-              'm3',
-              currentUid,
-              'ممتاز. هل الإيجار طويل وهل توجد مديونيات على النشاط؟',
-              now,
-              80,
-              currentUid),
-          _demoMessage(
-              'm4',
-              otherUid,
-              'العقد باقي عليه 18 شهر ولا توجد مديونيات تشغيلية.',
-              now,
-              36,
-              currentUid),
-          _demoMessage('m5', otherUid,
-              'هل يشمل التقبيل المعدات والعمالة الحالية؟', now, 32, currentUid),
-        ];
-        break;
-      case 'demo_message_funding_dammam':
-        messages = <MessageModel>[
-          _demoMessage(
-              'm1',
-              otherUid,
-              'أهلاً، ذكرت أنك تبحث عن فرصة تشغيلية بمبلغ 180 ألف. هل تفضل قطاع غذائي أو خدمات؟',
-              now,
-              280,
-              currentUid),
-          _demoMessage(
-              'm2',
-              currentUid,
-              'أفضل الخدمات لأنها أوضح في التكاليف، لكن إذا الغذائي أرقامه قوية ممكن أدرسه.',
-              now,
-              244,
-              currentUid),
-          _demoMessage(
-              'm3',
-              otherUid,
-              'عندي فرصة توريد وتشغيل صغيرة تحتاج شريك ممول ومتابعة أسبوعية.',
-              now,
-              170,
-              currentUid),
-          _demoMessage('m4', currentUid, 'الأهم عندي وضوح المصاريف قبل الدخول.',
-              now, 118, currentUid),
-        ];
-        break;
-      default:
-        messages = <MessageModel>[
-          _demoMessage(
-              'm1',
-              otherUid,
-              'السلام عليكم، قرأت تجربتك في تشغيل متجر القهوة. أكثر نقطة شدتني موضوع الإيجار.',
-              now,
-              430,
-              currentUid),
-          _demoMessage(
-              'm2',
-              currentUid,
-              'وعليكم السلام، فعلًا الإيجار كان العامل الأكبر في الضغط على الربحية.',
-              now,
-              390,
-              currentUid),
-          _demoMessage('m3', otherUid,
-              'هل تنصح بالبدء داخل مجمع أو شارع تجاري؟', now, 330, currentUid),
-          _demoMessage(
-              'm4',
-              currentUid,
-              'حسب المنتج. إذا العلامة جديدة أفضل موقع بتكلفة أخف وتجربة بيع واضحة قبل مجمع مكلف.',
-              now,
-              260,
-              currentUid),
-        ];
-        break;
-    }
-
-    _demoMessages[conversationId] = messages;
-    return messages;
-  }
-
-  MessageModel _demoMessage(
-    String id,
-    String senderId,
-    String text,
-    DateTime now,
-    int minutesAgo,
-    String currentUid,
-  ) {
-    return MessageModel(
-      id: id,
-      senderId: senderId,
-      text: text,
-      type: 'text',
-      status: 'sent',
-      readBy: <String>[currentUid],
-      createdAt: now.subtract(Duration(minutes: minutesAgo)),
-    );
-  }
-
-  void _addDemoMessage(String conversationId, String text) {
-    final messages = _demoMessagesFor(conversationId, viewerUid);
-    messages.add(
-      MessageModel(
-        id: 'local_${DateTime.now().microsecondsSinceEpoch}',
-        senderId: viewerUid,
-        text: text,
-        type: 'text',
-        status: 'sent',
-        readBy: <String>[viewerUid],
-        createdAt: DateTime.now(),
-      ),
-    );
-    _demoMessageStreams[conversationId]?.add(
-      List<MessageModel>.unmodifiable(messages),
-    );
+  bool _isDemoConversation(ConversationModel conversation) {
+    return conversation.id.startsWith('demo_') ||
+        conversation.councilId?.startsWith('demo_') == true;
   }
 }
 

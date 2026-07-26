@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/auth/auth_guard.dart';
 import '../core/navigation/app_focus.dart';
 import '../core/navigation/app_page_route.dart';
 import '../core/navigation/app_route_observer.dart';
 import '../core/theme/app_colors.dart';
+import '../core/widgets/app_confirmation_dialog.dart';
 import '../core/widgets/glass_bottom_nav.dart';
 import '../core/widgets/tab_activity_scope.dart';
 import '../features/create_council/create_council_screen.dart';
@@ -20,9 +24,11 @@ class MainShell extends StatefulWidget {
   const MainShell({
     super.key,
     @visibleForTesting this.debugTabBuilders,
+    @visibleForTesting this.debugExitApplication,
   }) : assert(debugTabBuilders == null || debugTabBuilders.length == 5);
 
   final List<WidgetBuilder>? debugTabBuilders;
+  final Future<void> Function()? debugExitApplication;
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -32,6 +38,7 @@ class _MainShellState extends State<MainShell>
     with PageRouteActivityMixin<MainShell> {
   int _index = 0;
   bool _navigationPending = false;
+  bool _exitConfirmationOpen = false;
   final PageController _pageController = PageController();
   final List<bool> _visitedTabs = <bool>[true, false, false, false, false];
   final List<Widget?> _tabChildren = List<Widget?>.filled(5, null);
@@ -169,17 +176,54 @@ class _MainShellState extends State<MainShell>
     });
   }
 
+  Future<void> _confirmExitApplication() async {
+    if (_exitConfirmationOpen || !mounted) return;
+
+    _exitConfirmationOpen = true;
+    try {
+      final shouldExit = await showDialog<bool>(
+        context: context,
+        useRootNavigator: true,
+        barrierColor: AppColors.textDark.withValues(alpha: .34),
+        builder: (_) => const AppConfirmationDialog(
+          title: 'إغلاق التطبيق؟',
+          message:
+              'هل تريد إغلاق فرصة برو الآن؟ يمكنك العودة في أي وقت ومتابعة تصفح الفرص.',
+          confirmLabel: 'إغلاق التطبيق',
+          icon: Icons.power_settings_new_rounded,
+        ),
+      );
+
+      if (shouldExit != true || !mounted) return;
+
+      final debugExitApplication = widget.debugExitApplication;
+      if (debugExitApplication != null) {
+        await debugExitApplication();
+      } else {
+        await SystemNavigator.pop();
+      }
+    } finally {
+      _exitConfirmationOpen = false;
+    }
+  }
+
+  void _handleSystemBack(bool didPop) {
+    if (didPop) return;
+    if (_index != 0) {
+      _activateTab(0);
+      return;
+    }
+    unawaited(_confirmExitApplication());
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       extendBody: _index != 2,
       body: PopScope(
-        canPop: _index == 0,
-        onPopInvokedWithResult: (didPop, result) {
-          if (didPop || _index == 0) return;
-          _activateTab(0);
-        },
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) => _handleSystemBack(didPop),
         child: PageView.builder(
           controller: _pageController,
           physics: const NeverScrollableScrollPhysics(),

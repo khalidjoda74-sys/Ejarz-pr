@@ -9,6 +9,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/avatar_badge.dart';
+import '../../core/widgets/app_confirmation_dialog.dart';
 import '../../core/widgets/custom_app_bar.dart';
 import '../../core/widgets/premium_background.dart';
 import '../../core/widgets/tab_activity_scope.dart';
@@ -38,23 +39,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   bool _subpageOpening = false;
   bool _savingAvatar = false;
+  bool _signingOut = false;
 
-  Future<void> _confirmAndSignOut(BuildContext context) async {
+  Future<void> _confirmAndSignOut() async {
+    if (_signingOut) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
       barrierColor: AppColors.textDark.withValues(alpha: .34),
-      builder: (_) => const _SignOutConfirmDialog(),
+      builder: (_) => const AppConfirmationDialog(
+        title: 'تسجيل الخروج؟',
+        message:
+            'ستحتاج إلى تسجيل الدخول مرة أخرى للمشاركة وإضافة رأيك داخل الفرص.',
+        confirmLabel: 'تسجيل الخروج',
+        icon: Icons.logout_rounded,
+      ),
     );
 
-    if (confirmed != true || !context.mounted) return;
+    if (confirmed != true || !mounted) return;
 
-    await AuthController.instance.signOut();
-    if (!context.mounted) return;
+    setState(() => _signingOut = true);
+    final controller = AuthController.instance;
+    final signedOut = await controller.signOut();
+    if (!mounted) return;
+    setState(() => _signingOut = false);
+
+    if (signedOut) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تسجيل الخروج بنجاح')),
+      );
+      widget.onSignedOut?.call();
+      return;
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم تسجيل الخروج')),
+      SnackBar(
+        content: Text(
+          controller.errorMessage ??
+              'تعذر تسجيل الخروج الآن. تحقق من اتصالك وحاول مرة أخرى.',
+        ),
+      ),
     );
-    widget.onSignedOut?.call();
   }
 
   Future<void> _openSubpage(WidgetBuilder builder) async {
@@ -299,7 +324,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               label: 'تسجيل الخروج',
                               danger: true,
                               showDivider: false,
-                              onTap: () => _confirmAndSignOut(context),
+                              onTap: _confirmAndSignOut,
                             ),
                           ],
                         ),
@@ -1212,167 +1237,6 @@ class _MenuCard extends StatelessWidget {
         border: Border.all(color: AppColors.borderBeige),
       ),
       child: Column(children: children),
-    );
-  }
-}
-
-class _SignOutConfirmDialog extends StatelessWidget {
-  const _SignOutConfirmDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 18),
-        backgroundColor: Colors.transparent,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-            decoration: BoxDecoration(
-              color: AppColors.cardWhite,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: AppColors.borderBeige),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.textDark.withValues(alpha: .16),
-                  blurRadius: 28,
-                  offset: const Offset(0, 14),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 46,
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: AppColors.red.withValues(alpha: .10),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: AppColors.red.withValues(alpha: .18),
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.logout_rounded,
-                        color: AppColors.red,
-                        size: 23,
-                      ),
-                    ),
-                    const SizedBox(width: 11),
-                    Expanded(
-                      child: Text(
-                        'تسجيل الخروج؟',
-                        style: AppTextStyles.cardTitle.copyWith(
-                          fontSize: 17,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'ستحتاج إلى تسجيل الدخول مرة أخرى للمشاركة وإضافة رأيك داخل الفرص.',
-                  style: AppTextStyles.body.copyWith(
-                    color: AppColors.textGray,
-                    fontSize: 12.5,
-                    height: 1.55,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _DialogActionButton(
-                        label: 'تسجيل الخروج',
-                        icon: Icons.logout_rounded,
-                        destructive: true,
-                        onTap: () => Navigator.of(context).pop(true),
-                      ),
-                    ),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: _DialogActionButton(
-                        label: 'إلغاء',
-                        icon: Icons.close_rounded,
-                        onTap: () => Navigator.of(context).pop(false),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DialogActionButton extends StatelessWidget {
-  const _DialogActionButton({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-    this.destructive = false,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-  final bool destructive;
-
-  @override
-  Widget build(BuildContext context) {
-    final foreground = destructive ? AppColors.cardWhite : AppColors.textDark;
-    final background = destructive ? AppColors.red : AppColors.background;
-    final borderColor = destructive
-        ? AppColors.red.withValues(alpha: .72)
-        : AppColors.borderBeige;
-
-    return SizedBox(
-      height: 44,
-      child: Material(
-        color: background,
-        borderRadius: BorderRadius.circular(15),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(15),
-          child: Container(
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: borderColor),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 17, color: foreground),
-                const SizedBox(width: 5),
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.button.copyWith(
-                      color: foreground,
-                      fontSize: 12.4,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

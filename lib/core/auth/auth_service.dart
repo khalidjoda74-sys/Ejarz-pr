@@ -164,10 +164,15 @@ class AuthService {
   }
 
   Future<void> signOut() async {
-    await Future.wait([
-      _auth.signOut(),
-      if (!kIsWeb) _nativeGoogleSignIn.signOut(),
-    ]);
+    // Firebase is the authoritative application session. End it first, then
+    // clean up the optional Google provider session without allowing a native
+    // provider error to leave the application in a stale signed-in state.
+    await _auth.signOut();
+    if (!kIsWeb) {
+      try {
+        await _nativeGoogleSignIn.signOut();
+      } catch (_) {}
+    }
   }
 
   bool _hasVisibleIdentity(User user) {

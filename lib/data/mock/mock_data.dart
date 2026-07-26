@@ -1,8 +1,7 @@
-import 'package:flutter/material.dart';
 import '../models/comment_model.dart';
 import '../models/council_model.dart';
-import '../models/notification_model.dart';
 import '../models/user_model.dart';
+import 'demo_profile_catalog.dart';
 
 class MockData {
   const MockData._();
@@ -38,8 +37,13 @@ class MockData {
     return [
       CouncilModel(
         id: 'demo_council_partner_riyadh',
+        isSeedContent: true,
+        createdBy: DemoProfileCatalog.ownerPartnerRiyadh.id,
+        createdByName: DemoProfileCatalog.ownerPartnerRiyadh.displayName,
+        createdByAvatarEmoji: DemoProfileCatalog.ownerPartnerRiyadh.avatarEmoji,
         title: 'شراكة لتوسعة مطعم صحي قائم في شمال الرياض',
-        description: 'المشروع يعمل منذ ثلاث سنوات ويبحث عن شريك تشغيلي لافتتاح فرع ثانٍ مع مطبخ مركزي قائم.',
+        description:
+            'المشروع يعمل منذ ثلاث سنوات ويبحث عن شريك تشغيلي لافتتاح فرع ثانٍ مع مطبخ مركزي قائم.',
         category: 'تجارب السوق',
         status: CouncilStatus.active,
         participants: 1248,
@@ -53,6 +57,9 @@ class MockData {
       ),
       CouncilModel(
         id: 'demo_laundry_public',
+        createdBy: DemoProfileCatalog.ownerLaundry.id,
+        createdByName: DemoProfileCatalog.ownerLaundry.displayName,
+        createdByAvatarEmoji: DemoProfileCatalog.ownerLaundry.avatarEmoji,
         title: 'مغسلة ملابس للتقبيل بكامل التجهيزات',
         description:
             'فرصة تقبيل لمغسلة ملابس قائمة وجاهزة للتشغيل في موقع تجاري نشط داخل حي سكني، تشمل المعدات والديكور ونظام الاستقبال.',
@@ -76,8 +83,13 @@ class MockData {
       ),
       CouncilModel(
         id: 'demo_council_funding_dammam',
+        isSeedContent: true,
+        createdBy: DemoProfileCatalog.ownerFundingDammam.id,
+        createdByName: DemoProfileCatalog.ownerFundingDammam.displayName,
+        createdByAvatarEmoji: DemoProfileCatalog.ownerFundingDammam.avatarEmoji,
         title: 'أبحث عن فرصة تشغيلية بمبلغ 180 ألف في الدمام',
-        description: 'مستثمر متفرغ جزئيًا يبحث عن مشروع خدمي قائم بأرقام واضحة وفريق تشغيل مستقر.',
+        description:
+            'مستثمر متفرغ جزئيًا يبحث عن مشروع خدمي قائم بأرقام واضحة وفريق تشغيل مستقر.',
         category: 'تجارب السوق',
         status: CouncilStatus.endingSoon,
         participants: 1025,
@@ -91,8 +103,13 @@ class MockData {
       ),
       CouncilModel(
         id: 'demo_council_market_makkah',
+        isSeedContent: true,
+        createdBy: DemoProfileCatalog.ownerMarketMakkah.id,
+        createdByName: DemoProfileCatalog.ownerMarketMakkah.displayName,
+        createdByAvatarEmoji: DemoProfileCatalog.ownerMarketMakkah.avatarEmoji,
         title: 'تجربة تشغيل متجر قهوة مختصة داخل مجمع تجاري',
-        description: 'أشارك أرقام التشغيل والدروس المستفادة من الإيجار والعمالة والمواسم بعد عام كامل من العمل.',
+        description:
+            'أشارك أرقام التشغيل والدروس المستفادة من الإيجار والعمالة والمواسم بعد عام كامل من العمل.',
         category: 'تجارب السوق',
         status: CouncilStatus.active,
         participants: 532,
@@ -106,8 +123,13 @@ class MockData {
       ),
       CouncilModel(
         id: 'c5',
+        isSeedContent: true,
+        createdBy: DemoProfileCatalog.ownerWarehouse.id,
+        createdByName: DemoProfileCatalog.ownerWarehouse.displayName,
+        createdByAvatarEmoji: DemoProfileCatalog.ownerWarehouse.avatarEmoji,
         title: 'مطلوب مستودع جاهز لمتجر إلكتروني في الرياض',
-        description: 'نبحث عن مساحة تشغيل مرنة تشمل التجهيز والتغليف وقربًا من شركات الشحن بعقد سنوي.',
+        description:
+            'نبحث عن مساحة تشغيل مرنة تشمل التجهيز والتغليف وقربًا من شركات الشحن بعقد سنوي.',
         category: 'فرص مطلوبة',
         status: CouncilStatus.active,
         participants: 842,
@@ -121,8 +143,13 @@ class MockData {
       ),
       CouncilModel(
         id: 'c6',
+        isSeedContent: true,
+        createdBy: DemoProfileCatalog.ownerBakery.id,
+        createdByName: DemoProfileCatalog.ownerBakery.displayName,
+        createdByAvatarEmoji: DemoProfileCatalog.ownerBakery.avatarEmoji,
         title: 'فرصة امتياز لمخبز متخصص بنموذج تشغيل جاهز',
-        description: 'علامة محلية توفر التدريب والوصفات وسلسلة التوريد وتبحث عن مشغل لفرع جديد.',
+        description:
+            'علامة محلية توفر التدريب والوصفات وسلسلة التوريد وتبحث عن مشغل لفرع جديد.',
         category: 'تجارب السوق',
         status: CouncilStatus.active,
         participants: 623,
@@ -136,8 +163,13 @@ class MockData {
       ),
       CouncilModel(
         id: 'c7',
+        isSeedContent: true,
+        createdBy: DemoProfileCatalog.ownerTechPartner.id,
+        createdByName: DemoProfileCatalog.ownerTechPartner.displayName,
+        createdByAvatarEmoji: DemoProfileCatalog.ownerTechPartner.avatarEmoji,
         title: 'مطلوب شريك تقني لمنصة خدمات منشآت صغيرة',
-        description: 'المنتج الأولي جاهز وهناك عملاء تجريبيون، والمطلوب قيادة التقنية مقابل حصة واضحة.',
+        description:
+            'المنتج الأولي جاهز وهناك عملاء تجريبيون، والمطلوب قيادة التقنية مقابل حصة واضحة.',
         category: 'فرص شراكة',
         status: CouncilStatus.active,
         participants: 774,
@@ -151,8 +183,13 @@ class MockData {
       ),
       CouncilModel(
         id: 'demo_result_coffee_riyadh',
+        isSeedContent: true,
+        createdBy: DemoProfileCatalog.ownerCoffeeResult.id,
+        createdByName: DemoProfileCatalog.ownerCoffeeResult.displayName,
+        createdByAvatarEmoji: DemoProfileCatalog.ownerCoffeeResult.avatarEmoji,
         title: 'توسعة مشروع عربة قهوة إلى فرع ثابت',
-        description: 'نتائج تقييم خطة الانتقال من عربة ناجحة إلى فرع ثابت بتكاليف تشغيل محسوبة.',
+        description:
+            'نتائج تقييم خطة الانتقال من عربة ناجحة إلى فرع ثابت بتكاليف تشغيل محسوبة.',
         category: 'تجارب السوق',
         status: CouncilStatus.closed,
         participants: 910,
@@ -166,8 +203,14 @@ class MockData {
       ),
       CouncilModel(
         id: 'demo_result_home_services',
+        isSeedContent: true,
+        createdBy: DemoProfileCatalog.ownerServicesResult.id,
+        createdByName: DemoProfileCatalog.ownerServicesResult.displayName,
+        createdByAvatarEmoji:
+            DemoProfileCatalog.ownerServicesResult.avatarEmoji,
         title: 'طلب مستثمر لتطبيق حجوزات خدمات منزلية',
-        description: 'نتائج آراء أصحاب الخبرة حول النموذج المالي وتكلفة اكتساب العميل والتوسع.',
+        description:
+            'نتائج آراء أصحاب الخبرة حول النموذج المالي وتكلفة اكتساب العميل والتوسع.',
         category: 'تجارب السوق',
         status: CouncilStatus.closed,
         participants: 1160,
@@ -181,8 +224,14 @@ class MockData {
       ),
       CouncilModel(
         id: 'demo_result_showroom',
+        isSeedContent: true,
+        createdBy: DemoProfileCatalog.ownerShowroomResult.id,
+        createdByName: DemoProfileCatalog.ownerShowroomResult.displayName,
+        createdByAvatarEmoji:
+            DemoProfileCatalog.ownerShowroomResult.avatarEmoji,
         title: 'تجربة حملة عروض لمعرض سيارات متعدد العلامات',
-        description: 'ملخص أداء حملة رقمية ركزت على عروض التمويل والضمان وخدمة ما بعد البيع.',
+        description:
+            'ملخص أداء حملة رقمية ركزت على عروض التمويل والضمان وخدمة ما بعد البيع.',
         category: 'تجارب السوق',
         status: CouncilStatus.closed,
         participants: 770,
@@ -200,130 +249,118 @@ class MockData {
   static List<CommentModel> sampleComments() => [
         CommentModel(
           id: 'cm1',
-          authorName: 'صاحب رأي',
-          avatarEmoji: 'business:person_growth',
-          text: 'قبل الدخول أطلب القوائم الشهرية وعقود الإيجار والعمالة، فالأرقام الموثقة أهم من الانطباع.',
+          authorId: DemoProfileCatalog.commentOwnerReview.id,
+          authorName: DemoProfileCatalog.commentOwnerReview.displayName,
+          avatarEmoji: DemoProfileCatalog.commentOwnerReview.avatarEmoji,
+          text:
+              'قبل الدخول أطلب القوائم الشهرية وعقود الإيجار والعمالة، فالأرقام الموثقة أهم من الانطباع.',
           minutesAgo: 15,
           convincingCount: 45,
           repliesCount: 3,
           isBest: false,
+          isSeedContent: true,
         ),
         CommentModel(
           id: 'cm2',
-          authorName: 'المستشار',
-          avatarEmoji: 'business:briefcase',
-          text: 'الفرصة جيدة عندما يكون دور كل شريك ونسبة التمويل وآلية الخروج مكتوبة بوضوح.',
+          authorId: DemoProfileCatalog.commentAdvisor.id,
+          authorName: DemoProfileCatalog.commentAdvisor.displayName,
+          avatarEmoji: DemoProfileCatalog.commentAdvisor.avatarEmoji,
+          text:
+              'الفرصة جيدة عندما يكون دور كل شريك ونسبة التمويل وآلية الخروج مكتوبة بوضوح.',
           minutesAgo: 52,
           convincingCount: 28,
           repliesCount: 2,
+          isSeedContent: true,
         ),
         CommentModel(
           id: 'cm3',
-          authorName: 'خبير السوق',
-          avatarEmoji: 'business:experience',
-          text: 'أنصح بمعاينة التشغيل في يوم عادي ومراجعة الموردين قبل توقيع أي اتفاق.',
+          authorId: DemoProfileCatalog.commentMarketExpert.id,
+          authorName: DemoProfileCatalog.commentMarketExpert.displayName,
+          avatarEmoji: DemoProfileCatalog.commentMarketExpert.avatarEmoji,
+          text:
+              'أنصح بمعاينة التشغيل في يوم عادي ومراجعة الموردين قبل توقيع أي اتفاق.',
           minutesAgo: 140,
           convincingCount: 18,
           repliesCount: 1,
+          isSeedContent: true,
         ),
         CommentModel(
           id: 'cm1_r1',
           parentId: 'cm1',
-          authorName: 'مشغل خدمات',
-          avatarEmoji: 'business:briefcase',
-          text: 'صحيح، وأضيف أن مقارنة أرقام نهاية الأسبوع مع أيام العمل تكشف هل الطلب ثابت أو موسمي فقط.',
+          authorId: DemoProfileCatalog.replyServiceOperator.id,
+          authorName: DemoProfileCatalog.replyServiceOperator.displayName,
+          avatarEmoji: DemoProfileCatalog.replyServiceOperator.avatarEmoji,
+          text:
+              'صحيح، وأضيف أن مقارنة أرقام نهاية الأسبوع مع أيام العمل تكشف هل الطلب ثابت أو موسمي فقط.',
           minutesAgo: 12,
           convincingCount: 7,
           repliesCount: 0,
+          isSeedContent: true,
         ),
         CommentModel(
           id: 'cm1_r2',
           parentId: 'cm1',
-          authorName: 'محاسب مشاريع',
-          avatarEmoji: 'business:verified',
-          text: 'وجود فواتير منتظمة أفضل من متوسط شفهي؛ لأن المصاريف الصغيرة تتجمع وتغير صافي الربح.',
+          authorId: DemoProfileCatalog.replyAccountant.id,
+          authorName: DemoProfileCatalog.replyAccountant.displayName,
+          avatarEmoji: DemoProfileCatalog.replyAccountant.avatarEmoji,
+          text:
+              'وجود فواتير منتظمة أفضل من متوسط شفهي؛ لأن المصاريف الصغيرة تتجمع وتغير صافي الربح.',
           minutesAgo: 10,
           convincingCount: 5,
           repliesCount: 0,
+          isSeedContent: true,
         ),
         CommentModel(
           id: 'cm1_r3',
           parentId: 'cm1',
-          authorName: 'باحث عن فرصة',
-          avatarEmoji: 'business:search',
-          text: 'هل تنصحون بطلب كشف مبيعات من نظام نقاط البيع أو يكفي كشف الحساب البنكي؟',
+          authorId: DemoProfileCatalog.replyOpportunitySeeker.id,
+          authorName: DemoProfileCatalog.replyOpportunitySeeker.displayName,
+          avatarEmoji: DemoProfileCatalog.replyOpportunitySeeker.avatarEmoji,
+          text:
+              'هل تنصحون بطلب كشف مبيعات من نظام نقاط البيع أو يكفي كشف الحساب البنكي؟',
           minutesAgo: 8,
           convincingCount: 3,
           repliesCount: 0,
+          isSeedContent: true,
         ),
         CommentModel(
           id: 'cm2_r1',
           parentId: 'cm2',
-          authorName: 'مستثمر خدمات',
-          avatarEmoji: 'business:growth',
-          text: 'الاتفاق المكتوب مهم خصوصًا في إدارة العمالة والمشتريات، لأنها أكثر نقاط الخلاف بعد التشغيل.',
+          authorId: DemoProfileCatalog.replyServicesInvestor.id,
+          authorName: DemoProfileCatalog.replyServicesInvestor.displayName,
+          avatarEmoji: DemoProfileCatalog.replyServicesInvestor.avatarEmoji,
+          text:
+              'الاتفاق المكتوب مهم خصوصًا في إدارة العمالة والمشتريات، لأنها أكثر نقاط الخلاف بعد التشغيل.',
           minutesAgo: 38,
           convincingCount: 6,
           repliesCount: 0,
+          isSeedContent: true,
         ),
         CommentModel(
           id: 'cm2_r2',
           parentId: 'cm2',
-          authorName: 'صاحب نشاط سابق',
-          avatarEmoji: 'business:transfer',
-          text: 'يفضل أيضًا تحديد من يتحمل الصيانة الطارئة قبل توزيع الأرباح حتى لا تتعطل الشراكة.',
+          authorId: DemoProfileCatalog.replyPreviousOwner.id,
+          authorName: DemoProfileCatalog.replyPreviousOwner.displayName,
+          avatarEmoji: DemoProfileCatalog.replyPreviousOwner.avatarEmoji,
+          text:
+              'يفضل أيضًا تحديد من يتحمل الصيانة الطارئة قبل توزيع الأرباح حتى لا تتعطل الشراكة.',
           minutesAgo: 32,
           convincingCount: 4,
           repliesCount: 0,
+          isSeedContent: true,
         ),
         CommentModel(
           id: 'cm3_r1',
           parentId: 'cm3',
-          authorName: 'خبير تشغيل',
-          avatarEmoji: 'business:storefront',
-          text: 'زيارة وقت الذروة تكشف ضغط الفريق وجودة الخدمة أكثر من أي تقرير تسويقي.',
+          authorId: DemoProfileCatalog.replyOperationsExpert.id,
+          authorName: DemoProfileCatalog.replyOperationsExpert.displayName,
+          avatarEmoji: DemoProfileCatalog.replyOperationsExpert.avatarEmoji,
+          text:
+              'زيارة وقت الذروة تكشف ضغط الفريق وجودة الخدمة أكثر من أي تقرير تسويقي.',
           minutesAgo: 118,
           convincingCount: 5,
           repliesCount: 0,
+          isSeedContent: true,
         ),
       ];
-
-  static List<NotificationModel> notifications = const [
-    NotificationModel(
-      id: 'n1',
-      title: 'رد جديد على عرضك',
-      message: 'وصلك رد على تعليقك في فرصة: شراكة لتشغيل مقهى مختص في حي تجاري.',
-      time: 'منذ 5 دقائق',
-      icon: Icons.chat_bubble_rounded,
-      type: 'reply',
-    ),
-    NotificationModel(
-      id: 'n2',
-      title: 'فرصة أعمال مميزة بانتظار رأيك',
-      message: 'مطلوب شريك تشغيلي لمتجر إلكتروني متخصص في المنتجات المحلية. شارك رأيك الآن.',
-      time: 'منذ ساعة',
-      icon: Icons.add_circle_rounded,
-      type: 'النقاشات',
-    ),
-    NotificationModel(
-      id: 'n3',
-      title: 'نتائج فرصتك جاهزة',
-      message: 'انتهى الرأي السريع في "توسعة مشروع عربة قهوة إلى فرع ثابت". يمكنك الآن مراجعة المؤشرات ومتابعة التعليقات.',
-      time: 'منذ 12 دقيقة',
-      icon: Icons.insights_rounded,
-      type: 'result_ready',
-      targetRoute: '/result/demo_result_coffee_riyadh',
-      councilId: 'demo_result_coffee_riyadh',
-    ),
-    NotificationModel(
-      id: 'n4',
-      title: 'نتائج فرصة شاركت فيها جاهزة',
-      message: 'انتهى الرأي السريع في "طلب مستثمر لتطبيق حجوزات خدمات منزلية". رأيك كان: أحتاج تفاصيل مالية. شاهد النتائج الآن.',
-      time: 'منذ 25 دقيقة',
-      icon: Icons.insights_rounded,
-      type: 'result_ready',
-      targetRoute: '/result/demo_result_home_services',
-      councilId: 'demo_result_home_services',
-    ),
-  ];
 }

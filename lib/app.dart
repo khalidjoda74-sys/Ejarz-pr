@@ -11,7 +11,10 @@ import 'core/theme/app_theme.dart';
 import 'features/auth/nickname_screen.dart';
 import 'features/councils/council_details_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
+import 'features/profile/public_profile_screen.dart';
 import 'features/results/result_details_screen.dart';
+import 'data/mock/demo_profile_catalog.dart';
+import 'data/models/public_profile_model.dart';
 import 'navigation/app_routes.dart';
 import 'navigation/main_shell.dart';
 
@@ -77,6 +80,32 @@ class MajalisnaApp extends StatelessWidget {
           if (parts.length == 2 && parts.first == 'result') {
             return AppPageRoute(
               builder: (_) => ResultDetailsScreen(councilId: parts.last),
+              settings: settings,
+            );
+          }
+
+          if (parts.length == 3 && parts.first == 'profile') {
+            final profileId = Uri.decodeComponent(parts.last);
+            final routeTarget = settings.arguments is PublicProfileTarget
+                ? settings.arguments! as PublicProfileTarget
+                : null;
+            final isDemo = parts[1] == 'demo';
+            final target = routeTarget ??
+                (isDemo
+                    ? PublicProfileTarget.demo(
+                        seed: DemoProfileCatalog.byId(profileId) ??
+                            PublicProfileModel.seed(
+                              uid: '',
+                              id: profileId,
+                              displayName: 'فريق فرصة برو',
+                              username: '@forsa_pro_demo',
+                              avatarEmoji: 'business:verified',
+                              demo: true,
+                            ),
+                      )
+                    : PublicProfileTarget.member(uid: profileId));
+            return AppPageRoute(
+              builder: (_) => PublicProfileScreen(target: target),
               settings: settings,
             );
           }

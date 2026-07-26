@@ -5,6 +5,7 @@ class FirestoreCollections {
   const FirestoreCollections._();
 
   static const users = 'users';
+  static const publicProfiles = 'publicProfiles';
   static const nicknames = 'nicknames';
   static const admins = 'admins';
   static const roles = 'roles';
@@ -42,6 +43,9 @@ class FirestoreService {
 
   CollectionReference<Map<String, dynamic>> get users =>
       db.collection(FirestoreCollections.users);
+
+  CollectionReference<Map<String, dynamic>> get publicProfiles =>
+      db.collection(FirestoreCollections.publicProfiles);
 
   CollectionReference<Map<String, dynamic>> get nicknames =>
       db.collection(FirestoreCollections.nicknames);
@@ -96,6 +100,10 @@ class FirestoreService {
 
   DocumentReference<Map<String, dynamic>> user(String uid) => users.doc(uid);
 
+  DocumentReference<Map<String, dynamic>> publicProfile(String uid) {
+    return publicProfiles.doc(uid);
+  }
+
   DocumentReference<Map<String, dynamic>> nickname(String nicknameKey) {
     return nicknames.doc(nicknameKey);
   }
@@ -119,7 +127,8 @@ class FirestoreService {
   CollectionReference<Map<String, dynamic>> conversationMessages(
     String conversationId,
   ) {
-    return conversation(conversationId).collection(FirestoreCollections.messages);
+    return conversation(conversationId)
+        .collection(FirestoreCollections.messages);
   }
 
   CollectionReference<Map<String, dynamic>> councilVotes(String councilId) {
@@ -153,6 +162,7 @@ class FirestoreService {
   ) {
     return storage.ref('conversations/$conversationId/images/$uid/$fileName');
   }
+
   String newCouncilId() => councils.doc().id;
   String newReportId() => reports.doc().id;
 

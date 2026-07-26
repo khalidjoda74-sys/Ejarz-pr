@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/auth/auth_controller.dart';
 import '../../core/auth/auth_guard.dart';
+import '../../core/navigation/profile_navigation.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -45,7 +47,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _featuredPage = 0;
   bool _tabActive = true;
   AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
-  late final Stream<int> _unreadTotalStream;
+  late Stream<int> _unreadTotalStream;
+  String _unreadStreamUid = '';
 
   @override
   void initState() {
@@ -53,7 +56,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _lifecycleState =
         WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
-    _unreadTotalStream = MessagingRepository.instance.watchUnreadTotal();
+    _syncUnreadTotalStream();
+    AuthController.instance.addListener(_handleAuthChanged);
+  }
+
+  void _handleAuthChanged() {
+    final nextUid = MessagingRepository.instance.viewerUid;
+    if (nextUid == _unreadStreamUid || !mounted) return;
+    setState(_syncUnreadTotalStream);
+  }
+
+  void _syncUnreadTotalStream() {
+    final repository = MessagingRepository.instance;
+    _unreadStreamUid = repository.viewerUid;
+    _unreadTotalStream = repository.watchUnreadTotal();
   }
 
   @override
@@ -99,6 +115,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    AuthController.instance.removeListener(_handleAuthChanged);
     WidgetsBinding.instance.removeObserver(this);
     _featuredCarouselTimer?.cancel();
     _featuredPageController.dispose();
@@ -297,6 +314,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             council: council,
                             compact: true,
                             onTap: () => widget.onOpenCouncil(council.id),
+                            onOwnerTap: () =>
+                                ProfileNavigation.openCouncilOwner(
+                              context,
+                              council,
+                            ),
                           ),
                         ),
                       ],
@@ -395,6 +417,8 @@ class _HomeFeaturedCarousel extends StatelessWidget {
                     council: council,
                     onVote: onVote,
                     onOpen: onOpen,
+                    onOwnerTap: () =>
+                        ProfileNavigation.openCouncilOwner(context, council),
                     showVotingActions: showVotingActions,
                   ),
                   const _HomeImageBanner(

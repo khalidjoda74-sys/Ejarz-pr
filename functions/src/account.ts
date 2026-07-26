@@ -221,6 +221,7 @@ export const deleteMyAccount = onCall(
 
     const writer = db.bulkWriter();
     if (nicknameKey) writer.delete(db.collection("nicknames").doc(nicknameKey));
+    writer.delete(db.collection("publicProfiles").doc(uid));
     writer.delete(userRef);
     await writer.close();
 

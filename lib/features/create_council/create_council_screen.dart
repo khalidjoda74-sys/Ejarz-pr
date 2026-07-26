@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -11,6 +13,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/custom_app_bar.dart';
 import '../../core/widgets/premium_background.dart';
 import '../../data/repositories/council_repository.dart';
+import '../../data/repositories/firebase_council_repository.dart';
 
 const _saudiCities = <String>[
   'الرياض',
@@ -90,6 +93,7 @@ class _CreateCouncilScreenState extends State<CreateCouncilScreen> {
   bool _creating = false;
   static const int _titleMaxLength = 33;
   static const int _detailsMaxLength = 3000;
+  static const int _maxImageBytes = 5 * 1024 * 1024;
 
   @override
   void dispose() {
@@ -105,176 +109,191 @@ class _CreateCouncilScreenState extends State<CreateCouncilScreen> {
     final titleHint = _titleHintForCategory(category);
     final detailsHint = _detailsHintForCategory(category);
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      resizeToAvoidBottomInset: true,
-      body: PremiumBackground(
-        showPattern: false,
-        child: Column(
-          children: [
-            CustomGreenHeader(
-              title: 'إضافة فرصة',
-              showBack: true,
-              onBack: widget.onBack,
-            ),
-            Expanded(
-              child: ListView(
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: EdgeInsets.fromLTRB(
-                  sizes.horizontalPadding,
-                  12,
-                  sizes.horizontalPadding,
-                  18 + MediaQuery.viewPaddingOf(context).bottom,
+    return PopScope(
+      canPop: !_creating,
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        resizeToAvoidBottomInset: true,
+        body: AbsorbPointer(
+          absorbing: _creating,
+          child: PremiumBackground(
+            showPattern: false,
+            child: Column(
+              children: [
+                CustomGreenHeader(
+                  title: 'إضافة فرصة',
+                  showBack: true,
+                  onBack: widget.onBack,
                 ),
-                children: [
-                  _FormSection(
+                Expanded(
+                  child: ListView(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: EdgeInsets.fromLTRB(
+                      sizes.horizontalPadding,
+                      12,
+                      sizes.horizontalPadding,
+                      18 + MediaQuery.viewPaddingOf(context).bottom,
+                    ),
                     children: [
-                      const _FieldLabel('اختر التصنيف المناسب'),
-                      const SizedBox(height: 6),
-                      _CategorySelector(
-                        items: categories,
-                        selected: category,
-                        onSelected: (value) => setState(() {
-                          category = value;
-                          _categoryErrorMessage = null;
-                        }),
-                      ),
-                      if (_categoryErrorMessage != null) ...[
-                        const SizedBox(height: 8),
-                        _FieldError(message: _categoryErrorMessage!),
-                      ],
-                      const SizedBox(height: 11),
-                      const _FieldLabel('عنوان الفرصة'),
-                      const SizedBox(height: 6),
-                      _CompactTextField(
-                        controller: titleController,
-                        hintText: titleHint,
-                        maxLength: _titleMaxLength,
-                        onChanged: (_) {
-                          if (_titleErrorMessage != null) {
-                            setState(() => _titleErrorMessage = null);
-                          }
-                        },
-                      ),
-                      if (_titleErrorMessage != null) ...[
-                        const SizedBox(height: 8),
-                        _FieldError(message: _titleErrorMessage!),
-                      ],
-                      const SizedBox(height: 11),
-                      const _FieldLabel('تفاصيل الفرصة'),
-                      const SizedBox(height: 6),
-                      _CompactTextField(
-                        controller: descriptionController,
-                        hintText: detailsHint,
-                        height: 118,
-                        maxLines: 5,
-                        maxLength: _detailsMaxLength,
-                        onChanged: (_) {
-                          if (_detailsErrorMessage != null) {
-                            setState(() => _detailsErrorMessage = null);
-                          }
-                        },
-                      ),
-                      if (_detailsErrorMessage != null) ...[
-                        const SizedBox(height: 8),
-                        _FieldError(message: _detailsErrorMessage!),
-                      ],
-                      const SizedBox(height: 11),
-                      const _FieldLabel('المدينة'),
-                      const SizedBox(height: 6),
-                      _CityDropdown(
-                        value: city,
-                        onChanged: (value) => setState(() {
-                          city = value;
-                          _cityErrorMessage = null;
-                        }),
-                      ),
-                      if (_cityErrorMessage != null) ...[
-                        const SizedBox(height: 8),
-                        _FieldError(message: _cityErrorMessage!),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _FormSection(
-                    children: [
-                      Row(
+                      _FormSection(
                         children: [
-                          const _FieldLabel('صور الفرصة'),
-                          const Spacer(),
+                          const _FieldLabel('اختر التصنيف المناسب'),
+                          const SizedBox(height: 6),
+                          _CategorySelector(
+                            items: categories,
+                            selected: category,
+                            onSelected: (value) => setState(() {
+                              category = value;
+                              _categoryErrorMessage = null;
+                            }),
+                          ),
+                          if (_categoryErrorMessage != null) ...[
+                            const SizedBox(height: 8),
+                            _FieldError(message: _categoryErrorMessage!),
+                          ],
+                          const SizedBox(height: 11),
+                          const _FieldLabel('عنوان الفرصة'),
+                          const SizedBox(height: 6),
+                          _CompactTextField(
+                            controller: titleController,
+                            hintText: titleHint,
+                            maxLength: _titleMaxLength,
+                            onChanged: (_) {
+                              if (_titleErrorMessage != null) {
+                                setState(() => _titleErrorMessage = null);
+                              }
+                            },
+                          ),
+                          if (_titleErrorMessage != null) ...[
+                            const SizedBox(height: 8),
+                            _FieldError(message: _titleErrorMessage!),
+                          ],
+                          const SizedBox(height: 11),
+                          const _FieldLabel('تفاصيل الفرصة'),
+                          const SizedBox(height: 6),
+                          _CompactTextField(
+                            controller: descriptionController,
+                            hintText: detailsHint,
+                            height: 118,
+                            maxLines: 5,
+                            maxLength: _detailsMaxLength,
+                            onChanged: (_) {
+                              if (_detailsErrorMessage != null) {
+                                setState(() => _detailsErrorMessage = null);
+                              }
+                            },
+                          ),
+                          if (_detailsErrorMessage != null) ...[
+                            const SizedBox(height: 8),
+                            _FieldError(message: _detailsErrorMessage!),
+                          ],
+                          const SizedBox(height: 11),
+                          const _FieldLabel('المدينة'),
+                          const SizedBox(height: 6),
+                          _CityDropdown(
+                            value: city,
+                            onChanged: (value) => setState(() {
+                              city = value;
+                              _cityErrorMessage = null;
+                            }),
+                          ),
+                          if (_cityErrorMessage != null) ...[
+                            const SizedBox(height: 8),
+                            _FieldError(message: _cityErrorMessage!),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      _FormSection(
+                        children: [
+                          Row(
+                            children: [
+                              const _FieldLabel('صور الفرصة'),
+                              const Spacer(),
+                              Text(
+                                '${_selectedImages.length}/10',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.textGray,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
                           Text(
-                            '${_selectedImages.length}/10',
+                            'اختياري، أضف حتى 10 صور توضّح الفرصة.',
                             style: AppTextStyles.caption.copyWith(
                               color: AppColors.textGray,
                               fontSize: 11,
-                              fontWeight: FontWeight.w800,
                             ),
+                          ),
+                          const SizedBox(height: 9),
+                          _ImagePickerSection(
+                            images: _selectedImages,
+                            onAdd: _pickImages,
+                            onRemove: (index) => setState(() {
+                              _selectedImages.removeAt(index);
+                            }),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 5),
-                      Text(
-                        'اختياري، أضف حتى 10 صور توضّح الفرصة.',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.textGray,
-                          fontSize: 11,
-                        ),
+                      const SizedBox(height: 12),
+                      _FormSection(
+                        children: [
+                          _ToggleRow(
+                            title: 'السماح بالتعليقات',
+                            subtitle: allowComments
+                                ? 'يمكن للجميع التعليق'
+                                : 'رأي سريع بدون تعليقات',
+                            value: allowComments,
+                            onChanged: (value) => setState(() {
+                              allowComments = value;
+                            }),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 9),
-                      _ImagePickerSection(
-                        images: _selectedImages,
-                        onAdd: _pickImages,
-                        onRemove: (index) => setState(() {
-                          _selectedImages.removeAt(index);
-                        }),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: _creating ? null : _createCouncil,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryDarkGreen,
+                            foregroundColor: AppColors.cardWhite,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            textStyle:
+                                AppTextStyles.button.copyWith(fontSize: 14),
+                          ),
+                          child: _creating
+                              ? const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppColors.cardWhite,
+                                      ),
+                                    ),
+                                    SizedBox(width: 9),
+                                    Text('جاري نشر الفرصة...'),
+                                  ],
+                                )
+                              : const Text('إضافة الفرصة'),
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  _FormSection(
-                    children: [
-                      _ToggleRow(
-                        title: 'السماح بالتعليقات',
-                        subtitle: allowComments
-                            ? 'يمكن للجميع التعليق'
-                            : 'رأي سريع بدون تعليقات',
-                        value: allowComments,
-                        onChanged: (value) => setState(() {
-                          allowComments = value;
-                        }),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    height: 52,
-                    child: ElevatedButton(
-                      onPressed: _creating ? null : _createCouncil,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryDarkGreen,
-                        foregroundColor: AppColors.cardWhite,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        textStyle: AppTextStyles.button.copyWith(fontSize: 14),
-                      ),
-                      child: _creating
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppColors.cardWhite,
-                              ),
-                            )
-                          : const Text('إضافة الفرصة'),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -324,66 +343,133 @@ class _CreateCouncilScreenState extends State<CreateCouncilScreen> {
   }
 
   Future<void> _createCouncil() async {
+    if (_creating) return;
+
     final selectedCategory = category;
+    final selectedCity = city;
     if (!_validateRequiredFields(selectedCategory)) return;
 
-    await AuthGuard.requireAuth(context, () async {
-      setState(() => _creating = true);
-      try {
-        final council = await repo.createCouncil(
-          title: titleController.text,
-          description: descriptionController.text,
+    final title = titleController.text;
+    final description = descriptionController.text;
+    final commentsEnabled = allowComments;
+    final images = _selectedImages
+        .map(
+          (image) => CouncilImageUploadInput(
+            bytes: image.bytes,
+            name: image.file.name,
+            mimeType: image.file.mimeType,
+          ),
+        )
+        .toList(growable: false);
+    final invalidImageIndex = images.indexWhere(
+      (image) => image.bytes.isEmpty || image.bytes.length > _maxImageBytes,
+    );
+    if (invalidImageIndex >= 0) {
+      final imageNumber = invalidImageIndex + 1;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            images[invalidImageIndex].bytes.isEmpty
+                ? 'تعذر قراءة الصورة رقم $imageNumber. احذفها واخترها مرة أخرى.'
+                : 'حجم الصورة رقم $imageNumber أكبر من 5 ميجابايت. اختر صورة أصغر.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    dismissAppKeyboard();
+    setState(() => _creating = true);
+
+    try {
+      // Give Flutter one frame to paint the disabled button and progress state
+      // before any account or network work begins.
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+
+      CouncilCreationResult? creation;
+      await AuthGuard.requireAuth(context, () async {
+        creation = await repo.createCouncil(
+          title: title,
+          description: description,
           category: selectedCategory!,
-          city: city!,
+          city: selectedCity!,
           isPrivate: false,
-          allowComments: allowComments,
-          imageFiles: _selectedImages
-              .map((image) => image.file)
-              .toList(growable: false),
+          allowComments: commentsEnabled,
+          images: images,
         );
-        if (!mounted) return;
-        titleController.clear();
-        descriptionController.clear();
-        setState(() {
-          category = null;
-          city = null;
-          _categoryErrorMessage = null;
-          _cityErrorMessage = null;
-          _titleErrorMessage = null;
-          _detailsErrorMessage = null;
-          _selectedImages.clear();
-        });
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: const Text(
-                  'تمت إضافة الفرصة بنجاح. يمكنك الآن متابعة التفاصيل والآراء.'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: AppColors.primaryDarkGreen,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 88),
+      });
+
+      final completedCreation = creation;
+      if (completedCreation == null) return;
+
+      final pendingImageUpload = completedCreation.pendingImageUpload;
+      if (pendingImageUpload != null) {
+        unawaited(_monitorPendingImageUpload(pendingImageUpload));
+      }
+      if (!mounted) return;
+
+      titleController.clear();
+      descriptionController.clear();
+      setState(() {
+        category = null;
+        city = null;
+        _categoryErrorMessage = null;
+        _cityErrorMessage = null;
+        _titleErrorMessage = null;
+        _detailsErrorMessage = null;
+        _selectedImages.clear();
+      });
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              pendingImageUpload == null
+                  ? 'تمت إضافة الفرصة بنجاح. يمكنك الآن متابعة التفاصيل والآراء.'
+                  : 'تمت إضافة الفرصة بنجاح، وجارٍ إكمال رفع الصور.',
             ),
-          );
-        widget.onCreated?.call(council.id);
-      } on ContentModerationException catch (error) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.message)),
-        );
-      } catch (_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تعذر إضافة الفرصة. تحقق من الاتصال وحاول مرة أخرى.'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.primaryDarkGreen,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 88),
           ),
         );
-      } finally {
-        if (mounted) setState(() => _creating = false);
-      }
-    });
+      widget.onCreated?.call(completedCreation.council.id);
+    } on ContentModerationException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر إضافة الفرصة. تحقق من الاتصال وحاول مرة أخرى.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
+  }
+
+  Future<void> _monitorPendingImageUpload(Future<void> upload) async {
+    try {
+      await upload;
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'تم نشر الفرصة، لكن تعذر رفع الصور. الفرصة ما زالت محفوظة ويمكن متابعتها.',
+            ),
+          ),
+        );
+    }
   }
 
   bool _validateRequiredFields(String? selectedCategory) {

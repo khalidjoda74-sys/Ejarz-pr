@@ -5,6 +5,7 @@ import '../../data/models/sponsorship_campaign.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../utils/opportunity_vote_copy.dart';
+import 'opportunity_owner_identity.dart';
 import 'optimized_network_image.dart';
 import 'result_bar.dart';
 import 'vote_button.dart';
@@ -17,6 +18,7 @@ class MajlisCard extends StatelessWidget {
     this.afterTodayCard,
     this.showVotingActions = true,
     this.onOpen,
+    this.onOwnerTap,
     this.sponsorship,
     this.onSponsorTap,
     this.onSponsorBookTap,
@@ -27,6 +29,7 @@ class MajlisCard extends StatelessWidget {
   final Widget? afterTodayCard;
   final bool showVotingActions;
   final VoidCallback? onOpen;
+  final VoidCallback? onOwnerTap;
   final SponsorshipCampaign? sponsorship;
   final VoidCallback? onSponsorTap;
   final VoidCallback? onSponsorBookTap;
@@ -40,6 +43,7 @@ class MajlisCard extends StatelessWidget {
         _TodayQuestionCard(
           council: council,
           onOpen: onOpen,
+          onOwnerTap: onOwnerTap,
           sponsorship: sponsorship,
           onSponsorTap: onSponsorTap,
           onSponsorBookTap: onSponsorBookTap,
@@ -122,6 +126,7 @@ class _TodayQuestionCard extends StatelessWidget {
   const _TodayQuestionCard({
     required this.council,
     this.onOpen,
+    this.onOwnerTap,
     this.sponsorship,
     this.onSponsorTap,
     this.onSponsorBookTap,
@@ -131,6 +136,7 @@ class _TodayQuestionCard extends StatelessWidget {
 
   final CouncilModel council;
   final VoidCallback? onOpen;
+  final VoidCallback? onOwnerTap;
   final SponsorshipCampaign? sponsorship;
   final VoidCallback? onSponsorTap;
   final VoidCallback? onSponsorBookTap;
@@ -230,8 +236,20 @@ class _TodayQuestionCard extends StatelessWidget {
                                     ),
                                   ),
                                 ),
+                                const SizedBox(height: 7),
+                                ConstrainedBox(
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 210),
+                                  child: OpportunityOwnerIdentity(
+                                    council: council,
+                                    onDark: true,
+                                    compact: true,
+                                    avatarSize: 25,
+                                    onTap: onOwnerTap,
+                                  ),
+                                ),
                                 if (hasSponsorSlot) ...[
-                                  const SizedBox(height: 9),
+                                  const SizedBox(height: 7),
                                   sponsorship != null
                                       ? _SponsorStrip(
                                           sponsorship: sponsorship!,

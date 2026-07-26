@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/navigation/app_focus.dart';
+import '../../core/navigation/profile_navigation.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -156,6 +157,10 @@ class _CouncilsScreenState extends State<CouncilsScreen> {
                           council: council,
                           compact: true,
                           onTap: () => widget.onOpenCouncil(council.id),
+                          onOwnerTap: () => ProfileNavigation.openCouncilOwner(
+                            context,
+                            council,
+                          ),
                         );
                       }
 

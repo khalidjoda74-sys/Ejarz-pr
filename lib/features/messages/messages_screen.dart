@@ -74,7 +74,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
               title: _showArchived ? 'الأرشيف' : 'الرسائل',
               subtitle: _showArchived
                   ? 'المحادثات المؤرشفة'
-                  : 'محادثاتك المرتبطة بالفرص',
+                  : 'محادثاتك المباشرة وحول الفرص',
               showBack: true,
               onBack: widget.onBack,
               trailing: HeaderRoundButton(
@@ -123,7 +123,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                       title: _showArchived ? 'الأرشيف فارغ' : 'لا توجد رسائل',
                       message: _showArchived
                           ? 'المحادثات التي تؤرشفها ستظهر هنا، ويمكنك فتحها وفك الأرشفة.'
-                          : 'عند التواصل حول فرصة ستظهر المحادثة هنا.',
+                          : 'ستظهر هنا المحادثات المباشرة والمحادثات المرتبطة بالفرص.',
                     );
                   }
 
@@ -270,27 +270,9 @@ class _ConversationTile extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.campaign_outlined,
-                          size: 13,
-                          color: AppColors.primaryDarkGreen,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            conversation.councilTitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTextStyles.caption.copyWith(
-                              fontSize: 11.5,
-                              color: AppColors.primaryDarkGreen,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ],
+                    _ConversationContextBadge(
+                      contextType: conversation.contextType,
+                      opportunityTitle: conversation.councilTitle,
                     ),
                     const SizedBox(height: 4),
                     Row(
@@ -335,6 +317,62 @@ class _ConversationTile extends StatelessWidget {
     if (difference.inHours < 24) return 'قبل ${difference.inHours} س';
     if (difference.inDays == 1) return 'أمس';
     return '${value.year}/${value.month.toString().padLeft(2, '0')}/${value.day.toString().padLeft(2, '0')}';
+  }
+}
+
+class _ConversationContextBadge extends StatelessWidget {
+  const _ConversationContextBadge({
+    required this.contextType,
+    required this.opportunityTitle,
+  });
+
+  final ConversationContextType contextType;
+  final String? opportunityTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final direct = contextType == ConversationContextType.direct;
+    final color = direct ? AppColors.primaryGreen : AppColors.primaryDarkGreen;
+    final label = direct
+        ? 'محادثة مباشرة'
+        : (opportunityTitle?.trim().isNotEmpty == true
+            ? opportunityTitle!.trim()
+            : 'محادثة حول فرصة');
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 260),
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.withValues(alpha: .16)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              direct ? Icons.person_outline_rounded : Icons.campaign_outlined,
+              size: 12.5,
+              color: color,
+            ),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.caption.copyWith(
+                  fontSize: 10.8,
+                  color: color,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

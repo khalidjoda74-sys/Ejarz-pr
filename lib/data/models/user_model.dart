@@ -10,6 +10,7 @@ class UserModel {
     required this.councils,
     required this.badge,
     this.nicknameLocked = false,
+    this.hasChosenPublicIdentity = true,
   });
 
   String name;
@@ -20,6 +21,7 @@ class UserModel {
   int councils;
   String badge;
   bool nicknameLocked;
+  bool hasChosenPublicIdentity;
 
   factory UserModel.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> snapshot,
@@ -29,17 +31,31 @@ class UserModel {
 
   factory UserModel.fromMap(Map<String, dynamic> data) {
     final stats = _mapValue(data['stats']);
+    final nickname = _stringValue(data['nickname']);
+    final nicknameKey = _stringValue(data['nicknameKey']);
+    final username = _stringValue(data['username']);
+    final displayName = _stringValue(
+      data['displayName'],
+      fallback: _stringValue(data['name']),
+    );
+    final explicitlyIncomplete = data['identityCompleted'] == false;
+    final hasChosenPublicIdentity = !explicitlyIncomplete &&
+        (nickname.isNotEmpty ||
+            nicknameKey.isNotEmpty ||
+            (!data.containsKey('identityCompleted') &&
+                username.isNotEmpty &&
+                displayName.isNotEmpty));
 
     return UserModel(
       name: _stringValue(
-        data['nickname'],
+        nickname,
         fallback: _stringValue(
-          data['displayName'],
+          displayName,
           fallback: _stringValue(data['name'], fallback: 'عضو Forsa Pro'),
         ),
       ),
       username: _stringValue(
-        data['username'],
+        username,
         fallback: '@forsa_pro_member',
       ),
       avatarEmoji: _stringValue(
@@ -66,6 +82,7 @@ class UserModel {
       ),
       badge: _stringValue(data['badge'], fallback: 'عضو نشط'),
       nicknameLocked: data['nicknameLocked'] == true,
+      hasChosenPublicIdentity: hasChosenPublicIdentity,
     );
   }
 

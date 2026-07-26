@@ -51,11 +51,9 @@ android {
         release {
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            // Never create a production artifact with the debug certificate.
+            // A missing key.properties now makes the release build fail.
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

@@ -45,6 +45,117 @@ service cloud.firestore {
       return /databases/$(database)/documents/councils/$(councilId);
     }
 
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function publicProfilePath(uid) {
+      return /databases/$(database)/documents/publicProfiles/$(uid);
+    }
+
+    function blockedUserPath(uid, blockedUid) {
+      return /databases/$(database)/documents/users/$(uid)/blockedUsers/$(blockedUid);
+    }
+
+    function isActiveUser(uid) {
+      return get(userPath(uid)).data.status == 'active';
+    }
+
+    function hasVisiblePublicProfile(uid) {
+      let profile = get(publicProfilePath(uid)).data;
+      return profile.isVisible == true
+        && (
+          !profile.keys().hasAny(['demo'])
+          || profile.demo != true
+        );
+    }
+
+    function usersAreNotBlocked(firstUid, secondUid) {
+      return !exists(blockedUserPath(firstUid, secondUid))
+        && !exists(blockedUserPath(secondUid, firstUid));
+    }
+
+    function directConversationId(firstUid, secondUid) {
+      return firstUid < secondUid
+        ? 'direct_' + firstUid + '_' + secondUid
+        : 'direct_' + secondUid + '_' + firstUid;
+    }
+
+    function optionalFieldKept(fieldName) {
+      return (
+          !resource.data.keys().hasAny([fieldName])
+          && !request.resource.data.keys().hasAny([fieldName])
+        )
+        || (
+          resource.data.keys().hasAny([fieldName])
+          && request.resource.data.keys().hasAny([fieldName])
+          && request.resource.data[fieldName] == resource.data[fieldName]
+        );
+    }
+
+    function validActiveConversationParticipant(data, uid) {
+      let user = get(userPath(uid)).data;
+      let snapshot = data.participantSnapshots[uid];
+      let profile = get(publicProfilePath(uid)).data;
+      return user.status == 'active'
+        && profile.isVisible == true
+        && profile.demo != true
+        && snapshot is map
+        && snapshot.keys().hasOnly([
+          'displayName',
+          'username',
+          'avatarEmoji',
+          'photoUrl'
+        ])
+        && snapshot.displayName is string
+        && snapshot.displayName.size() >= 2
+        && snapshot.displayName.size() <= 40
+        && snapshot.displayName == profile.displayName
+        && (
+          !snapshot.keys().hasAny(['username'])
+          || (
+            profile.keys().hasAny(['username'])
+            && snapshot.username == profile.username
+          )
+        )
+        && (
+          !snapshot.keys().hasAny(['avatarEmoji'])
+          || (
+            profile.keys().hasAny(['avatarEmoji'])
+            && snapshot.avatarEmoji == profile.avatarEmoji
+          )
+        )
+        && (
+          !snapshot.keys().hasAny(['photoUrl'])
+          || (
+            profile.keys().hasAny(['publicPhotoUrl'])
+            && snapshot.photoUrl == profile.publicPhotoUrl
+          )
+        );
+    }
+
+    function validCouncilOwnerPublicIdentity(data) {
+      let uid = request.auth.uid;
+      let profile = get(publicProfilePath(uid)).data;
+      return data.createdBy == uid
+        && data.ownerId == uid
+        && isActiveUser(uid)
+        && hasVisiblePublicProfile(uid)
+        && data.createdByName == profile.displayName
+        && data.ownerSnapshot is map
+        && data.ownerSnapshot.keys().hasOnly([
+          'displayName',
+          'photoUrl',
+          'avatarEmoji'
+        ])
+        && data.ownerSnapshot.displayName == profile.displayName
+        && (
+          data.ownerSnapshot.photoUrl == null
+          || data.ownerSnapshot.photoUrl == profile.publicPhotoUrl
+        )
+        && data.ownerSnapshot.avatarEmoji == profile.avatarEmoji;
+    }
+
     function isConversationParticipant(data) {
       return isSignedIn()
         && request.auth.uid in data.participantIds;
@@ -58,21 +169,145 @@ service cloud.firestore {
         );
     }
 
+    function isNonEditorialCouncil(data) {
+      return !data.keys().hasAny(['isSeedContent'])
+        || data.isSeedContent != true;
+    }
+
     function conversationCouncilIsActive() {
-      return exists(councilPath(request.resource.data.councilId))
-        && get(councilPath(request.resource.data.councilId)).data.status == 'active'
-        && get(councilPath(request.resource.data.councilId)).data.isSeedContent != true
+      let council = get(councilPath(request.resource.data.councilId)).data;
+      return council.status == 'active'
+        && isNonEditorialCouncil(council)
         && (
-          get(councilPath(request.resource.data.councilId)).data.createdBy
-            == request.resource.data.ownerId
-          || get(councilPath(request.resource.data.councilId)).data.ownerId
-            == request.resource.data.ownerId
+          council.createdBy == request.resource.data.ownerId
+          || council.ownerId == request.resource.data.ownerId
         );
     }
 
     function conversationNotBlocked(conversationId) {
-      return !get(conversationPath(conversationId)).data.keys().hasAny(['blockedBy'])
-        || get(conversationPath(conversationId)).data.blockedBy.size() == 0;
+      let data = get(conversationPath(conversationId)).data;
+      return data.participantIds is list
+        && data.participantIds.size() == 2
+        && isActiveUser(data.participantIds[0])
+        && isActiveUser(data.participantIds[1])
+        && usersAreNotBlocked(data.participantIds[0], data.participantIds[1])
+        && (
+          !data.keys().hasAny(['blockedBy'])
+          || data.blockedBy.size() == 0
+        );
+    }
+
+    function validConversationCreateCommon() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'contextType',
+          'initiatorId',
+          'targetId',
+          'councilId',
+          'councilTitle',
+          'ownerId',
+          'requesterId',
+          'participantIds',
+          'participantSnapshots',
+          'createdAt',
+          'updatedAt',
+          'lastMessageText',
+          'lastMessageAt',
+          'lastSenderId',
+          'unreadCounts',
+          'lastReadAt',
+          'status',
+          'blockedBy',
+          'archivedBy',
+          'deletedBy',
+          'reportCount'
+        ])
+        && data.participantIds is list
+        && data.participantIds.size() == 2
+        && data.participantIds[0] != data.participantIds[1]
+        && data.participantSnapshots is map
+        && data.createdAt == request.time
+        && data.updatedAt == request.time
+        && data.lastMessageText == ''
+        && data.lastMessageAt == null
+        && data.lastSenderId == null
+        && data.unreadCounts is map
+        && data.unreadCounts.keys().hasOnly(data.participantIds)
+        && data.unreadCounts[data.participantIds[0]] == 0
+        && data.unreadCounts[data.participantIds[1]] == 0
+        && data.lastReadAt is map
+        && data.lastReadAt.keys().size() == 0
+        && data.status == 'active'
+        && data.blockedBy is list
+        && data.blockedBy.size() == 0
+        && data.archivedBy is list
+        && data.archivedBy.size() == 0
+        && data.deletedBy is list
+        && data.deletedBy.size() == 0
+        && data.reportCount == 0;
+    }
+
+    function validOpportunityConversationCreate() {
+      let data = request.resource.data;
+      return (
+          !data.keys().hasAny(['contextType'])
+          || data.contextType == 'opportunity'
+        )
+        && data.ownerId is string
+        && data.requesterId is string
+        && data.requesterId == request.auth.uid
+        && data.ownerId != data.requesterId
+        && data.participantIds.hasAll([data.ownerId, data.requesterId])
+        && data.councilId is string
+        && data.councilTitle is string
+        && (
+          !data.keys().hasAny(['initiatorId'])
+          || data.initiatorId == data.requesterId
+        )
+        && (
+          !data.keys().hasAny(['targetId'])
+          || data.targetId == data.ownerId
+        )
+        && usersAreNotBlocked(data.ownerId, data.requesterId)
+        && data.participantSnapshots.keys()
+          .hasOnly([data.ownerId, data.requesterId])
+        && validActiveConversationParticipant(data, data.ownerId)
+        && validActiveConversationParticipant(data, data.requesterId)
+        && conversationCouncilIsActive();
+    }
+
+    function validDirectConversationCreate(conversationId) {
+      let data = request.resource.data;
+      return data.contextType == 'direct'
+        && data.initiatorId is string
+        && data.targetId is string
+        && data.initiatorId == request.auth.uid
+        && data.targetId != data.initiatorId
+        && !data.keys().hasAny([
+          'councilId',
+          'councilTitle',
+          'ownerId',
+          'requesterId'
+        ])
+        && data.participantIds.hasAll([data.initiatorId, data.targetId])
+        && conversationId
+          == directConversationId(data.initiatorId, data.targetId)
+        && usersAreNotBlocked(data.initiatorId, data.targetId)
+        && data.participantSnapshots.keys()
+          .hasOnly([data.initiatorId, data.targetId])
+        && validActiveConversationParticipant(data, data.initiatorId)
+        && validActiveConversationParticipant(data, data.targetId);
+    }
+
+    function validConversationContextCreate(conversationId) {
+      let data = request.resource.data;
+      return data.keys().hasAny(['contextType'])
+        ? (
+          data.contextType == 'direct'
+            ? validDirectConversationCreate(conversationId)
+            : validOpportunityConversationCreate()
+        )
+        : validOpportunityConversationCreate();
     }
 
     function validConversationMessage() {
@@ -420,6 +655,13 @@ service cloud.firestore {
       }
     }
 
+    match /publicProfiles/{uid} {
+      allow read: if resource.data.isVisible == true
+        || isOwner(uid)
+        || isActiveAdmin();
+      allow create, update, delete: if isActiveAdmin();
+    }
+
     match /nicknames/{nicknameKey} {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
@@ -503,8 +745,7 @@ service cloud.firestore {
       allow create: if isActiveAdmin()
         || (
           isSignedIn()
-          && (request.resource.data.createdBy == request.auth.uid
-            || request.resource.data.ownerId == request.auth.uid)
+          && validCouncilOwnerPublicIdentity(request.resource.data)
           && request.resource.data.title is string
           && request.resource.data.title.size() >= 2
           && request.resource.data.title.size() <= 140
@@ -547,58 +788,26 @@ service cloud.firestore {
     match /conversations/{conversationId} {
       allow read: if isActiveAdmin() || isConversationParticipant(resource.data);
       allow create: if isRealSignedIn()
-        && request.resource.data.keys().hasOnly([
-          'councilId',
-          'councilTitle',
-          'ownerId',
-          'requesterId',
-          'participantIds',
-          'participantSnapshots',
-          'createdAt',
-          'updatedAt',
-          'lastMessageText',
-          'lastMessageAt',
-          'lastSenderId',
-          'unreadCounts',
-          'lastReadAt',
-          'status',
-          'blockedBy',
-          'archivedBy',
-          'deletedBy',
-          'reportCount'
-        ])
-        && request.resource.data.requesterId == request.auth.uid
-        && request.resource.data.participantIds is list
-        && request.resource.data.participantIds.size() == 2
-        && request.resource.data.participantIds.hasAny([request.auth.uid])
-        && request.resource.data.participantIds.hasAny([request.resource.data.ownerId])
-        && request.resource.data.participantIds.hasAny([request.resource.data.requesterId])
-        && request.resource.data.ownerId != request.resource.data.requesterId
-        && request.resource.data.councilId is string
-        && request.resource.data.councilTitle is string
-        && request.resource.data.status == 'active'
-        && request.resource.data.blockedBy is list
-        && request.resource.data.archivedBy is list
-        && request.resource.data.deletedBy is list
-        && request.resource.data.participantSnapshots is map
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.lastMessageText == ''
-        && request.resource.data.lastMessageAt == null
-        && request.resource.data.lastSenderId == null
-        && request.resource.data.unreadCounts is map
-        && request.resource.data.unreadCounts[request.resource.data.ownerId] == 0
-        && request.resource.data.unreadCounts[request.resource.data.requesterId] == 0
-        && request.resource.data.lastReadAt is map
-        && request.resource.data.reportCount == 0
-        && conversationCouncilIsActive();
+        && validConversationCreateCommon()
+        && validConversationContextCreate(conversationId);
       allow update: if isConversationParticipant(resource.data)
         && request.resource.data.participantIds == resource.data.participantIds
-        && request.resource.data.ownerId == resource.data.ownerId
-        && request.resource.data.requesterId == resource.data.requesterId
-        && request.resource.data.councilId == resource.data.councilId
-        && request.resource.data.councilTitle == resource.data.councilTitle
+        && optionalFieldKept('contextType')
+        && optionalFieldKept('initiatorId')
+        && optionalFieldKept('targetId')
+        && optionalFieldKept('ownerId')
+        && optionalFieldKept('requesterId')
+        && optionalFieldKept('councilId')
+        && optionalFieldKept('councilTitle')
         && request.resource.data.status == resource.data.status
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'lastMessageText',
+            'lastMessageAt',
+            'lastSenderId'
+          ])
+          || conversationNotBlocked(conversationId)
+        )
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'lastMessageText',
           'lastMessageAt',

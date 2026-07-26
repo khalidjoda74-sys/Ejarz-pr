@@ -126,6 +126,58 @@ void main() {
     expect(activityChanges.last, isTrue);
   });
 
+  testWidgets(
+      'system back returns to home then asks before closing the application',
+      (tester) async {
+    var exitCalls = 0;
+    final builders = List<WidgetBuilder>.generate(
+      5,
+      (index) => (_) => _ProbeTab(
+            index: index,
+            onInit: () {},
+            onBuild: () {},
+          ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: [appPageRouteObserver],
+        home: MainShell(
+          debugTabBuilders: builders,
+          debugExitApplication: () async => exitCalls++,
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('bottom_nav_1')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('probe_increment_1')), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('probe_increment_0')), findsOneWidget);
+    expect(find.text('إغلاق التطبيق؟'), findsNothing);
+    expect(exitCalls, 0);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('إغلاق التطبيق؟'), findsOneWidget);
+    expect(find.text('إغلاق التطبيق'), findsOneWidget);
+    expect(find.text('إلغاء'), findsOneWidget);
+
+    await tester.tap(find.text('إلغاء'));
+    await tester.pumpAndSettle();
+    expect(find.text('إغلاق التطبيق؟'), findsNothing);
+    expect(exitCalls, 0);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('إغلاق التطبيق'));
+    await tester.pumpAndSettle();
+    expect(exitCalls, 1);
+    expect(find.byType(MainShell), findsOneWidget);
+  });
+
   test('comment watch references return to zero after repeated navigation', () {
     final registry = ReferenceCountedWatchRegistry<String>();
 

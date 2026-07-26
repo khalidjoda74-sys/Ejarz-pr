@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../core/navigation/profile_navigation.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/opportunity_vote_copy.dart';
 import '../../core/widgets/avatar_badge.dart';
 import '../../core/widgets/custom_app_bar.dart';
+import '../../core/widgets/opportunity_owner_identity.dart';
 import '../../core/widgets/premium_background.dart';
 import '../../core/widgets/result_bar.dart';
 import '../../data/models/comment_model.dart';
@@ -75,7 +77,16 @@ class ResultDetailsScreen extends StatelessWidget {
                         style: AppTextStyles.cardTitle.copyWith(fontSize: 14.5),
                       ),
                       const SizedBox(height: 8),
-                      ...topComments.map((comment) => _TopCommentCard(comment)),
+                      ...topComments.map(
+                        (comment) => _TopCommentCard(
+                          comment,
+                          onAuthorTap: () =>
+                              ProfileNavigation.openCommentAuthor(
+                            context,
+                            comment,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -125,6 +136,12 @@ class _QuestionReportCard extends StatelessWidget {
               fontSize: 12.5,
               height: 1.45,
             ),
+          ),
+          const SizedBox(height: 8),
+          OpportunityOwnerIdentity(
+            council: council,
+            compact: true,
+            onTap: () => ProfileNavigation.openCouncilOwner(context, council),
           ),
           const SizedBox(height: 8),
           Row(
@@ -229,9 +246,13 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _TopCommentCard extends StatelessWidget {
-  const _TopCommentCard(this.comment);
+  const _TopCommentCard(
+    this.comment, {
+    required this.onAuthorTap,
+  });
 
   final CommentModel comment;
+  final VoidCallback onAuthorTap;
 
   @override
   Widget build(BuildContext context) {
@@ -249,7 +270,11 @@ class _TopCommentCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AvatarBadge(label: comment.avatarEmoji, size: 36),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onAuthorTap,
+            child: AvatarBadge(label: comment.avatarEmoji, size: 36),
+          ),
           const SizedBox(width: 9),
           Expanded(
             child: Column(
@@ -258,11 +283,16 @@ class _TopCommentCard extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        comment.authorName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.cardTitle.copyWith(fontSize: 12.5),
+                      child: InkWell(
+                        onTap: onAuthorTap,
+                        borderRadius: BorderRadius.circular(7),
+                        child: Text(
+                          comment.authorName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              AppTextStyles.cardTitle.copyWith(fontSize: 12.5),
+                        ),
                       ),
                     ),
                     if (comment.isBest)
