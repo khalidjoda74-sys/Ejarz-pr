@@ -19,6 +19,7 @@ import '../../core/widgets/tab_activity_scope.dart';
 import '../../data/models/council_model.dart';
 import '../../data/models/sponsorship_campaign.dart';
 import '../../data/repositories/council_repository.dart';
+import '../../data/repositories/firebase_notification_repository.dart';
 import '../../data/repositories/messaging_repository.dart';
 import '../../data/repositories/sponsorship_repository.dart';
 
@@ -46,9 +47,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Timer? _featuredCarouselTimer;
   int _featuredPage = 0;
   bool _tabActive = true;
+  bool _didPrecacheFeaturedAssets = false;
   AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
   late Stream<int> _unreadTotalStream;
-  String _unreadStreamUid = '';
+  late Stream<int> _unreadNotificationsStream;
+  String _headerStreamsUid = '';
 
   @override
   void initState() {
@@ -56,28 +59,48 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _lifecycleState =
         WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
-    _syncUnreadTotalStream();
+    _syncHeaderStreams();
     AuthController.instance.addListener(_handleAuthChanged);
   }
 
   void _handleAuthChanged() {
     final nextUid = MessagingRepository.instance.viewerUid;
-    if (nextUid == _unreadStreamUid || !mounted) return;
-    setState(_syncUnreadTotalStream);
+    if (nextUid == _headerStreamsUid || !mounted) return;
+    setState(_syncHeaderStreams);
   }
 
-  void _syncUnreadTotalStream() {
+  void _syncHeaderStreams() {
     final repository = MessagingRepository.instance;
-    _unreadStreamUid = repository.viewerUid;
+    _headerStreamsUid = repository.viewerUid;
     _unreadTotalStream = repository.watchUnreadTotal();
+    _unreadNotificationsStream =
+        FirebaseNotificationRepository.instance.watchUnreadCount(
+      _headerStreamsUid,
+    );
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _precacheFeaturedAssets();
     final tabActive = TabActivityScope.isActiveOf(context);
     if (_tabActive != tabActive) _tabActive = tabActive;
     _syncFeaturedCarouselTimer();
+  }
+
+  void _precacheFeaturedAssets() {
+    if (_didPrecacheFeaturedAssets) return;
+    _didPrecacheFeaturedAssets = true;
+
+    for (final asset in const [
+      'assets/images/today_majlis_card_bg.png',
+      'assets/images/home_ad_car_showroom.png',
+      'assets/images/home_ad_project_setup.png',
+    ]) {
+      unawaited(
+        precacheImage(AssetImage(asset), context).catchError((Object _) {}),
+      );
+    }
   }
 
   @override
@@ -130,11 +153,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       animation: _tabActive ? repo.feedState : kAlwaysCompleteAnimation,
       builder: (context, _) {
         final sizes = AppSizes.of(context);
+        final homeSectionsReady = _homeSectionsReady(repo);
         final featuredCouncil = _homeFeaturedCouncil(repo);
-        final active = _mostInteractiveCouncils(
-          repo.activeCouncils,
-          featuredCouncilId: featuredCouncil.id,
-        ).take(4).toList();
+        final active = homeSectionsReady
+            ? _mostInteractiveCouncils(
+                repo.activeCouncils,
+                featuredCouncilId: featuredCouncil.id,
+              ).take(4).toList()
+            : const <CouncilModel>[];
         final bottomPadding = sizes.bottomNavHeight +
             18 +
             MediaQuery.viewPaddingOf(context).bottom;
@@ -235,8 +261,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                         ),
                                       ),
                                       const SizedBox(width: 8),
-                                      _NotificationButton(
-                                        onTap: widget.onOpenNotifications,
+                                      StreamBuilder<int>(
+                                        stream: tabSelected
+                                            ? _unreadNotificationsStream
+                                            : null,
+                                        builder: (context, snapshot) =>
+                                            _NotificationButton(
+                                          onTap: widget.onOpenNotifications,
+                                          hasUnread: (snapshot.data ?? 0) > 0,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -309,18 +342,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           onAction: () => widget.onOpenCategory('الكل'),
                         ),
                         const SizedBox(height: 8),
-                        ...active.map(
-                          (council) => DiscussionCard(
-                            council: council,
-                            compact: true,
-                            onTap: () => widget.onOpenCouncil(council.id),
-                            onOwnerTap: () =>
-                                ProfileNavigation.openCouncilOwner(
-                              context,
-                              council,
+                        if (homeSectionsReady)
+                          ...active.map(
+                            (council) => DiscussionCard(
+                              key: ValueKey(council.id),
+                              council: council,
+                              compact: true,
+                              onTap: () => widget.onOpenCouncil(council.id),
+                              onOwnerTap: () =>
+                                  ProfileNavigation.openCouncilOwner(
+                                context,
+                                council,
+                              ),
                             ),
-                          ),
-                        ),
+                          )
+                        else
+                          const _HomeOpportunitySectionPlaceholder(),
                       ],
                     ),
                   ),
@@ -360,6 +397,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   int _interactionScore(CouncilModel council) {
     return (council.commentsCount * 3) + council.votesCount;
+  }
+
+  bool _homeSectionsReady(CouncilRepository repo) {
+    return repo.lastRemoteSyncAt != null || repo.hasConnectionIssue;
   }
 
   CouncilModel _homeFeaturedCouncil(CouncilRepository repo) {
@@ -513,6 +554,106 @@ class _HomeFeaturedDots extends StatelessWidget {
           ),
         );
       }),
+    );
+  }
+}
+
+class _HomeOpportunitySectionPlaceholder extends StatelessWidget {
+  const _HomeOpportunitySectionPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeSemantics(
+      child: Column(
+        children: List.generate(
+          4,
+          (index) => Container(
+            height: 132,
+            margin: const EdgeInsets.only(bottom: 9),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.cardWhite,
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(
+                color: AppColors.borderBeige.withValues(alpha: .86),
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0A0F4A35),
+                  blurRadius: 8,
+                  offset: Offset(0, 3),
+                ),
+              ],
+            ),
+            child: const _HomeOpportunityPlaceholderContent(),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeOpportunityPlaceholderContent extends StatelessWidget {
+  const _HomeOpportunityPlaceholderContent();
+
+  @override
+  Widget build(BuildContext context) {
+    final placeholderColor = AppColors.borderBeige.withValues(alpha: .72);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 78,
+          height: 17,
+          decoration: BoxDecoration(
+            color: placeholderColor,
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          height: 14,
+          decoration: BoxDecoration(
+            color: placeholderColor,
+            borderRadius: BorderRadius.circular(7),
+          ),
+        ),
+        const SizedBox(height: 7),
+        FractionallySizedBox(
+          widthFactor: .68,
+          child: Container(
+            height: 14,
+            decoration: BoxDecoration(
+              color: placeholderColor,
+              borderRadius: BorderRadius.circular(7),
+            ),
+          ),
+        ),
+        const Spacer(),
+        Row(
+          children: [
+            Container(
+              width: 25,
+              height: 25,
+              decoration: BoxDecoration(
+                color: placeholderColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 7),
+            Container(
+              width: 92,
+              height: 10,
+              decoration: BoxDecoration(
+                color: placeholderColor,
+                borderRadius: BorderRadius.circular(5),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -1133,9 +1274,13 @@ class _HomeCategory {
 }
 
 class _NotificationButton extends StatelessWidget {
-  const _NotificationButton({required this.onTap});
+  const _NotificationButton({
+    required this.onTap,
+    required this.hasUnread,
+  });
 
   final VoidCallback onTap;
+  final bool hasUnread;
 
   @override
   Widget build(BuildContext context) {
@@ -1158,18 +1303,19 @@ class _NotificationButton extends StatelessWidget {
               size: 20,
             ),
           ),
-          Positioned(
-            top: 3,
-            left: 3,
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(
-                color: AppColors.red,
-                shape: BoxShape.circle,
+          if (hasUnread)
+            Positioned(
+              top: 3,
+              left: 3,
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: AppColors.red,
+                  shape: BoxShape.circle,
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -1198,8 +1344,10 @@ class _MessageButton extends StatelessWidget {
               shape: BoxShape.circle,
               border: Border.all(color: AppColors.borderBeige),
             ),
-            child: const Icon(
-              Icons.mark_chat_unread_outlined,
+            child: Icon(
+              count > 0
+                  ? Icons.mark_chat_unread_outlined
+                  : Icons.chat_bubble_outline_rounded,
               color: AppColors.primaryDarkGreen,
               size: 20,
             ),

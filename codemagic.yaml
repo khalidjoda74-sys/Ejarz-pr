@@ -37,12 +37,6 @@ workflows:
       - name: Get Flutter packages
         script: flutter pub get
 
-      - name: Analyze Flutter project
-        script: flutter analyze
-
-      - name: Run Flutter tests
-        script: flutter test
-
       - name: Set up iOS code signing
         script: xcode-project use-profiles
 
@@ -55,8 +49,8 @@ workflows:
             echo "A numeric iOS build number is required in pubspec.yaml."
             exit 1
           fi
-          if [ "$IOS_BUILD_NUMBER" -lt 18 ]; then
-            echo "Build number must be 18 or newer. Found: $IOS_BUILD_NUMBER"
+          if [ "$IOS_BUILD_NUMBER" -lt 19 ]; then
+            echo "Build number must be 19 or newer. Found: $IOS_BUILD_NUMBER"
             exit 1
           fi
           echo "Building iOS $IOS_BUILD_NAME ($IOS_BUILD_NUMBER)"

@@ -158,6 +158,7 @@ class _TodayQuestionCard extends StatelessWidget {
             width: double.infinity,
             height: cardHeight,
             decoration: BoxDecoration(
+              color: AppColors.primaryDarkGreen,
               borderRadius: BorderRadius.circular(22),
               border: Border.all(color: AppColors.gold.withValues(alpha: .82)),
               boxShadow: [
@@ -176,6 +177,7 @@ class _TodayQuestionCard extends StatelessWidget {
                   Image.asset(
                     _backgroundAsset,
                     fit: BoxFit.cover,
+                    gaplessPlayback: true,
                     filterQuality: FilterQuality.high,
                     cacheWidth: (constraints.maxWidth *
                             MediaQuery.devicePixelRatioOf(context))
@@ -239,12 +241,11 @@ class _TodayQuestionCard extends StatelessWidget {
                                 const SizedBox(height: 7),
                                 ConstrainedBox(
                                   constraints:
-                                      const BoxConstraints(maxWidth: 210),
+                                      const BoxConstraints(maxWidth: 250),
                                   child: OpportunityOwnerIdentity(
                                     council: council,
                                     onDark: true,
-                                    compact: true,
-                                    avatarSize: 25,
+                                    avatarSize: 32,
                                     onTap: onOwnerTap,
                                   ),
                                 ),
@@ -258,11 +259,6 @@ class _TodayQuestionCard extends StatelessWidget {
                                       : _SponsorInviteStrip(
                                           onTap: onSponsorBookTap,
                                         ),
-                                ] else ...[
-                                  const SizedBox(height: 8),
-                                  _FeaturedCategoryPill(
-                                    category: council.category,
-                                  ),
                                 ],
                               ],
                             ),
@@ -530,43 +526,6 @@ class _SponsorLogo extends StatelessWidget {
               color: AppColors.primaryDarkGreen,
               size: 18,
             ),
-    );
-  }
-}
-
-class _FeaturedCategoryPill extends StatelessWidget {
-  const _FeaturedCategoryPill({required this.category});
-
-  final String category;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = category.trim();
-    if (label.isEmpty) return const SizedBox.shrink();
-
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 190),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        decoration: BoxDecoration(
-          color: AppColors.primaryDarkGreen.withValues(alpha: .42),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: AppColors.gold.withValues(alpha: .44)),
-        ),
-        child: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: AppTextStyles.caption.copyWith(
-            color: AppColors.cardWhite.withValues(alpha: .92),
-            fontSize: 11.3,
-            height: 1,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ),
     );
   }
 }

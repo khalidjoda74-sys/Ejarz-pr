@@ -152,19 +152,44 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        icon: const Icon(
-          Icons.info_outline_rounded,
-          color: AppColors.primaryDarkGreen,
+        icon: Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: AppColors.primaryGreen.withValues(alpha: .1),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.info_outline_rounded,
+            color: AppColors.primaryDarkGreen,
+            size: 27,
+          ),
         ),
-        title: const Text('حساب توضيحي'),
+        title: const Text(
+          'حساب توضيحي',
+          textAlign: TextAlign.center,
+        ),
         content: const Text(
           'هذه شخصية تحريرية غير حقيقية أُضيفت لشرح التطبيق، لذلك لا تتوفر لها مراسلة.',
           textAlign: TextAlign.center,
         ),
+        actionsAlignment: MainAxisAlignment.center,
+        actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('فهمت'),
+          SizedBox(
+            width: 150,
+            child: FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primaryDarkGreen,
+                foregroundColor: AppColors.cardWhite,
+                minimumSize: const Size.fromHeight(44),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(13),
+                ),
+              ),
+              child: const Text('فهمت'),
+            ),
           ),
         ],
       ),
@@ -365,17 +390,33 @@ class _ProfileIdentityCard extends StatelessWidget {
             textAlign: TextAlign.center,
             style: AppTextStyles.pageTitle.copyWith(fontSize: 19),
           ),
-          if (profile.username.isNotEmpty) ...[
-            const SizedBox(height: 3),
-            Text(
-              profile.username,
-              textDirection: TextDirection.ltr,
-              style: AppTextStyles.caption.copyWith(
-                color: AppColors.textGray,
-                fontSize: 12,
-              ),
+          const SizedBox(height: 7),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.primaryGreen.withValues(alpha: .07),
+              borderRadius: BorderRadius.circular(999),
             ),
-          ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.schedule_rounded,
+                  size: 15,
+                  color: AppColors.primaryDarkGreen,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  _membershipLabel(profile.createdAt),
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.primaryDarkGreen,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 14),
           if (isSelf)
             Container(
@@ -423,6 +464,49 @@ class _ProfileIdentityCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+String _membershipLabel(DateTime? createdAt) {
+  if (createdAt == null) return 'عضو منذ فترة';
+
+  final now = DateTime.now();
+  final joined = createdAt.toLocal();
+  final today = DateTime(now.year, now.month, now.day);
+  final joinedDay = DateTime(joined.year, joined.month, joined.day);
+  final days = today.difference(joinedDay).inDays;
+
+  if (days <= 0) return 'عضو منذ اليوم';
+  if (days < 30) return 'عضو منذ ${_arabicDuration(days, _DurationUnit.day)}';
+
+  if (days < 365) {
+    final months = days ~/ 30;
+    return 'عضو منذ ${_arabicDuration(months, _DurationUnit.month)}';
+  }
+
+  final years = days ~/ 365;
+  return 'عضو منذ ${_arabicDuration(years, _DurationUnit.year)}';
+}
+
+enum _DurationUnit { day, month, year }
+
+String _arabicDuration(int value, _DurationUnit unit) {
+  switch (unit) {
+    case _DurationUnit.day:
+      if (value == 1) return 'يوم';
+      if (value == 2) return 'يومين';
+      if (value >= 3 && value <= 10) return '$value أيام';
+      return '$value يومًا';
+    case _DurationUnit.month:
+      if (value == 1) return 'شهر';
+      if (value == 2) return 'شهرين';
+      if (value >= 3 && value <= 10) return '$value أشهر';
+      return '$value شهرًا';
+    case _DurationUnit.year:
+      if (value == 1) return 'سنة';
+      if (value == 2) return 'سنتين';
+      if (value >= 3 && value <= 10) return '$value سنوات';
+      return '$value عامًا';
   }
 }
 

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/utils/reusable_stream.dart';
 import '../models/notification_model.dart';
 import '../services/firestore_service.dart';
 
@@ -34,11 +35,39 @@ class FirebaseNotificationRepository {
   }
 
   Stream<int> watchUnreadCount(String uid) {
+    if (uid.trim().isEmpty) return reusableValueStream(0);
+
     return _firestore
         .userNotifications(uid)
         .where('read', isEqualTo: false)
         .snapshots()
-        .map((snapshot) => snapshot.size);
+        .map(
+          (snapshot) => snapshot.docs
+              .map(NotificationModel.fromFirestore)
+              .where(_isVisibleNotification)
+              .length,
+        );
+  }
+
+  bool _isVisibleNotification(NotificationModel notification) {
+    if (notification.type == 'demo' ||
+        notification.type == 'best_comment' ||
+        notification.title.contains('أفضل مساهمة')) {
+      return false;
+    }
+
+    final references = <String?>[
+      notification.id,
+      notification.targetRoute,
+      notification.councilId,
+      notification.conversationId,
+      notification.messageId,
+    ];
+    return !references.whereType<String>().any((value) {
+      final normalized = value.trim().toLowerCase();
+      return normalized.startsWith('demo_') ||
+          normalized.contains('/demo_');
+    });
   }
 
   Future<String> createNotification({

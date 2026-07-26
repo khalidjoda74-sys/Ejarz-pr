@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../data/models/council_model.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_sizes.dart';
 import '../theme/app_text_styles.dart';
 import 'opportunity_owner_identity.dart';
+import 'optimized_network_image.dart';
 import 'relative_time_text.dart';
 
 class DiscussionCard extends StatelessWidget {
@@ -68,88 +72,89 @@ class DiscussionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 9),
-        padding: EdgeInsets.all(compact ? 11 : 13),
-        decoration: BoxDecoration(
-          color: AppColors.cardWhite,
-          borderRadius: BorderRadius.circular(17),
-          border: Border.all(
-            color: AppColors.borderBeige.withValues(alpha: .86),
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x0A0F4A35),
-              blurRadius: 8,
-              offset: Offset(0, 3),
+    return _VisibleCouncilImagePrewarmer(
+      council: council,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 9),
+          padding: EdgeInsets.all(compact ? 11 : 13),
+          decoration: BoxDecoration(
+            color: AppColors.cardWhite,
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(
+              color: AppColors.borderBeige.withValues(alpha: .86),
             ),
-          ],
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: _CategoryChip(text: council.category),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    council.title,
-                    textAlign: TextAlign.right,
-                    maxLines: compact ? 2 : 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.cardTitle.copyWith(
-                      fontSize: compact ? 14.5 : 15,
-                      height: 1.32,
-                    ),
-                  ),
-                  const SizedBox(height: 7),
-                  OpportunityOwnerIdentity(
-                    council: council,
-                    compact: true,
-                    onTap: onOwnerTap,
-                  ),
-                  const SizedBox(height: 7),
-                  Row(
-                    textDirection: TextDirection.rtl,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Wrap(
-                          spacing: 9,
-                          runSpacing: 6,
-                          children: [
-                            _Meta(
-                              icon: Icons.chat_bubble_outline_rounded,
-                              text: '${council.commentsCount} تعليق',
-                            ),
-                            _Meta(
-                              icon: Icons.how_to_vote_outlined,
-                              text: council.votesCount <= 0
-                                  ? 'كن أول من يبدي رأيه'
-                                  : '${council.votesCount} رأي',
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0A0F4A35),
+                blurRadius: 8,
+                offset: Offset(0, 3),
               ),
-            ),
-            const SizedBox(width: 7),
-            _CardSideInfo(
-              city: council.city,
-              compact: compact,
-              createdAt: showRelativeTime ? council.createdAt : null,
-            ),
-          ],
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: OpportunityOwnerIdentity(
+                        council: council,
+                        compact: true,
+                        onTap: onOwnerTap,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      council.title,
+                      textAlign: TextAlign.right,
+                      maxLines: compact ? 2 : 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.cardTitle.copyWith(
+                        fontSize: compact ? 14.5 : 15,
+                        height: 1.32,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Row(
+                      textDirection: TextDirection.rtl,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Wrap(
+                            spacing: 9,
+                            runSpacing: 6,
+                            children: [
+                              _Meta(
+                                icon: Icons.chat_bubble_outline_rounded,
+                                text: '${council.commentsCount} تعليق',
+                              ),
+                              _Meta(
+                                icon: Icons.how_to_vote_outlined,
+                                text: council.votesCount <= 0
+                                    ? 'كن أول من يبدي رأيه'
+                                    : '${council.votesCount} رأي',
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 7),
+              _CardSideInfo(
+                city: council.city,
+                compact: compact,
+                createdAt: showRelativeTime ? council.createdAt : null,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -166,6 +171,79 @@ class DiscussionCard extends StatelessWidget {
         return AppColors.textGray.withValues(alpha: .10);
     }
   }
+}
+
+class _VisibleCouncilImagePrewarmer extends StatefulWidget {
+  const _VisibleCouncilImagePrewarmer({
+    required this.council,
+    required this.child,
+  });
+
+  final CouncilModel council;
+  final Widget child;
+
+  @override
+  State<_VisibleCouncilImagePrewarmer> createState() =>
+      _VisibleCouncilImagePrewarmerState();
+}
+
+class _VisibleCouncilImagePrewarmerState
+    extends State<_VisibleCouncilImagePrewarmer> {
+  String? _warmedSignature;
+  bool _prewarmScheduled = false;
+
+  String get _imageSignature =>
+      '${widget.council.id}|${widget.council.thumbnailImageUrls.join('|')}';
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _schedulePrewarm();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VisibleCouncilImagePrewarmer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _schedulePrewarm();
+  }
+
+  void _schedulePrewarm() {
+    if (_prewarmScheduled || _warmedSignature == _imageSignature) {
+      return;
+    }
+    _prewarmScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _prewarmScheduled = false;
+      if (!mounted || _warmedSignature == _imageSignature) return;
+      _prewarm();
+    });
+  }
+
+  void _prewarm() {
+    final thumbnailUrls =
+        widget.council.thumbnailImageUrls.take(10).toList(growable: false);
+    _warmedSignature = _imageSignature;
+    if (thumbnailUrls.isEmpty) return;
+
+    final sizes = AppSizes.of(context);
+    final availableWidth =
+        MediaQuery.sizeOf(context).width - (sizes.horizontalPadding * 2);
+    final itemSize = ((availableWidth - 32) / 5).clamp(54.0, 70.0);
+    for (final url in thumbnailUrls) {
+      unawaited(
+        OptimizedNetworkImage.preload(
+          context,
+          url: url,
+          width: itemSize,
+          height: itemSize,
+          quality: OptimizedImageQuality.thumbnail,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _CardSideInfo extends StatelessWidget {
@@ -245,33 +323,6 @@ class _CityBadge extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _CategoryChip extends StatelessWidget {
-  const _CategoryChip({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-      decoration: BoxDecoration(
-        color: AppColors.borderBeige.withValues(alpha: .54),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        text,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: AppTextStyles.caption.copyWith(
-          color: AppColors.primaryDarkGreen,
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-        ),
       ),
     );
   }

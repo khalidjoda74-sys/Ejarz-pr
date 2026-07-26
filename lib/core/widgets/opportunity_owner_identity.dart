@@ -24,56 +24,60 @@ class OpportunityOwnerIdentity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = avatarSize ?? (compact ? 27.0 : 34.0);
+    final size = avatarSize ?? (compact ? 32.0 : 42.0);
     final nameColor = onDark ? AppColors.cardWhite : AppColors.primaryDarkGreen;
-    final labelColor = onDark
+    final categoryColor = onDark
         ? AppColors.goldLight.withValues(alpha: .96)
         : AppColors.textGray;
 
     return Semantics(
-      label: 'صاحب الفرصة: ${council.ownerDisplayName}',
+      label: '${council.ownerDisplayName}، ${council.category}',
       container: true,
       button: onTap != null,
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(size / 2),
           child: Row(
+            textDirection: TextDirection.rtl,
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               _OwnerAvatar(
                 council: council,
                 size: size,
                 onDark: onDark,
               ),
-              SizedBox(width: compact ? 6 : 8),
+              SizedBox(width: compact ? 8 : 10),
               Flexible(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'صاحب الفرصة',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.caption.copyWith(
-                        color: labelColor,
-                        fontSize: compact ? 8.6 : 9.5,
-                        height: 1,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    SizedBox(height: compact ? 2 : 3),
-                    Text(
                       council.ownerDisplayName,
+                      textAlign: TextAlign.right,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTextStyles.caption.copyWith(
                         color: nameColor,
-                        fontSize: compact ? 10.5 : 12,
-                        height: 1.05,
+                        fontSize: compact ? 11.5 : 13.5,
+                        height: 1.15,
                         fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: compact ? 3 : 4),
+                    Text(
+                      council.category,
+                      textAlign: TextAlign.right,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.caption.copyWith(
+                        color: categoryColor,
+                        fontSize: compact ? 9.5 : 10.5,
+                        height: 1.1,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],

@@ -1361,30 +1361,12 @@ class _QuestionPanel extends StatelessWidget {
           Directionality(
             textDirection: TextDirection.rtl,
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Flexible(
-                  child: Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.borderBeige.withValues(alpha: .62),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        council.category,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.primaryDarkGreen,
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
+                Expanded(
+                  child: OpportunityOwnerIdentity(
+                    council: council,
+                    onTap: onOwnerTap,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1395,23 +1377,7 @@ class _QuestionPanel extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 10),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppColors.primaryGreen.withValues(alpha: .055),
-              borderRadius: BorderRadius.circular(13),
-              border: Border.all(
-                color: AppColors.primaryGreen.withValues(alpha: .12),
-              ),
-            ),
-            child: OpportunityOwnerIdentity(
-              council: council,
-              onTap: onOwnerTap,
-            ),
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             council.title,
             textAlign: TextAlign.center,
@@ -1693,29 +1659,48 @@ class _CouncilImagesGrid extends StatefulWidget {
 }
 
 class _CouncilImagesGridState extends State<_CouncilImagesGrid> {
-  int _visibleCount = 5;
+  String? _preloadSignature;
 
   @override
-  void initState() {
-    super.initState();
-    _scheduleRemainingThumbnails();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _preloadThumbnails();
   }
 
   @override
   void didUpdateWidget(covariant _CouncilImagesGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.council.id != widget.council.id) {
-      _visibleCount = 5;
-      _scheduleRemainingThumbnails();
+      _preloadSignature = null;
     }
+    _preloadThumbnails();
   }
 
-  void _scheduleRemainingThumbnails() {
-    if (widget.council.imageUrls.length <= _visibleCount) return;
-    Future<void>.delayed(const Duration(milliseconds: 180), () {
-      if (!mounted) return;
-      setState(() => _visibleCount = widget.council.imageUrls.length);
-    });
+  void _preloadThumbnails() {
+    final originals = widget.council.imageUrls.take(10).toList(growable: false);
+    if (originals.isEmpty) return;
+    final thumbnails =
+        widget.council.thumbnailImageUrls.take(10).toList(growable: false);
+    final previewUrls = _previewUrls(originals, thumbnails);
+    final sizes = AppSizes.of(context);
+    final availableWidth =
+        MediaQuery.sizeOf(context).width - (sizes.horizontalPadding * 2);
+    final itemSize = ((availableWidth - 32) / 5).clamp(54.0, 70.0);
+    final signature = '${widget.council.id}|$itemSize|${previewUrls.join('|')}';
+    if (_preloadSignature == signature) return;
+    _preloadSignature = signature;
+
+    for (final url in previewUrls) {
+      unawaited(
+        OptimizedNetworkImage.preload(
+          context,
+          url: url,
+          width: itemSize,
+          height: itemSize,
+          quality: OptimizedImageQuality.thumbnail,
+        ),
+      );
+    }
   }
 
   @override
@@ -1724,22 +1709,35 @@ class _CouncilImagesGridState extends State<_CouncilImagesGrid> {
     if (originals.isEmpty) return const SizedBox.shrink();
     final thumbnails =
         widget.council.thumbnailImageUrls.take(10).toList(growable: false);
-    final visibleCount = _visibleCount.clamp(0, originals.length);
+    final previewUrls = _previewUrls(originals, thumbnails);
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final itemSize = ((constraints.maxWidth - 32) / 5).clamp(54.0, 70.0);
+        final previewProviders = [
+          for (final url in previewUrls)
+            OptimizedNetworkImage.providerFor(
+              context,
+              url: url,
+              width: itemSize,
+              height: itemSize,
+              quality: OptimizedImageQuality.thumbnail,
+            ),
+        ];
         return Wrap(
           spacing: 8,
           runSpacing: 8,
           children: [
-            for (var index = 0; index < visibleCount; index++)
+            for (var index = 0; index < originals.length; index++)
               _CouncilImageThumb(
-                url: index < thumbnails.length
-                    ? thumbnails[index]
-                    : originals[index],
+                url: previewUrls[index],
                 size: itemSize,
-                onTap: () => _openImageViewer(context, originals, index),
+                onTap: () => _openImageViewer(
+                  context,
+                  originals,
+                  previewProviders,
+                  index,
+                ),
               ),
           ],
         );
@@ -1747,17 +1745,42 @@ class _CouncilImagesGridState extends State<_CouncilImagesGrid> {
     );
   }
 
+  List<String> _previewUrls(
+    List<String> originals,
+    List<String> thumbnails,
+  ) {
+    return [
+      for (var index = 0; index < originals.length; index++)
+        if (index < thumbnails.length && thumbnails[index].trim().isNotEmpty)
+          thumbnails[index]
+        else
+          originals[index],
+    ];
+  }
+
   void _openImageViewer(
     BuildContext context,
     List<String> urls,
+    List<ImageProvider<Object>> previewProviders,
     int initialIndex,
   ) {
     dismissAppKeyboard();
+    final screenSize = MediaQuery.sizeOf(context);
+    unawaited(
+      OptimizedNetworkImage.preload(
+        context,
+        url: urls[initialIndex],
+        width: screenSize.width - 20,
+        height: screenSize.height * .72,
+        quality: OptimizedImageQuality.original,
+      ),
+    );
     showDialog<void>(
       context: context,
       barrierColor: AppColors.textDark.withValues(alpha: .84),
       builder: (_) => _CouncilImageViewer(
         imageUrls: urls,
+        previewProviders: previewProviders,
         initialIndex: initialIndex,
       ),
     );
@@ -1794,6 +1817,21 @@ class _CouncilImageThumb extends StatelessWidget {
           height: size,
           fit: BoxFit.cover,
           quality: OptimizedImageQuality.thumbnail,
+          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+            if (wasSynchronouslyLoaded) return child;
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                const _CouncilImagePlaceholder(),
+                AnimatedOpacity(
+                  opacity: frame == null ? 0 : 1,
+                  duration: const Duration(milliseconds: 140),
+                  curve: Curves.easeOut,
+                  child: child,
+                ),
+              ],
+            );
+          },
           errorBuilder: (_, __, ___) => const Icon(
             Icons.image_not_supported_outlined,
             color: AppColors.textGray,
@@ -1805,13 +1843,33 @@ class _CouncilImageThumb extends StatelessWidget {
   }
 }
 
+class _CouncilImagePlaceholder extends StatelessWidget {
+  const _CouncilImagePlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: AppColors.borderBeige.withValues(alpha: .34),
+      child: const Center(
+        child: Icon(
+          Icons.image_outlined,
+          color: AppColors.textGray,
+          size: 20,
+        ),
+      ),
+    );
+  }
+}
+
 class _CouncilImageViewer extends StatefulWidget {
   const _CouncilImageViewer({
     required this.imageUrls,
+    required this.previewProviders,
     required this.initialIndex,
   });
 
   final List<String> imageUrls;
+  final List<ImageProvider<Object>> previewProviders;
   final int initialIndex;
 
   @override
@@ -1821,6 +1879,7 @@ class _CouncilImageViewer extends StatefulWidget {
 class _CouncilImageViewerState extends State<_CouncilImageViewer> {
   late final PageController _controller;
   late int _currentIndex;
+  bool _preloadedInitialPage = false;
 
   @override
   void initState() {
@@ -1830,14 +1889,40 @@ class _CouncilImageViewerState extends State<_CouncilImageViewer> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_preloadedInitialPage) return;
+    _preloadedInitialPage = true;
+    _preloadAround(_currentIndex);
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
 
+  void _preloadAround(int index) {
+    final screenSize = MediaQuery.sizeOf(context);
+    for (final candidate in <int>{index, index + 1}) {
+      if (candidate < 0 || candidate >= widget.imageUrls.length) continue;
+      unawaited(
+        OptimizedNetworkImage.preload(
+          context,
+          url: widget.imageUrls[candidate],
+          width: screenSize.width - 20,
+          height: screenSize.height * .72,
+          quality: OptimizedImageQuality.original,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
+    final viewerWidth = size.width - 20;
+    final viewerHeight = size.height * .72;
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 18),
@@ -1846,7 +1931,7 @@ class _CouncilImageViewerState extends State<_CouncilImageViewer> {
         children: [
           Container(
             width: double.infinity,
-            height: size.height * .72,
+            height: viewerHeight,
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               color: AppColors.textDark,
@@ -1855,24 +1940,15 @@ class _CouncilImageViewerState extends State<_CouncilImageViewer> {
             child: PageView.builder(
               controller: _controller,
               itemCount: widget.imageUrls.length,
-              onPageChanged: (index) => setState(() {
-                _currentIndex = index;
-              }),
-              itemBuilder: (context, index) => InteractiveViewer(
-                minScale: 1,
-                maxScale: 3,
-                child: Center(
-                  child: OptimizedNetworkImage(
-                    url: widget.imageUrls[index],
-                    fit: BoxFit.contain,
-                    quality: OptimizedImageQuality.original,
-                    errorBuilder: (_, __, ___) => const Icon(
-                      Icons.image_not_supported_outlined,
-                      color: AppColors.cardWhite,
-                      size: 42,
-                    ),
-                  ),
-                ),
+              onPageChanged: (index) {
+                setState(() => _currentIndex = index);
+                _preloadAround(index);
+              },
+              itemBuilder: (context, index) => _CouncilViewerImage(
+                imageUrl: widget.imageUrls[index],
+                previewProvider: widget.previewProviders[index],
+                width: viewerWidth,
+                height: viewerHeight,
               ),
             ),
           ),
@@ -1922,6 +1998,88 @@ class _CouncilImageViewerState extends State<_CouncilImageViewer> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CouncilViewerImage extends StatelessWidget {
+  const _CouncilViewerImage({
+    required this.imageUrl,
+    required this.previewProvider,
+    required this.width,
+    required this.height,
+  });
+
+  final String imageUrl;
+  final ImageProvider<Object> previewProvider;
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return InteractiveViewer(
+      minScale: 1,
+      maxScale: 3,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image(
+              image: previewProvider,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.low,
+              gaplessPlayback: true,
+              frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                if (wasSynchronouslyLoaded) return child;
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    const Center(
+                      child: Icon(
+                        Icons.image_outlined,
+                        color: AppColors.cardWhite,
+                        size: 42,
+                      ),
+                    ),
+                    AnimatedOpacity(
+                      opacity: frame == null ? 0 : 1,
+                      duration: const Duration(milliseconds: 120),
+                      curve: Curves.easeOut,
+                      child: child,
+                    ),
+                  ],
+                );
+              },
+              errorBuilder: (_, __, ___) => const Center(
+                child: Icon(
+                  Icons.image_outlined,
+                  color: AppColors.cardWhite,
+                  size: 42,
+                ),
+              ),
+            ),
+            OptimizedNetworkImage(
+              url: imageUrl,
+              width: width,
+              height: height,
+              fit: BoxFit.contain,
+              quality: OptimizedImageQuality.original,
+              frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                if (wasSynchronouslyLoaded) return child;
+                return AnimatedOpacity(
+                  opacity: frame == null ? 0 : 1,
+                  duration: const Duration(milliseconds: 160),
+                  curve: Curves.easeOut,
+                  child: child,
+                );
+              },
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            ),
+          ],
+        ),
       ),
     );
   }

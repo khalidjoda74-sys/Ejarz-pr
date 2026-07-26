@@ -207,6 +207,7 @@ class DemoProfileCatalog {
       displayName: displayName,
       username: username,
       avatarEmoji: avatarEmoji,
+      createdAt: DateTime.utc(2024, 1, 1),
       demo: true,
     );
   }

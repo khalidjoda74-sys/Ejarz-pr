@@ -147,11 +147,6 @@ class _QuestionReportCard extends StatelessWidget {
           Row(
             children: [
               _MetaPill(
-                icon: Icons.sell_outlined,
-                label: council.category,
-              ),
-              const SizedBox(width: 8),
-              _MetaPill(
                 icon: Icons.groups_2_outlined,
                 label: '${council.participants} مشارك',
               ),

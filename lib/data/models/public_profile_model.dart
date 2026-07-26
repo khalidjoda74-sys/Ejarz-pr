@@ -54,6 +54,7 @@ class PublicProfileModel {
     required this.username,
     required this.avatarEmoji,
     required this.publicPhotoUrl,
+    required this.createdAt,
     required this.isVisible,
     required this.demo,
   });
@@ -64,6 +65,7 @@ class PublicProfileModel {
   final String username;
   final String avatarEmoji;
   final String? publicPhotoUrl;
+  final DateTime? createdAt;
   final bool isVisible;
   final bool demo;
 
@@ -77,6 +79,7 @@ class PublicProfileModel {
     String username = '',
     String avatarEmoji = 'business:person_growth',
     String? publicPhotoUrl,
+    DateTime? createdAt,
     bool isVisible = true,
     bool demo = false,
   }) {
@@ -97,6 +100,7 @@ class PublicProfileModel {
         fallback: 'business:person_growth',
       ),
       publicPhotoUrl: _nullableString(publicPhotoUrl),
+      createdAt: createdAt,
       isVisible: isVisible,
       demo: demo,
     );
@@ -129,6 +133,7 @@ class PublicProfileModel {
         fallback: 'business:person_growth',
       ),
       publicPhotoUrl: _nullableString(data['publicPhotoUrl']),
+      createdAt: _dateTimeValue(data['createdAt']),
       isVisible: data['isVisible'] == true,
       demo: data['demo'] == true,
     );
@@ -142,6 +147,7 @@ class PublicProfileModel {
       'username': username,
       'avatarEmoji': avatarEmoji,
       'publicPhotoUrl': publicPhotoUrl,
+      if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
       'isVisible': isVisible,
       'demo': demo,
     };
@@ -154,6 +160,13 @@ class PublicProfileModel {
 
   static String? _nullableString(Object? value) {
     if (value is String && value.trim().isNotEmpty) return value.trim();
+    return null;
+  }
+
+  static DateTime? _dateTimeValue(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value.trim());
     return null;
   }
 }

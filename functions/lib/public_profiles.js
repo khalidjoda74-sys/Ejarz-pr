@@ -12,6 +12,14 @@ const optionalString = (value) => {
     const result = safeString(value);
     return result || null;
 };
+const safeTimestamp = (value, fallback) => {
+    if (value instanceof firestore_1.Timestamp)
+        return value;
+    if (value instanceof Date && Number.isFinite(value.getTime())) {
+        return firestore_1.Timestamp.fromDate(value);
+    }
+    return fallback;
+};
 const hasChosenPublicIdentity = (data) => {
     if (data.identityCompleted === false)
         return false;
@@ -29,7 +37,7 @@ const hasChosenPublicIdentity = (data) => {
     return Boolean(safeString(data.username) &&
         (safeString(data.displayName) || safeString(data.name)));
 };
-const publicProfileForUser = (uid, data) => {
+const publicProfileForUser = (uid, data, fallbackCreatedAt) => {
     if (!hasChosenPublicIdentity(data))
         return null;
     const displayName = safeString(data.nickname, safeString(data.displayName, safeString(data.name)));
@@ -45,6 +53,7 @@ const publicProfileForUser = (uid, data) => {
         username,
         avatarEmoji,
         publicPhotoUrl: optionalString(data.publicPhotoUrl),
+        createdAt: safeTimestamp(data.createdAt, fallbackCreatedAt),
         isVisible: safeString(data.status, "active") === "active",
         demo: false,
     };
@@ -57,6 +66,7 @@ const publicProfilesEqual = (current, expected) => {
         "username",
         "avatarEmoji",
         "publicPhotoUrl",
+        "createdAt",
         "isVisible",
         "demo",
     ].sort();
@@ -71,6 +81,8 @@ const publicProfilesEqual = (current, expected) => {
         current.username === expected.username &&
         current.avatarEmoji === expected.avatarEmoji &&
         current.publicPhotoUrl === expected.publicPhotoUrl &&
+        current.createdAt instanceof firestore_1.Timestamp &&
+        current.createdAt.isEqual(expected.createdAt) &&
         current.isVisible === expected.isVisible &&
         current.demo === expected.demo;
 };
@@ -93,7 +105,10 @@ exports.syncPublicProfile = (0, firestore_2.onDocumentWritten)({
             await publicProfileRef.delete();
         return;
     }
-    const profile = publicProfileForUser(uid, after.data() ?? {});
+    const profile = publicProfileForUser(uid, after.data() ?? {}, after.createTime ??
+        event.data?.before.createTime ??
+        current.createTime ??
+        firestore_1.Timestamp.fromMillis(0));
     if (!profile) {
         if (current.exists)
             await publicProfileRef.delete();
@@ -137,7 +152,7 @@ exports.backfillPublicProfiles = (0, https_1.onCall)({
     let eligible = 0;
     let ineligible = 0;
     for (const userSnapshot of snapshot.docs) {
-        const profile = publicProfileForUser(userSnapshot.id, userSnapshot.data());
+        const profile = publicProfileForUser(userSnapshot.id, userSnapshot.data(), userSnapshot.createTime);
         const profileRef = db
             .collection("publicProfiles")
             .doc(userSnapshot.id);

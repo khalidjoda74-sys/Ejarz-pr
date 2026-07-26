@@ -20,6 +20,7 @@ const fieldValue = (field) => {
   if (!field || typeof field !== "object") return undefined;
   if (Object.hasOwn(field, "stringValue")) return field.stringValue;
   if (Object.hasOwn(field, "booleanValue")) return field.booleanValue;
+  if (Object.hasOwn(field, "timestampValue")) return field.timestampValue;
   if (Object.hasOwn(field, "nullValue")) return null;
   return undefined;
 };
@@ -42,7 +43,15 @@ const hasChosenPublicIdentity = (data) => {
   );
 };
 
-const publicProfileForUser = (uid, data) => {
+const safeTimestamp = (value, fallback) => {
+  const candidate = safeString(value, safeString(fallback));
+  const parsed = Date.parse(candidate);
+  return Number.isFinite(parsed)
+    ? new Date(parsed).toISOString()
+    : new Date(0).toISOString();
+};
+
+const publicProfileForUser = (uid, data, fallbackCreatedAt) => {
   if (!hasChosenPublicIdentity(data)) return null;
 
   const displayName = safeString(
@@ -65,6 +74,7 @@ const publicProfileForUser = (uid, data) => {
       safeString(data.avatar, "business:person_growth"),
     ),
     publicPhotoUrl: safeString(data.publicPhotoUrl) || null,
+    createdAt: safeTimestamp(data.createdAt, fallbackCreatedAt),
     isVisible: safeString(data.status, "active") === "active",
     demo: false,
   };
@@ -80,6 +90,7 @@ const firestoreFields = (profile) => ({
     profile.publicPhotoUrl === null
       ? {nullValue: null}
       : {stringValue: profile.publicPhotoUrl},
+  createdAt: {timestampValue: profile.createdAt},
   isVisible: {booleanValue: profile.isVisible},
   demo: {booleanValue: false},
 });
@@ -137,7 +148,11 @@ const main = async () => {
     const page = await request(`${documentsRoot}/users?${params}`);
     for (const document of page.documents ?? []) {
       const uid = document.name.split("/").pop();
-      const profile = publicProfileForUser(uid, userData(document));
+      const profile = publicProfileForUser(
+        uid,
+        userData(document),
+        document.createTime,
+      );
       const profileName =
         `projects/${projectId}/databases/(default)/documents/publicProfiles/` +
         uid;
@@ -178,6 +193,7 @@ const main = async () => {
   if (verifyExisting) {
     const expectedKeys = [
       "avatarEmoji",
+      "createdAt",
       "demo",
       "displayName",
       "id",
@@ -210,7 +226,8 @@ const main = async () => {
         if (
           data.uid !== profileId ||
           data.id !== profileId ||
-          data.demo !== false
+          data.demo !== false ||
+          !safeString(data.createdAt)
         ) {
           throw new Error(`Public profile ${profileId} failed identity checks.`);
         }

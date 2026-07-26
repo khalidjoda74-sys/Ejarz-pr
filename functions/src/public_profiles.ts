@@ -1,6 +1,7 @@
 import {
   FieldPath,
   getFirestore,
+  Timestamp,
 } from "firebase-admin/firestore";
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import {HttpsError, onCall} from "firebase-functions/v2/https";
@@ -15,6 +16,7 @@ type PublicProfileData = {
   username: string;
   avatarEmoji: string;
   publicPhotoUrl: string | null;
+  createdAt: Timestamp;
   isVisible: boolean;
   demo: false;
 };
@@ -26,6 +28,17 @@ const safeString = (value: unknown, fallback = ""): string => {
 const optionalString = (value: unknown): string | null => {
   const result = safeString(value);
   return result || null;
+};
+
+const safeTimestamp = (
+  value: unknown,
+  fallback: Timestamp,
+): Timestamp => {
+  if (value instanceof Timestamp) return value;
+  if (value instanceof Date && Number.isFinite(value.getTime())) {
+    return Timestamp.fromDate(value);
+  }
+  return fallback;
 };
 
 const hasChosenPublicIdentity = (data: UserData): boolean => {
@@ -50,6 +63,7 @@ const hasChosenPublicIdentity = (data: UserData): boolean => {
 const publicProfileForUser = (
   uid: string,
   data: UserData,
+  fallbackCreatedAt: Timestamp,
 ): PublicProfileData | null => {
   if (!hasChosenPublicIdentity(data)) return null;
 
@@ -76,6 +90,7 @@ const publicProfileForUser = (
     username,
     avatarEmoji,
     publicPhotoUrl: optionalString(data.publicPhotoUrl),
+    createdAt: safeTimestamp(data.createdAt, fallbackCreatedAt),
     isVisible: safeString(data.status, "active") === "active",
     demo: false,
   };
@@ -92,6 +107,7 @@ const publicProfilesEqual = (
     "username",
     "avatarEmoji",
     "publicPhotoUrl",
+    "createdAt",
     "isVisible",
     "demo",
   ].sort();
@@ -108,6 +124,8 @@ const publicProfilesEqual = (
     current.username === expected.username &&
     current.avatarEmoji === expected.avatarEmoji &&
     current.publicPhotoUrl === expected.publicPhotoUrl &&
+    current.createdAt instanceof Timestamp &&
+    current.createdAt.isEqual(expected.createdAt) &&
     current.isVisible === expected.isVisible &&
     current.demo === expected.demo;
 };
@@ -137,7 +155,14 @@ export const syncPublicProfile = onDocumentWritten(
       return;
     }
 
-    const profile = publicProfileForUser(uid, after.data() ?? {});
+    const profile = publicProfileForUser(
+      uid,
+      after.data() ?? {},
+      after.createTime ??
+        event.data?.before.createTime ??
+        current.createTime ??
+        Timestamp.fromMillis(0),
+    );
     if (!profile) {
       if (current.exists) await publicProfileRef.delete();
       return;
@@ -200,6 +225,7 @@ export const backfillPublicProfiles = onCall(
       const profile = publicProfileForUser(
         userSnapshot.id,
         userSnapshot.data(),
+        userSnapshot.createTime,
       );
       const profileRef = db
         .collection("publicProfiles")
