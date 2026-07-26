@@ -25,50 +25,44 @@ class RelativeTimeText extends StatefulWidget {
 }
 
 class _RelativeTimeTextState extends State<RelativeTimeText> {
-  Timer? _timer;
+  bool _listening = false;
 
   @override
-  void initState() {
-    super.initState();
-    _startTimer();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _setListening(
+      TickerMode.valuesOf(context).enabled && widget.dateTime != null,
+    );
   }
 
   @override
   void didUpdateWidget(covariant RelativeTimeText oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.dateTime != widget.dateTime) _startTimer();
+    if (oldWidget.dateTime != widget.dateTime) {
+      _setListening(
+        TickerMode.valuesOf(context).enabled && widget.dateTime != null,
+      );
+    }
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _setListening(false);
     super.dispose();
   }
 
-  void _startTimer() {
-    _timer?.cancel();
-    if (widget.dateTime == null) return;
-    _scheduleNextTick();
+  void _setListening(bool value) {
+    if (_listening == value) return;
+    _listening = value;
+    if (value) {
+      _RelativeTimeTicker.instance.addListener(_handleTick);
+    } else {
+      _RelativeTimeTicker.instance.removeListener(_handleTick);
+    }
   }
 
-  void _scheduleNextTick() {
-    final delay = _nextRefreshDelay();
-    if (delay == null) return;
-    _timer = Timer(delay, () {
-      if (!mounted) return;
-      setState(() {});
-      _scheduleNextTick();
-    });
-  }
-
-  Duration? _nextRefreshDelay() {
-    final dateTime = widget.dateTime;
-    if (dateTime == null) return null;
-    final difference = DateTime.now().toUtc().difference(dateTime.toUtc());
-    if (difference.inMinutes < 1) return const Duration(seconds: 10);
-    if (difference.inHours < 1) return const Duration(minutes: 1);
-    if (difference.inDays < 1) return const Duration(minutes: 5);
-    return const Duration(minutes: 30);
+  void _handleTick() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -85,6 +79,53 @@ class _RelativeTimeTextState extends State<RelativeTimeText> {
       maxLines: widget.maxLines,
       overflow: widget.overflow,
       style: widget.style,
+    );
+  }
+}
+
+class _RelativeTimeTicker extends ChangeNotifier with WidgetsBindingObserver {
+  _RelativeTimeTicker._() {
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  static final _RelativeTimeTicker instance = _RelativeTimeTicker._();
+
+  Timer? _timer;
+  int _listenerCount = 0;
+  AppLifecycleState _lifecycleState =
+      WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
+
+  @override
+  void addListener(VoidCallback listener) {
+    super.addListener(listener);
+    _listenerCount++;
+    _syncTimer();
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    super.removeListener(listener);
+    if (_listenerCount > 0) _listenerCount--;
+    _syncTimer();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycleState = state;
+    _syncTimer();
+  }
+
+  void _syncTimer() {
+    final shouldRun =
+        _listenerCount > 0 && _lifecycleState == AppLifecycleState.resumed;
+    if (!shouldRun) {
+      _timer?.cancel();
+      _timer = null;
+      return;
+    }
+    _timer ??= Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => notifyListeners(),
     );
   }
 }
@@ -150,4 +191,5 @@ String _saudiDateLabel(DateTime createdUtc) {
   return '${saudiTime.day} ${months[saudiTime.month - 1]} ${saudiTime.year}';
 }
 
-bool _isAbsoluteDate(String value) => !value.startsWith('منذ') && value != 'الآن';
+bool _isAbsoluteDate(String value) =>
+    !value.startsWith('منذ') && value != 'الآن';

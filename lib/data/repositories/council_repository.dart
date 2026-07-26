@@ -2,10 +2,11 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/moderation/content_moderation.dart';
+import '../../core/utils/reference_counted_watch_registry.dart';
 
 import '../mock/mock_data.dart';
 import '../models/comment_model.dart';
@@ -16,6 +17,28 @@ import '../models/user_model.dart';
 import 'firebase_council_repository.dart';
 import 'firebase_user_repository.dart';
 
+@immutable
+class CouncilFeedState {
+  const CouncilFeedState({
+    required this.councils,
+    required this.categories,
+    required this.hasConnectionIssue,
+    required this.lastRemoteSyncAt,
+  });
+
+  final List<CouncilModel> councils;
+  final List<String> categories;
+  final bool hasConnectionIssue;
+  final DateTime? lastRemoteSyncAt;
+}
+
+@immutable
+class CouncilUserState {
+  const CouncilUserState(this.user);
+
+  final UserModel user;
+}
+
 class CouncilRepository extends ChangeNotifier {
   CouncilRepository._();
 
@@ -24,6 +47,7 @@ class CouncilRepository extends ChangeNotifier {
     .._mockCouncils = MockData.councils()
     .._councils = MockData.councils()
     .._notifications = MockData.notifications
+    .._initializeStateNotifiers()
     .._startFirestoreSync()
     .._startUserSync();
 
@@ -41,13 +65,16 @@ class CouncilRepository extends ChangeNotifier {
   final Set<String> _blockedUserIds = <String>{};
   final Map<String, StreamSubscription<List<CommentModel>>>
       _commentSubscriptions = {};
-  final Map<String, StreamSubscription<bool>> _convincingVoteSubscriptions = {};
-  final Set<String> _requestedCommentWatches = {};
+  final ReferenceCountedWatchRegistry<String> _commentWatchRegistry =
+      ReferenceCountedWatchRegistry<String>();
   final Set<String> _convincingVotes = {};
   bool _demoOpportunityRequested = false;
   final Map<String, List<CommentModel>> _remoteCommentsByCouncilId = {};
+  final List<String> _recentCommentCacheCouncilIds = <String>[];
   final Map<String, List<CommentModel>> _localCommentOverlays = {};
   final Map<String, List<CommentModel>> _privateDemoComments = {};
+  final Map<String, CouncilModel> _standaloneCouncilsById = {};
+  final Map<String, Future<void>> _standaloneCouncilLoads = {};
   Object? _firestoreError;
   Timer? _councilSyncWatchdog;
   bool _receivedServerCouncilSnapshot = false;
@@ -55,6 +82,52 @@ class CouncilRepository extends ChangeNotifier {
   DateTime? _lastRemoteSyncAt;
   bool _usingFirestore = false;
   final Map<String, VoteOption> _selectedVotes = {};
+  late final ValueNotifier<CouncilFeedState> _feedStateNotifier;
+  late final ValueNotifier<CouncilUserState> _userStateNotifier;
+  late final ValueNotifier<List<CouncilResultModel>> _resultsStateNotifier;
+
+  ValueListenable<CouncilFeedState> get feedState => _feedStateNotifier;
+  ValueListenable<CouncilUserState> get userState => _userStateNotifier;
+  ValueListenable<List<CouncilResultModel>> get resultsState =>
+      _resultsStateNotifier;
+
+  int get debugActiveCommentSubscriptionCount => _commentSubscriptions.length;
+  int get debugActiveCommentWatchCount =>
+      _commentWatchRegistry.activeReferenceCount;
+  int get debugCachedCommentCouncilCount => _remoteCommentsByCouncilId.length;
+
+  void _initializeStateNotifiers() {
+    _feedStateNotifier = ValueNotifier<CouncilFeedState>(_createFeedState());
+    _userStateNotifier =
+        ValueNotifier<CouncilUserState>(CouncilUserState(_user));
+    _resultsStateNotifier =
+        ValueNotifier<List<CouncilResultModel>>(const <CouncilResultModel>[]);
+  }
+
+  CouncilFeedState _createFeedState() {
+    return CouncilFeedState(
+      councils: councils,
+      categories: categories,
+      hasConnectionIssue: hasConnectionIssue,
+      lastRemoteSyncAt: lastRemoteSyncAt,
+    );
+  }
+
+  void _emitFeedChange() {
+    _feedStateNotifier.value = _createFeedState();
+    notifyListeners();
+  }
+
+  void _emitUserChange() {
+    _userStateNotifier.value = CouncilUserState(_user);
+    notifyListeners();
+  }
+
+  void _emitFeedAndUserChange() {
+    _feedStateNotifier.value = _createFeedState();
+    _userStateNotifier.value = CouncilUserState(_user);
+    notifyListeners();
+  }
 
   UserModel get user => _user;
   List<CouncilModel> get councils => List.unmodifiable(
@@ -155,6 +228,39 @@ class CouncilRepository extends ChangeNotifier {
     return council;
   }
 
+  CouncilDetailsSession openDetailsSession(String councilId) {
+    return CouncilDetailsSession._(this, councilId);
+  }
+
+  Future<void> _loadCouncilIfMissing(String councilId) {
+    if (_findCouncilById(councilId) != null || councilId.startsWith('demo_')) {
+      return Future<void>.value();
+    }
+    return _standaloneCouncilLoads.putIfAbsent(
+      councilId,
+      () => _fetchStandaloneCouncil(councilId),
+    );
+  }
+
+  Future<void> _fetchStandaloneCouncil(String councilId) async {
+    try {
+      final council =
+          await FirebaseCouncilRepository.instance.fetchCouncil(councilId);
+      if (council == null) return;
+      _applyCachedComments(council);
+      _standaloneCouncilsById[councilId] = council;
+      while (_standaloneCouncilsById.length > 4) {
+        _standaloneCouncilsById.remove(_standaloneCouncilsById.keys.first);
+      }
+      _emitFeedChange();
+    } catch (_) {
+      // The details screen keeps its local fallback if this one-shot fetch
+      // cannot reach Firestore.
+    } finally {
+      _standaloneCouncilLoads.remove(councilId);
+    }
+  }
+
   Future<void> vote(String councilId, VoteOption option) async {
     final existingCouncil = _findCouncilById(councilId);
     if (existingCouncil != null && isCouncilOwner(existingCouncil)) {
@@ -182,7 +288,7 @@ class CouncilRepository extends ChangeNotifier {
       _selectedVotes[councilId] = council.selectedOption!;
     }
     _upsertLocalCouncil(council);
-    notifyListeners();
+    _emitFeedChange();
 
     try {
       if (_usingFirestore && !_isDemoCouncil(council)) {
@@ -205,18 +311,39 @@ class CouncilRepository extends ChangeNotifier {
         _selectedVotes[councilId] = previousSessionVote;
       }
       _upsertLocalCouncil(council);
-      notifyListeners();
+      _emitFeedChange();
       rethrow;
     }
   }
 
-  void watchCouncilComments(String councilId) {
+  void _acquireCouncilComments(String councilId) {
     if (councilId.trim().isEmpty) return;
-    _requestedCommentWatches.add(councilId);
-    if (councilId.startsWith('demo_laundry_')) {
-      _ensureDemoOpportunity(force: true);
-    }
+    final firstWatcher = _commentWatchRegistry.acquire(councilId);
+    if (!firstWatcher) return;
     if (_usingFirestore) _startCommentsSubscription(councilId);
+  }
+
+  void _releaseCouncilComments(String councilId) {
+    final finalWatcher = _commentWatchRegistry.release(councilId);
+    if (!finalWatcher) return;
+    final subscription = _commentSubscriptions.remove(councilId);
+    if (subscription != null) unawaited(subscription.cancel());
+    _convincingVotes.removeWhere((key) => key.startsWith('$councilId/'));
+    _touchCommentCache(councilId);
+    _pruneCommentCache();
+  }
+
+  void syncConvincingVote(
+    String councilId,
+    String commentId,
+    bool selected,
+  ) {
+    final key = '$councilId/$commentId';
+    if (selected) {
+      _convincingVotes.add(key);
+    } else {
+      _convincingVotes.remove(key);
+    }
   }
 
   Future<void> addComment(
@@ -289,7 +416,7 @@ class CouncilRepository extends ChangeNotifier {
     }
     council.commentsCount += 1;
     _user.comments += 1;
-    notifyListeners();
+    _emitFeedAndUserChange();
 
     try {
       if (_usingFirestore && !isDemoCouncil) {
@@ -332,7 +459,7 @@ class CouncilRepository extends ChangeNotifier {
       if (parentComment != null && parentComment.repliesCount > 0) {
         parentComment.repliesCount -= 1;
       }
-      notifyListeners();
+      _emitFeedAndUserChange();
       rethrow;
     }
   }
@@ -371,7 +498,7 @@ class CouncilRepository extends ChangeNotifier {
       _convincingVotes.add(voteKey);
     }
     final isDemoCouncil = _isDemoCouncil(council);
-    notifyListeners();
+    _emitFeedChange();
 
     try {
       if (_usingFirestore && !isDemoCouncil) {
@@ -387,7 +514,7 @@ class CouncilRepository extends ChangeNotifier {
       } else {
         _convincingVotes.remove(voteKey);
       }
-      notifyListeners();
+      _emitFeedChange();
       rethrow;
     }
   }
@@ -436,7 +563,7 @@ class CouncilRepository extends ChangeNotifier {
 
     final council = _councils.removeAt(index);
     _councils.insert(0, council);
-    notifyListeners();
+    _emitFeedChange();
   }
 
   Future<void> deleteCouncil(String councilId) async {
@@ -448,7 +575,7 @@ class CouncilRepository extends ChangeNotifier {
 
     _councils.removeWhere((item) => item.id == councilId);
     _mockCouncils.removeWhere((item) => item.id == councilId);
-    notifyListeners();
+    _emitFeedChange();
   }
 
   Future<CouncilModel> createCouncil({
@@ -527,7 +654,7 @@ class CouncilRepository extends ChangeNotifier {
     );
     _upsertLocalCouncil(council);
     _user.councils += 1;
-    notifyListeners();
+    _emitFeedAndUserChange();
     return council;
   }
 
@@ -558,7 +685,7 @@ class CouncilRepository extends ChangeNotifier {
       _user.avatarEmoji = avatarEmoji;
       _user.nicknameLocked = true;
     }
-    notifyListeners();
+    _emitUserChange();
     return true;
   }
 
@@ -575,7 +702,7 @@ class CouncilRepository extends ChangeNotifier {
     }
 
     _user.avatarEmoji = safeAvatar;
-    notifyListeners();
+    _emitUserChange();
     return true;
   }
 
@@ -583,7 +710,7 @@ class CouncilRepository extends ChangeNotifier {
     if (_sameUser(_user, user)) return;
 
     _user = user;
-    notifyListeners();
+    _emitUserChange();
   }
 
   void retryFirestoreSync() {
@@ -596,7 +723,7 @@ class CouncilRepository extends ChangeNotifier {
     _receivedServerCouncilSnapshot = false;
     _remoteSyncDelayed = false;
     _startCouncilSyncWatchdog();
-    notifyListeners();
+    _emitFeedChange();
 
     _ensureDemoOpportunity();
     _startResultsSync();
@@ -605,6 +732,11 @@ class CouncilRepository extends ChangeNotifier {
         .listen(
       (snapshot) {
         final firestoreCouncils = snapshot.councils;
+        final connectionStateChanged = snapshot.isFromCache
+            ? false
+            : !_receivedServerCouncilSnapshot ||
+                _remoteSyncDelayed ||
+                _firestoreError != null;
         if (!snapshot.isFromCache) {
           _receivedServerCouncilSnapshot = true;
           _remoteSyncDelayed = false;
@@ -612,6 +744,11 @@ class CouncilRepository extends ChangeNotifier {
           _lastRemoteSyncAt = DateTime.now();
           _councilSyncWatchdog?.cancel();
           _councilSyncWatchdog = null;
+        }
+
+        if (!snapshot.dataChanged) {
+          if (connectionStateChanged) _emitFeedChange();
+          return;
         }
 
         if (firestoreCouncils.isEmpty) {
@@ -625,7 +762,7 @@ class CouncilRepository extends ChangeNotifier {
               .toList();
           _refreshCommentSubscriptions();
         }
-        notifyListeners();
+        _emitFeedChange();
       },
       onError: (Object error) {
         _firestoreError = error;
@@ -634,7 +771,7 @@ class CouncilRepository extends ChangeNotifier {
         _councilSyncWatchdog = null;
         _usingFirestore = false;
         _councils = List<CouncilModel>.from(_mockCouncils);
-        notifyListeners();
+        _emitFeedChange();
       },
     );
   }
@@ -653,13 +790,13 @@ class CouncilRepository extends ChangeNotifier {
     _userSubscription = null;
     _blockedUsersSubscription?.cancel();
     _blockedUsersSubscription = null;
-    _cancelConvincingVoteSubscriptions(clearVotes: true);
+    _convincingVotes.clear();
     _blockedUserIds.clear();
 
     if (firebaseUser == null || firebaseUser.isAnonymous) {
       if (!_sameUser(_user, MockData.currentUser)) {
         _user = MockData.currentUser;
-        notifyListeners();
+        _emitUserChange();
       }
       return;
     }
@@ -681,7 +818,7 @@ class CouncilRepository extends ChangeNotifier {
         _applyCachedComments(council);
       }
       _refreshCommentSubscriptions();
-      notifyListeners();
+      _emitFeedChange();
     }, onError: (_) {});
 
     _userSubscription =
@@ -699,7 +836,7 @@ class CouncilRepository extends ChangeNotifier {
     _councilSyncWatchdog = Timer(const Duration(seconds: 7), () {
       if (_receivedServerCouncilSnapshot) return;
       _remoteSyncDelayed = true;
-      notifyListeners();
+      _emitFeedChange();
     });
   }
 
@@ -744,17 +881,20 @@ class CouncilRepository extends ChangeNotifier {
         .listen(
       (results) {
         _results = results;
+        _resultsStateNotifier.value =
+            List<CouncilResultModel>.unmodifiable(results);
         notifyListeners();
       },
       onError: (_) {
         _results = [];
+        _resultsStateNotifier.value = const <CouncilResultModel>[];
         notifyListeners();
       },
     );
   }
 
   void _refreshCommentSubscriptions() {
-    for (final councilId in _requestedCommentWatches) {
+    for (final councilId in _commentWatchRegistry.activeKeys) {
       _startCommentsSubscription(councilId);
     }
   }
@@ -766,9 +906,42 @@ class CouncilRepository extends ChangeNotifier {
         .watchComments(councilId)
         .listen((comments) {
       _remoteCommentsByCouncilId[councilId] = comments;
+      _touchCommentCache(councilId);
+      _pruneCommentCache();
       _pruneLocalCommentOverlay(councilId, comments);
-      if (_applyCachedCommentsToCouncil(councilId)) notifyListeners();
+      if (_applyCachedCommentsToCouncil(councilId)) _emitFeedChange();
     }, onError: (_) {});
+  }
+
+  void _touchCommentCache(String councilId) {
+    if (!_remoteCommentsByCouncilId.containsKey(councilId)) return;
+    _recentCommentCacheCouncilIds
+      ..remove(councilId)
+      ..add(councilId);
+  }
+
+  void _pruneCommentCache() {
+    const maximumCachedCouncils = 4;
+    while (_remoteCommentsByCouncilId.length > maximumCachedCouncils) {
+      String? councilId;
+      for (final candidate in _recentCommentCacheCouncilIds) {
+        if (_commentWatchRegistry.referenceCountFor(candidate) == 0) {
+          councilId = candidate;
+          break;
+        }
+      }
+      if (councilId == null) return;
+
+      _recentCommentCacheCouncilIds.remove(councilId);
+      _remoteCommentsByCouncilId.remove(councilId);
+      final council = _findCouncilById(councilId);
+      if (council == null) continue;
+      final retainedLocalComments = _visibleCommentsForCouncil(
+        councilId,
+        const <CommentModel>[],
+      );
+      council.comments = retainedLocalComments;
+    }
   }
 
   CouncilModel _withCachedComments(CouncilModel council) {
@@ -778,9 +951,14 @@ class CouncilRepository extends ChangeNotifier {
 
   bool _applyCachedCommentsToCouncil(String councilId) {
     final index = _councils.indexWhere((item) => item.id == councilId);
-    if (index == -1) return false;
+    if (index != -1) {
+      _applyCachedComments(_councils[index]);
+      return true;
+    }
 
-    _applyCachedComments(_councils[index]);
+    final standaloneCouncil = _standaloneCouncilsById[councilId];
+    if (standaloneCouncil == null) return false;
+    _applyCachedComments(standaloneCouncil);
     return true;
   }
 
@@ -802,7 +980,6 @@ class CouncilRepository extends ChangeNotifier {
     );
     council.comments = visibleComments;
     council.commentsCount = visibleComments.length;
-    _refreshConvincingVoteSubscriptions(council.id, visibleComments);
   }
 
   List<CommentModel> _visibleCommentsForCouncil(
@@ -841,7 +1018,7 @@ class CouncilRepository extends ChangeNotifier {
       councilId,
       _remoteCommentsByCouncilId[councilId] ?? const <CommentModel>[],
     );
-    if (_applyCachedCommentsToCouncil(councilId)) notifyListeners();
+    if (_applyCachedCommentsToCouncil(councilId)) _emitFeedChange();
   }
 
   void _removeVisibleComment(String councilId, String commentId) {
@@ -881,54 +1058,6 @@ class CouncilRepository extends ChangeNotifier {
     return a.minutesAgo.compareTo(b.minutesAgo);
   }
 
-  void _refreshConvincingVoteSubscriptions(
-    String councilId,
-    List<CommentModel> comments,
-  ) {
-    final firebaseUser = FirebaseAuth.instance.currentUser;
-    if (firebaseUser == null || firebaseUser.isAnonymous) return;
-
-    final activeKeys = <String>{};
-    for (final comment in comments) {
-      if (comment.authorId == firebaseUser.uid) continue;
-      final key = '$councilId/${comment.id}';
-      activeKeys.add(key);
-      _convincingVoteSubscriptions.putIfAbsent(
-        key,
-        () => FirebaseCouncilRepository.instance
-            .watchConvincingVote(commentId: comment.id, uid: firebaseUser.uid)
-            .listen(
-          (selected) {
-            if (selected) {
-              _convincingVotes.add(key);
-            } else {
-              _convincingVotes.remove(key);
-            }
-            notifyListeners();
-          },
-          onError: (_) {},
-        ),
-      );
-    }
-
-    final staleKeys = _convincingVoteSubscriptions.keys
-        .where(
-            (key) => key.startsWith('$councilId/') && !activeKeys.contains(key))
-        .toList(growable: false);
-    for (final key in staleKeys) {
-      unawaited(_convincingVoteSubscriptions.remove(key)?.cancel());
-      _convincingVotes.remove(key);
-    }
-  }
-
-  void _cancelConvincingVoteSubscriptions({bool clearVotes = false}) {
-    for (final subscription in _convincingVoteSubscriptions.values) {
-      unawaited(subscription.cancel());
-    }
-    _convincingVoteSubscriptions.clear();
-    if (clearVotes) _convincingVotes.clear();
-  }
-
   List<CommentModel> _withPrivateDemoComments(
     String councilId,
     List<CommentModel> comments,
@@ -957,6 +1086,8 @@ class CouncilRepository extends ChangeNotifier {
     for (final council in _councils) {
       if (council.id == id) return council;
     }
+    final standaloneCouncil = _standaloneCouncilsById[id];
+    if (standaloneCouncil != null) return standaloneCouncil;
     for (final council in _mockCouncils) {
       if (council.id == id) return council;
     }
@@ -1100,6 +1231,102 @@ class CouncilRepository extends ChangeNotifier {
     for (final subscription in _commentSubscriptions.values) {
       subscription.cancel();
     }
+    _feedStateNotifier.dispose();
+    _userStateNotifier.dispose();
+    _resultsStateNotifier.dispose();
+    super.dispose();
+  }
+}
+
+class CouncilDetailsSession extends ChangeNotifier {
+  CouncilDetailsSession._(this._repository, this.councilId) {
+    _repository._acquireCouncilComments(councilId);
+    unawaited(_repository._loadCouncilIfMissing(councilId));
+    _lastRevision = _calculateRevision();
+    _repository.feedState.addListener(_handleRepositoryChange);
+  }
+
+  final CouncilRepository _repository;
+  final String councilId;
+  late int _lastRevision;
+  bool _observingFeed = true;
+  bool _disposed = false;
+
+  CouncilRepository get repository => _repository;
+  CouncilModel? get council => _repository.findCouncilById(councilId);
+
+  void setPresentationActive(bool value) {
+    if (_disposed || _observingFeed == value) return;
+    _observingFeed = value;
+    if (value) {
+      _repository.feedState.addListener(_handleRepositoryChange);
+      _handleRepositoryChange();
+    } else {
+      _repository.feedState.removeListener(_handleRepositoryChange);
+    }
+  }
+
+  void _handleRepositoryChange() {
+    if (_disposed) return;
+    final revision = _calculateRevision();
+    if (_lastRevision == revision) return;
+    _lastRevision = revision;
+    notifyListeners();
+  }
+
+  int _calculateRevision() {
+    final value = council;
+    if (value == null) return 0;
+    return Object.hashAll(
+      <Object?>[
+        value.id,
+        value.title,
+        value.description,
+        value.categoryId,
+        value.category,
+        value.city,
+        value.status,
+        value.participants,
+        value.commentsCount,
+        value.votesCount,
+        value.supportPercent,
+        value.againstPercent,
+        value.neutralPercent,
+        value.endsIn,
+        value.isPrivate,
+        value.allowComments,
+        value.isCouncilOfDay,
+        value.isPinned,
+        value.hasVoted,
+        value.selectedOption,
+        Object.hashAll(value.imageUrls),
+        Object.hashAll(value.thumbnailUrls),
+        Object.hashAll(value.mediumImageUrls),
+        Object.hashAll(
+          value.comments.map(
+            (comment) => Object.hash(
+              comment.id,
+              comment.parentId,
+              comment.text,
+              comment.convincingCount,
+              comment.repliesCount,
+              comment.isBest,
+              _repository.hasConvincingVote(councilId, comment.id),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    if (_observingFeed) {
+      _repository.feedState.removeListener(_handleRepositoryChange);
+    }
+    _repository._releaseCouncilComments(councilId);
     super.dispose();
   }
 }

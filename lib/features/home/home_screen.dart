@@ -13,6 +13,7 @@ import '../../core/widgets/discussion_card.dart';
 import '../../core/widgets/majlis_card.dart';
 import '../../core/widgets/premium_background.dart';
 import '../../core/widgets/section_header.dart';
+import '../../core/widgets/tab_activity_scope.dart';
 import '../../data/models/council_model.dart';
 import '../../data/models/sponsorship_campaign.dart';
 import '../../data/repositories/council_repository.dart';
@@ -37,34 +38,68 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const double _homeHorizontalPadding = 10;
   final PageController _featuredPageController = PageController();
   Timer? _featuredCarouselTimer;
   int _featuredPage = 0;
+  bool _tabActive = true;
+  AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
+  late final Stream<int> _unreadTotalStream;
 
   @override
   void initState() {
     super.initState();
-    _featuredCarouselTimer = Timer.periodic(
-      const Duration(seconds: 4),
+    WidgetsBinding.instance.addObserver(this);
+    _lifecycleState =
+        WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
+    _unreadTotalStream = MessagingRepository.instance.watchUnreadTotal();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final tabActive = TabActivityScope.isActiveOf(context);
+    if (_tabActive != tabActive) _tabActive = tabActive;
+    _syncFeaturedCarouselTimer();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycleState = state;
+    _syncFeaturedCarouselTimer();
+  }
+
+  void _syncFeaturedCarouselTimer() {
+    final shouldRun =
+        _tabActive && _lifecycleState == AppLifecycleState.resumed;
+    if (!shouldRun) {
+      _featuredCarouselTimer?.cancel();
+      _featuredCarouselTimer = null;
+      return;
+    }
+    _featuredCarouselTimer ??= Timer.periodic(
+      const Duration(seconds: 6),
       (_) => _advanceFeaturedCarousel(),
     );
   }
 
   void _advanceFeaturedCarousel() {
-    if (!mounted || !_featuredPageController.hasClients) return;
+    if (!mounted || !_tabActive || !_featuredPageController.hasClients) {
+      return;
+    }
 
     final nextPage = (_featuredPage + 1) % 3;
     _featuredPageController.animateToPage(
       nextPage,
-      duration: const Duration(milliseconds: 1300),
-      curve: Curves.easeInOutCubic,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
     );
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _featuredCarouselTimer?.cancel();
     _featuredPageController.dispose();
     super.dispose();
@@ -73,8 +108,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final repo = CouncilRepository.instance;
+    final tabSelected = TabActivityScope.isSelectedOf(context);
     return AnimatedBuilder(
-      animation: repo,
+      animation: _tabActive ? repo.feedState : kAlwaysCompleteAnimation,
       builder: (context, _) {
         final sizes = AppSizes.of(context);
         final featuredCouncil = _homeFeaturedCouncil(repo);
@@ -82,8 +118,9 @@ class _HomeScreenState extends State<HomeScreen> {
           repo.activeCouncils,
           featuredCouncilId: featuredCouncil.id,
         ).take(4).toList();
-        final bottomPadding =
-            sizes.bottomNavHeight + 18 + MediaQuery.viewPaddingOf(context).bottom;
+        final bottomPadding = sizes.bottomNavHeight +
+            18 +
+            MediaQuery.viewPaddingOf(context).bottom;
         final topInset = MediaQuery.viewPaddingOf(context).top;
         final headerBackdropHeight = topInset + 78;
 
@@ -94,176 +131,186 @@ class _HomeScreenState extends State<HomeScreen> {
               statusBarColor: Colors.transparent,
             ),
             child: PremiumBackground(
-            showPattern: false,
-            child: Stack(
-              children: [
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: headerBackdropHeight,
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Color(0xFFFFFAEF),
-                            Color(0xFFF7EFD7),
+              showPattern: false,
+              child: Stack(
+                children: [
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: headerBackdropHeight,
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Color(0xFFFFFAEF),
+                              Color(0xFFF7EFD7),
+                            ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primaryDarkGreen
+                                  .withValues(alpha: .05),
+                              blurRadius: 14,
+                              offset: const Offset(0, 6),
+                            ),
                           ],
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primaryDarkGreen.withValues(alpha: .05),
-                            blurRadius: 14,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
                       ),
                     ),
                   ),
-                ),
-            SafeArea(
-              bottom: false,
-              child: ListView(
-                padding: EdgeInsets.fromLTRB(
-                  _homeHorizontalPadding,
-                  12,
-                  _homeHorizontalPadding,
-                  bottomPadding,
-                ),
-                children: [
-                  SizedBox(
-                    height: 44,
-                    child: Stack(
-                      alignment: Alignment.center,
+                  SafeArea(
+                    bottom: false,
+                    child: ListView(
+                      padding: EdgeInsets.fromLTRB(
+                        _homeHorizontalPadding,
+                        12,
+                        _homeHorizontalPadding,
+                        bottomPadding,
+                      ),
                       children: [
-                        PositionedDirectional(
-                          start: 0,
-                          top: 0,
-                          bottom: 0,
-                          child: Center(
-                            child: SizedBox(
-                              width: 120,
-                              height: 40,
-                              child: Image.asset(
-                                'assets/images/forsa_pro_logo_header.png',
-                                alignment: Alignment.centerRight,
-                                fit: BoxFit.contain,
-                                filterQuality: FilterQuality.high,
-                                semanticLabel: 'فرصة برو',
-                              ),
-                            ),
-                          ),
-                        ),
-                        PositionedDirectional(
-                          end: 0,
-                          top: 0,
-                          bottom: 0,
-                          child: Center(
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                StreamBuilder<int>(
-                                  stream: MessagingRepository.instance
-                                      .watchUnreadTotal(),
-                                  builder: (context, snapshot) => _MessageButton(
-                                    onTap: widget.onOpenMessages,
-                                    count: snapshot.data ?? 0,
+                        SizedBox(
+                          height: 44,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              PositionedDirectional(
+                                start: 0,
+                                top: 0,
+                                bottom: 0,
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 120,
+                                    height: 40,
+                                    child: Image.asset(
+                                      'assets/images/forsa_pro_logo_header.png',
+                                      alignment: Alignment.centerRight,
+                                      fit: BoxFit.contain,
+                                      filterQuality: FilterQuality.high,
+                                      cacheWidth: (120 *
+                                              MediaQuery.devicePixelRatioOf(
+                                                  context))
+                                          .ceil(),
+                                      semanticLabel: 'فرصة برو',
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                _NotificationButton(
-                                  onTap: widget.onOpenNotifications,
+                              ),
+                              PositionedDirectional(
+                                end: 0,
+                                top: 0,
+                                bottom: 0,
+                                child: Center(
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      StreamBuilder<int>(
+                                        stream: tabSelected
+                                            ? _unreadTotalStream
+                                            : null,
+                                        builder: (context, snapshot) =>
+                                            _MessageButton(
+                                          onTap: widget.onOpenMessages,
+                                          count: snapshot.data ?? 0,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _NotificationButton(
+                                        onTap: widget.onOpenNotifications,
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        _HomeFeaturedCarousel(
+                          controller: _featuredPageController,
+                          activeIndex: _featuredPage,
+                          onPageChanged: (value) =>
+                              setState(() => _featuredPage = value),
+                          council: featuredCouncil,
+                          onVote: (option) {
+                            if (featuredCouncil.isVotingClosed) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'هذه الفرصة غير متاحة للتصويت حاليًا، ويمكنك متابعة النقاش والتعليق.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+
+                            AuthGuard.requireAuth(context, () async {
+                              try {
+                                await repo.vote(featuredCouncil.id, option);
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content:
+                                        Text('تم تسجيل رأيك السريع في الفرصة'),
+                                  ),
+                                );
+                              } catch (_) {
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'تعذر تسجيل الرأي. حاول مرة أخرى.',
+                                    ),
+                                  ),
+                                );
+                              }
+                            });
+                          },
+                          onOpen: () =>
+                              widget.onOpenCouncil(featuredCouncil.id),
+                          showVotingActions: false,
+                          afterTodayCard: _HomeCategoryStrip(
+                            categories: repo.categories,
+                            onSelected: widget.onOpenCategory,
+                          ),
+                        ),
+                        _HomeAdSlot(onOpenCouncil: widget.onOpenCouncil),
+                        if (repo.hasConnectionIssue) ...[
+                          const SizedBox(height: 12),
+                          ConnectionStatusBanner(
+                            lastUpdatedAt: repo.lastRemoteSyncAt,
+                            onRetry: repo.retryFirestoreSync,
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        SectionHeader(
+                          title: 'أكثر الفرص تفاعلًا',
+                          actionText: 'عرض الكل',
+                          onAction: () => widget.onOpenCategory('الكل'),
+                        ),
+                        const SizedBox(height: 8),
+                        ...active.map(
+                          (council) => DiscussionCard(
+                            council: council,
+                            compact: true,
+                            onTap: () => widget.onOpenCouncil(council.id),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  _HomeFeaturedCarousel(
-                    controller: _featuredPageController,
-                    activeIndex: _featuredPage,
-                    onPageChanged: (value) =>
-                        setState(() => _featuredPage = value),
-                    council: featuredCouncil,
-                    onVote: (option) {
-                      if (featuredCouncil.isVotingClosed) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'هذه الفرصة غير متاحة للتصويت حاليًا، ويمكنك متابعة النقاش والتعليق.',
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-
-                      AuthGuard.requireAuth(context, () async {
-                        try {
-                          await repo.vote(featuredCouncil.id, option);
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('تم تسجيل رأيك السريع في الفرصة'),
-                            ),
-                          );
-                        } catch (_) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'تعذر تسجيل الرأي. حاول مرة أخرى.',
-                              ),
-                            ),
-                          );
-                        }
-                      });
-                    },
-                    onOpen: () => widget.onOpenCouncil(featuredCouncil.id),
-                    showVotingActions: false,
-                    afterTodayCard: _HomeCategoryStrip(
-                      categories: repo.categories,
-                      onSelected: widget.onOpenCategory,
-                    ),
-                  ),
-                  _HomeAdSlot(onOpenCouncil: widget.onOpenCouncil),
-                  if (repo.hasConnectionIssue) ...[
-                    const SizedBox(height: 12),
-                    ConnectionStatusBanner(
-                      lastUpdatedAt: repo.lastRemoteSyncAt,
-                      onRetry: repo.retryFirestoreSync,
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  SectionHeader(
-                    title: 'أكثر الفرص تفاعلًا',
-                    actionText: 'عرض الكل',
-                    onAction: () => widget.onOpenCategory('الكل'),
-                  ),
-                  const SizedBox(height: 8),
-                  ...active.map(
-                    (council) => DiscussionCard(
-                      council: council,
-                      compact: true,
-                      onTap: () => widget.onOpenCouncil(council.id),
-                    ),
-                  ),
                 ],
               ),
             ),
-              ],
-            ),
-          ),
           ),
         );
       },
     );
   }
+
   List<CouncilModel> _mostInteractiveCouncils(
     List<CouncilModel> councils, {
     required String featuredCouncilId,
@@ -273,8 +320,7 @@ class _HomeScreenState extends State<HomeScreen> {
         .toList(growable: false);
 
     sorted.sort((a, b) {
-      final scoreCompare =
-          _interactionScore(b).compareTo(_interactionScore(a));
+      final scoreCompare = _interactionScore(b).compareTo(_interactionScore(a));
       if (scoreCompare != 0) return scoreCompare;
 
       final bCreatedAt = b.createdAt;
@@ -407,6 +453,9 @@ class _HomeImageBanner extends StatelessWidget {
           fit: BoxFit.contain,
           gaplessPlayback: true,
           filterQuality: FilterQuality.high,
+          cacheWidth: (MediaQuery.sizeOf(context).width *
+                  MediaQuery.devicePixelRatioOf(context))
+              .ceil(),
         ),
       ),
     );
@@ -455,11 +504,19 @@ class _HomeAdSlot extends StatefulWidget {
 
 class _HomeAdSlotState extends State<_HomeAdSlot> {
   final _sponsorshipRepo = SponsorshipRepository.instance;
+  late final Stream<SponsorshipCampaign?> _campaignStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _campaignStream = _sponsorshipRepo.watchActiveHomePlacement();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final selected = TabActivityScope.isSelectedOf(context);
     return StreamBuilder<SponsorshipCampaign?>(
-      stream: _sponsorshipRepo.watchActiveHomePlacement(),
+      stream: selected ? _campaignStream : null,
       builder: (context, snapshot) {
         final ad = snapshot.data;
         if (ad == null) return const SizedBox.shrink();
@@ -561,9 +618,7 @@ class _HomeAdCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(18),
               ),
               child: Icon(
-                isBanner
-                    ? Icons.view_carousel_rounded
-                    : Icons.push_pin_rounded,
+                isBanner ? Icons.view_carousel_rounded : Icons.push_pin_rounded,
                 color: isBanner ? AppColors.gold : AppColors.primaryDarkGreen,
                 size: 29,
               ),
@@ -581,7 +636,8 @@ class _HomeAdCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.cardTitle.copyWith(
-                      color: isBanner ? AppColors.cardWhite : AppColors.textDark,
+                      color:
+                          isBanner ? AppColors.cardWhite : AppColors.textDark,
                       fontSize: 16,
                       height: 1.25,
                     ),
@@ -721,7 +777,7 @@ class _HomeCategoryStripState extends State<_HomeCategoryStrip> {
     if (_playedDiscovery) return;
     _playedDiscovery = true;
 
-    await Future<void>.delayed(const Duration(milliseconds: 520));
+    await Future<void>.delayed(const Duration(milliseconds: 650));
     if (!mounted || !_scrollController.hasClients) return;
 
     final maxScroll = _scrollController.position.maxScrollExtent;
@@ -729,17 +785,17 @@ class _HomeCategoryStripState extends State<_HomeCategoryStrip> {
 
     await _scrollController.animateTo(
       maxScroll,
-      duration: const Duration(milliseconds: 820),
-      curve: Curves.easeInOutCubic,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
     );
 
-    await Future<void>.delayed(const Duration(milliseconds: 260));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
     if (!mounted || !_scrollController.hasClients) return;
 
     await _scrollController.animateTo(
       0,
-      duration: const Duration(milliseconds: 760),
-      curve: Curves.easeInOutCubic,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
     );
   }
 
@@ -1071,13 +1127,6 @@ class _NotificationButton extends StatelessWidget {
               color: AppColors.cardWhite,
               shape: BoxShape.circle,
               border: Border.all(color: AppColors.borderBeige),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x0D0F4A35),
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
-                ),
-              ],
             ),
             child: const Icon(
               Icons.notifications_none_rounded,
@@ -1124,13 +1173,6 @@ class _MessageButton extends StatelessWidget {
               color: AppColors.cardWhite,
               shape: BoxShape.circle,
               border: Border.all(color: AppColors.borderBeige),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x0D0F4A35),
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
-                ),
-              ],
             ),
             child: const Icon(
               Icons.mark_chat_unread_outlined,

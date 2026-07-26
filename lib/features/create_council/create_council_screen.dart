@@ -4,13 +4,12 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/auth/auth_guard.dart';
 import '../../core/moderation/content_moderation.dart';
+import '../../core/navigation/app_focus.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
 import '../../core/theme/app_text_styles.dart';
-import '../../core/utils/opportunity_vote_copy.dart';
 import '../../core/widgets/custom_app_bar.dart';
 import '../../core/widgets/premium_background.dart';
-import '../../data/models/council_model.dart';
 import '../../data/repositories/council_repository.dart';
 
 const _saudiCities = <String>[
@@ -62,8 +61,13 @@ const _saudiCities = <String>[
 ];
 
 class CreateCouncilScreen extends StatefulWidget {
-  const CreateCouncilScreen({super.key, this.onCreated});
+  const CreateCouncilScreen({
+    super.key,
+    this.onBack,
+    this.onCreated,
+  });
 
+  final VoidCallback? onBack;
   final ValueChanged<String>? onCreated;
 
   @override
@@ -98,10 +102,6 @@ class _CreateCouncilScreenState extends State<CreateCouncilScreen> {
   Widget build(BuildContext context) {
     final sizes = AppSizes.of(context);
     final categories = repo.categories.where((c) => c != 'الكل').toList();
-    final selectedCategory = category;
-    final voteCopy = selectedCategory == null
-        ? null
-        : OpportunityVoteCopy.forCategory(selectedCategory);
     final titleHint = _titleHintForCategory(category);
     final detailsHint = _detailsHintForCategory(category);
 
@@ -112,7 +112,11 @@ class _CreateCouncilScreenState extends State<CreateCouncilScreen> {
         showPattern: false,
         child: Column(
           children: [
-            const CustomGreenHeader(title: 'إضافة فرصة'),
+            CustomGreenHeader(
+              title: 'إضافة فرصة',
+              showBack: true,
+              onBack: widget.onBack,
+            ),
             Expanded(
               child: ListView(
                 keyboardDismissBehavior:
@@ -121,8 +125,7 @@ class _CreateCouncilScreenState extends State<CreateCouncilScreen> {
                   sizes.horizontalPadding,
                   12,
                   sizes.horizontalPadding,
-                  sizes.bottomNavHeight + 18 +
-                      MediaQuery.viewPaddingOf(context).bottom,
+                  18 + MediaQuery.viewPaddingOf(context).bottom,
                 ),
                 children: [
                   _FormSection(
@@ -231,57 +234,6 @@ class _CreateCouncilScreenState extends State<CreateCouncilScreen> {
                   const SizedBox(height: 12),
                   _FormSection(
                     children: [
-                      const _FieldLabel('الرأي السريع'),
-                      const SizedBox(height: 6),
-                      if (voteCopy == null)
-                        Text(
-                          'اختر التصنيف أولًا لعرض خيارات الرأي المناسبة.',
-                          style: AppTextStyles.caption.copyWith(
-                            color: AppColors.textGray,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        )
-                      else ...[
-                        Text(
-                          voteCopy.prompt,
-                          style: AppTextStyles.caption.copyWith(
-                            color: AppColors.textGray,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _VoteOptionField(
-                          text: voteCopy.labelFor(VoteOption.support),
-                          icon: voteCopy.iconFor(VoteOption.support),
-                          color: voteCopy.colorFor(VoteOption.support),
-                        ),
-                        _VoteOptionField(
-                          text: voteCopy.labelFor(VoteOption.against),
-                          icon: voteCopy.iconFor(VoteOption.against),
-                          color: voteCopy.colorFor(VoteOption.against),
-                        ),
-                        _VoteOptionField(
-                          text: voteCopy.labelFor(VoteOption.neutral),
-                          icon: voteCopy.iconFor(VoteOption.neutral),
-                          color: voteCopy.colorFor(VoteOption.neutral),
-                        ),
-                      ],
-                      const SizedBox(height: 4),
-                      Text(
-                        'تتغير هذه الخيارات تلقائيًا حسب التصنيف حتى تعطي صاحب الفرصة مؤشرات مفيدة.',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.textGray,
-                          fontSize: 11,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _FormSection(
-                    children: [
                       _ToggleRow(
                         title: 'السماح بالتعليقات',
                         subtitle: allowComments
@@ -337,6 +289,7 @@ class _CreateCouncilScreenState extends State<CreateCouncilScreen> {
       return;
     }
 
+    dismissAppKeyboard();
     try {
       final pickedImages = await _imagePicker.pickMultiImage(
         maxWidth: 1800,
@@ -369,6 +322,7 @@ class _CreateCouncilScreenState extends State<CreateCouncilScreen> {
       );
     }
   }
+
   Future<void> _createCouncil() async {
     final selectedCategory = category;
     if (!_validateRequiredFields(selectedCategory)) return;
@@ -403,7 +357,8 @@ class _CreateCouncilScreenState extends State<CreateCouncilScreen> {
           ..hideCurrentSnackBar()
           ..showSnackBar(
             SnackBar(
-              content: const Text('تمت إضافة الفرصة بنجاح. يمكنك الآن متابعة التفاصيل والآراء.'),
+              content: const Text(
+                  'تمت إضافة الفرصة بنجاح. يمكنك الآن متابعة التفاصيل والآراء.'),
               behavior: SnackBarBehavior.floating,
               backgroundColor: AppColors.primaryDarkGreen,
               shape: RoundedRectangleBorder(
@@ -509,6 +464,7 @@ class _CityDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
       initialValue: value,
+      onTap: dismissAppKeyboard,
       isExpanded: true,
       menuMaxHeight: 360,
       dropdownColor: AppColors.cardWhite,
@@ -548,7 +504,8 @@ class _CityDropdown extends StatelessWidget {
       decoration: InputDecoration(
         filled: true,
         fillColor: AppColors.cardWhite,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
         prefixIcon: const Icon(
           Icons.location_city_rounded,
           size: 19,
@@ -564,7 +521,8 @@ class _CityDropdown extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.primaryDarkGreen, width: 1.2),
+          borderSide:
+              const BorderSide(color: AppColors.primaryDarkGreen, width: 1.2),
         ),
       ),
     );
@@ -601,8 +559,7 @@ class _ImagePickerSection extends StatelessWidget {
               size: itemSize,
               onRemove: () => onRemove(index),
             ),
-          if (images.length < 10)
-            _AddImageTile(size: itemSize, onTap: onAdd),
+          if (images.length < 10) _AddImageTile(size: itemSize, onTap: onAdd),
         ];
 
         return Wrap(
@@ -696,6 +653,7 @@ class _AddImageTile extends StatelessWidget {
     );
   }
 }
+
 class _FormSection extends StatelessWidget {
   const _FormSection({required this.children});
 
@@ -856,53 +814,6 @@ InputDecoration _inputDecoration(String hintText) {
       borderSide: const BorderSide(color: AppColors.primaryGreen, width: 1.2),
     ),
   );
-}
-
-class _VoteOptionField extends StatelessWidget {
-  const _VoteOptionField({
-    required this.text,
-    required this.icon,
-    required this.color,
-  });
-
-  final String text;
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 42,
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderBeige),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: .12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: color, size: 17),
-          ),
-          const SizedBox(width: 9),
-          Text(
-            text,
-            style: AppTextStyles.body.copyWith(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _CategoryChoiceChip extends StatelessWidget {

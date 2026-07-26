@@ -1,6 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../../core/navigation/app_focus.dart';
+import '../../core/navigation/app_page_route.dart';
+import '../../core/navigation/app_route_observer.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/moderation/content_moderation.dart';
@@ -31,24 +35,57 @@ class ConversationScreen extends StatefulWidget {
   State<ConversationScreen> createState() => _ConversationScreenState();
 }
 
-class _ConversationScreenState extends State<ConversationScreen> {
+class _ConversationScreenState extends State<ConversationScreen>
+    with PageRouteActivityMixin<ConversationScreen> {
   final MessagingRepository _repo = MessagingRepository.instance;
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _imagePicker = ImagePicker();
   late final String _currentUid;
+  late Stream<ConversationModel?> _conversationStream;
+  late Stream<List<MessageModel>> _messagesStream;
   bool _sending = false;
   bool _pickingImage = false;
   bool _actionBusy = false;
   bool _readMarkScheduled = false;
   bool _openingCouncil = false;
+  bool _initialMessageScrollDone = false;
+  bool _messageScrollScheduled = false;
+  int _lastMessageCount = 0;
 
   @override
   void initState() {
     super.initState();
     _currentUid = _repo.viewerUid;
+    _initializeStreams();
     NotificationRouter.activeConversationId = widget.conversationId;
-    unawaited(_repo.markConversationRead(widget.conversationId));
+  }
+
+  @override
+  void didUpdateWidget(covariant ConversationScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.conversationId == widget.conversationId) return;
+    if (NotificationRouter.activeConversationId == oldWidget.conversationId) {
+      NotificationRouter.activeConversationId = widget.conversationId;
+    }
+    _initialMessageScrollDone = false;
+    _lastMessageCount = 0;
+    _initializeStreams();
+  }
+
+  void _initializeStreams() {
+    _conversationStream = _repo.watchConversation(widget.conversationId);
+    _messagesStream = _repo.watchMessages(widget.conversationId);
+  }
+
+  @override
+  void onPageRouteActivityChanged(bool isActive) {
+    if (isActive) {
+      NotificationRouter.activeConversationId = widget.conversationId;
+    } else if (NotificationRouter.activeConversationId ==
+        widget.conversationId) {
+      NotificationRouter.activeConversationId = null;
+    }
   }
 
   @override
@@ -64,11 +101,13 @@ class _ConversationScreenState extends State<ConversationScreen> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<ConversationModel?>(
-      stream: _repo.watchConversation(widget.conversationId),
+      stream: _conversationStream,
       initialData: widget.initialConversation,
       builder: (context, conversationSnapshot) {
-        final conversation = conversationSnapshot.data ?? widget.initialConversation;
-        final otherName = conversation?.otherParticipant(_currentUid)?.displayName;
+        final conversation =
+            conversationSnapshot.data ?? widget.initialConversation;
+        final otherName =
+            conversation?.otherParticipant(_currentUid)?.displayName;
         final blocked = conversation?.isBlocked == true;
         if (conversation != null &&
             conversation.unreadFor(_currentUid) > 0 &&
@@ -104,7 +143,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                 ),
                 Expanded(
                   child: StreamBuilder<List<MessageModel>>(
-                    stream: _repo.watchMessages(widget.conversationId),
+                    stream: _messagesStream,
                     builder: (context, snapshot) {
                       final messages = snapshot.data ?? const <MessageModel>[];
                       if (snapshot.connectionState == ConnectionState.waiting &&
@@ -115,7 +154,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
                       if (snapshot.hasError) {
                         return const _EmptyConversationState(
                           title: 'تعذر تحميل الرسائل',
-                          message: 'راجع الاتصال أو صلاحيات الحساب ثم حاول مرة أخرى.',
+                          message:
+                              'راجع الاتصال أو صلاحيات الحساب ثم حاول مرة أخرى.',
                         );
                       }
 
@@ -123,13 +163,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
                         return const _EmptyConversationState();
                       }
 
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (_scrollController.hasClients) {
-                          _scrollController.jumpTo(
-                            _scrollController.position.maxScrollExtent,
-                          );
-                        }
-                      });
+                      _scheduleMessageScroll(messages.length);
 
                       return ListView.builder(
                         controller: _scrollController,
@@ -139,7 +173,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
                           AppSizes.of(context).horizontalPadding,
                           12,
                         ),
-                        itemCount: messages.length + (conversation == null ? 0 : 1),
+                        itemCount:
+                            messages.length + (conversation == null ? 0 : 1),
                         itemBuilder: (context, index) {
                           if (conversation != null && index == 0) {
                             return _ConversationOpportunityCard(
@@ -147,11 +182,13 @@ class _ConversationScreenState extends State<ConversationScreen> {
                               onTap: () => _openCouncil(conversation.councilId),
                             );
                           }
-                          final message = messages[index - (conversation == null ? 0 : 1)];
+                          final message =
+                              messages[index - (conversation == null ? 0 : 1)];
                           return _MessageBubble(
                             message: message,
                             mine: message.senderId == _currentUid,
-                            sender: conversation?.participantSnapshots[message.senderId],
+                            sender: conversation
+                                ?.participantSnapshots[message.senderId],
                           );
                         },
                       );
@@ -176,8 +213,42 @@ class _ConversationScreenState extends State<ConversationScreen> {
     );
   }
 
+  void _scheduleMessageScroll(int messageCount) {
+    final firstLayout = !_initialMessageScrollDone;
+    final hasNewMessage = messageCount > _lastMessageCount;
+    final wasNearBottom = !_scrollController.hasClients ||
+        _scrollController.position.maxScrollExtent -
+                _scrollController.position.pixels <=
+            80;
+    _lastMessageCount = messageCount;
+    if ((!firstLayout && (!hasNewMessage || !wasNearBottom)) ||
+        _messageScrollScheduled) {
+      return;
+    }
+
+    _messageScrollScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _messageScrollScheduled = false;
+      if (!mounted || !_scrollController.hasClients) return;
+      final target = _scrollController.position.maxScrollExtent;
+      if (firstLayout) {
+        _scrollController.jumpTo(target);
+        _initialMessageScrollDone = true;
+        return;
+      }
+      unawaited(
+        _scrollController.animateTo(
+          target,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+        ),
+      );
+    });
+  }
+
   Future<void> _showConversationActions(ConversationModel conversation) async {
     if (_actionBusy) return;
+    dismissAppKeyboard();
     final blockedByMe = conversation.blockedBy.contains(_currentUid);
     await showModalBottomSheet<void>(
       context: context,
@@ -202,9 +273,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
                 },
               ),
               _ConversationActionTile(
-                icon: blockedByMe
-                    ? Icons.lock_open_rounded
-                    : Icons.block_rounded,
+                icon:
+                    blockedByMe ? Icons.lock_open_rounded : Icons.block_rounded,
                 label: blockedByMe
                     ? 'فك حظر المستخدم'
                     : conversation.isBlocked
@@ -254,7 +324,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
     _openingCouncil = true;
     try {
       await Navigator.of(context).push(
-        MaterialPageRoute<void>(
+        AppPageRoute<void>(
           builder: (_) => CouncilDetailsScreen(councilId: councilId),
         ),
       );
@@ -303,7 +373,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
       await _repo.blockConversation(conversation.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم حظر المستخدم. لن يتم إرسال رسائل جديدة.')),
+        const SnackBar(
+            content: Text('تم حظر المستخدم. لن يتم إرسال رسائل جديدة.')),
       );
     } catch (_) {
       if (!mounted) return;
@@ -332,6 +403,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
       if (mounted) setState(() => _actionBusy = false);
     }
   }
+
   Future<void> _archiveConversation(ConversationModel conversation) async {
     setState(() => _actionBusy = true);
     try {
@@ -370,7 +442,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
     }
   }
 
-  Future<void> _confirmDeleteConversation(ConversationModel conversation) async {
+  Future<void> _confirmDeleteConversation(
+      ConversationModel conversation) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => const _DeleteConversationDialog(),
@@ -423,6 +496,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
 
   Future<void> _sendImage() async {
     if (_sending || _pickingImage) return;
+    dismissAppKeyboard();
     final image = await _imagePicker.pickImage(
       source: ImageSource.gallery,
       imageQuality: 86,
@@ -486,7 +560,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
 class _EmptyConversationState extends StatelessWidget {
   const _EmptyConversationState({
     this.title = 'ابدأ المحادثة',
-    this.message = 'اكتب رسالتك الأولى بوضوح، واجعل التواصل مرتبطًا بتفاصيل الفرصة.',
+    this.message =
+        'اكتب رسالتك الأولى بوضوح، واجعل التواصل مرتبطًا بتفاصيل الفرصة.',
   });
 
   final String title;
@@ -702,7 +777,8 @@ class _MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final image = message.isImage;
-    final showText = message.text.isNotEmpty && (!image || message.text != 'صورة');
+    final showText =
+        message.text.isNotEmpty && (!image || message.text != 'صورة');
     final maxWidth = MediaQuery.sizeOf(context).width * .76;
 
     return Row(
@@ -720,94 +796,99 @@ class _MessageBubble extends StatelessWidget {
         Flexible(
           child: Container(
             constraints: BoxConstraints(maxWidth: maxWidth),
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: EdgeInsets.all(image ? 5 : 0),
-        decoration: BoxDecoration(
-          color: mine ? AppColors.primaryDarkGreen : AppColors.cardWhite,
-          borderRadius: BorderRadiusDirectional.only(
-            topStart: const Radius.circular(16),
-            topEnd: const Radius.circular(16),
-            bottomStart: Radius.circular(mine ? 16 : 5),
-            bottomEnd: Radius.circular(mine ? 5 : 16),
-          ),
-          border: mine ? null : Border.all(color: AppColors.borderBeige),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x0A0F4A35),
-              blurRadius: 8,
-              offset: Offset(0, 3),
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: EdgeInsets.all(image ? 5 : 0),
+            decoration: BoxDecoration(
+              color: mine ? AppColors.primaryDarkGreen : AppColors.cardWhite,
+              borderRadius: BorderRadiusDirectional.only(
+                topStart: const Radius.circular(16),
+                topEnd: const Radius.circular(16),
+                bottomStart: Radius.circular(mine ? 16 : 5),
+                bottomEnd: Radius.circular(mine ? 5 : 16),
+              ),
+              border: mine ? null : Border.all(color: AppColors.borderBeige),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0A0F4A35),
+                  blurRadius: 8,
+                  offset: Offset(0, 3),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: Padding(
-          padding: image ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (image)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(13),
-                  child: SizedBox(
-                    width: maxWidth - 10,
-                    height: 190,
-                    child: OptimizedNetworkImage(
-                      url: message.imageUrl!,
-                      width: maxWidth - 10,
-                      height: 190,
-                      fit: BoxFit.cover,
-                      quality: OptimizedImageQuality.medium,
-                      loadingBuilder: (context, child, progress) {
-                        if (progress == null) return child;
-                        return Container(
-                          color: AppColors.background,
-                          alignment: Alignment.center,
-                          child: const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+            child: Padding(
+              padding: image
+                  ? EdgeInsets.zero
+                  : const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (image)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(13),
+                      child: SizedBox(
+                        width: maxWidth - 10,
+                        height: 190,
+                        child: OptimizedNetworkImage(
+                          url: message.imageUrl!,
+                          width: maxWidth - 10,
+                          height: 190,
+                          fit: BoxFit.cover,
+                          quality: OptimizedImageQuality.medium,
+                          loadingBuilder: (context, child, progress) {
+                            if (progress == null) return child;
+                            return Container(
+                              color: AppColors.background,
+                              alignment: Alignment.center,
+                              child: const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            );
+                          },
+                          errorBuilder: (_, __, ___) => Container(
+                            color: AppColors.background,
+                            alignment: Alignment.center,
+                            child: const Icon(
+                              Icons.broken_image_outlined,
+                              color: AppColors.textGray,
+                            ),
                           ),
-                        );
-                      },
-                      errorBuilder: (_, __, ___) => Container(
-                        color: AppColors.background,
-                        alignment: Alignment.center,
-                        child: const Icon(
-                          Icons.broken_image_outlined,
-                          color: AppColors.textGray,
                         ),
                       ),
                     ),
+                  if (showText) ...[
+                    if (image) const SizedBox(height: 7),
+                    Text(
+                      message.text,
+                      textAlign: TextAlign.right,
+                      style: AppTextStyles.body.copyWith(
+                        color: mine ? AppColors.cardWhite : AppColors.textDark,
+                        fontSize: 13,
+                        height: 1.42,
+                      ),
+                    ),
+                  ],
+                  SizedBox(height: image ? 4 : 5),
+                  Padding(
+                    padding: image
+                        ? const EdgeInsets.symmetric(horizontal: 6)
+                        : EdgeInsets.zero,
+                    child: Text(
+                      _formatTime(message.createdAt),
+                      style: AppTextStyles.caption.copyWith(
+                        color: mine
+                            ? AppColors.cardWhite.withValues(alpha: .68)
+                            : AppColors.textGray,
+                        fontSize: 10,
+                      ),
+                    ),
                   ),
-                ),
-              if (showText) ...[
-                if (image) const SizedBox(height: 7),
-                Text(
-                  message.text,
-                  textAlign: TextAlign.right,
-                  style: AppTextStyles.body.copyWith(
-                    color: mine ? AppColors.cardWhite : AppColors.textDark,
-                    fontSize: 13,
-                    height: 1.42,
-                  ),
-                ),
-              ],
-              SizedBox(height: image ? 4 : 5),
-              Padding(
-                padding: image ? const EdgeInsets.symmetric(horizontal: 6) : EdgeInsets.zero,
-                child: Text(
-                  _formatTime(message.createdAt),
-                  style: AppTextStyles.caption.copyWith(
-                    color: mine
-                        ? AppColors.cardWhite.withValues(alpha: .68)
-                        : AppColors.textGray,
-                    fontSize: 10,
-                  ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-        ),
         ),
       ],
     );
@@ -934,7 +1015,9 @@ class _MessageComposer extends StatelessWidget {
                 height: 44,
                 decoration: BoxDecoration(
                   gradient: sending ? null : AppColors.headerGradient,
-                  color: sending ? AppColors.textGray.withValues(alpha: .28) : null,
+                  color: sending
+                      ? AppColors.textGray.withValues(alpha: .28)
+                      : null,
                   shape: BoxShape.circle,
                 ),
                 child: sending
@@ -982,7 +1065,8 @@ class _ConversationActionTile extends StatelessWidget {
     final color = destructive ? AppColors.red : AppColors.primaryDarkGreen;
     return ListTile(
       enabled: enabled,
-      leading: Icon(icon, color: enabled ? color : AppColors.textGray, size: 21),
+      leading:
+          Icon(icon, color: enabled ? color : AppColors.textGray, size: 21),
       title: Text(
         label,
         style: AppTextStyles.body.copyWith(
@@ -1009,7 +1093,8 @@ class _ConversationReportDialog extends StatefulWidget {
   const _ConversationReportDialog();
 
   @override
-  State<_ConversationReportDialog> createState() => _ConversationReportDialogState();
+  State<_ConversationReportDialog> createState() =>
+      _ConversationReportDialogState();
 }
 
 class _ConversationReportDialogState extends State<_ConversationReportDialog> {
@@ -1041,8 +1126,10 @@ class _ConversationReportDialogState extends State<_ConversationReportDialog> {
           children: [
             DropdownButtonFormField<String>(
               initialValue: reason,
+              onTap: dismissAppKeyboard,
               items: reasons
-                  .map((item) => DropdownMenuItem(value: item, child: Text(item)))
+                  .map((item) =>
+                      DropdownMenuItem(value: item, child: Text(item)))
                   .toList(growable: false),
               onChanged: (value) {
                 if (value != null) setState(() => reason = value);
@@ -1056,7 +1143,8 @@ class _ConversationReportDialogState extends State<_ConversationReportDialog> {
               maxLength: 500,
               decoration: const InputDecoration(
                 labelText: 'تفاصيل إضافية',
-                hintText: 'اكتب ما يساعد فريق المراجعة بدون مشاركة بيانات حساسة',
+                hintText:
+                    'اكتب ما يساعد فريق المراجعة بدون مشاركة بيانات حساسة',
               ),
             ),
           ],
@@ -1107,7 +1195,8 @@ class _BlockConversationDialog extends StatelessWidget {
             children: [
               Expanded(
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
+                  style:
+                      ElevatedButton.styleFrom(backgroundColor: AppColors.red),
                   onPressed: () => Navigator.of(context).pop(true),
                   child: const Text('حظر'),
                 ),
@@ -1144,7 +1233,8 @@ class _DeleteConversationDialog extends StatelessWidget {
             children: [
               Expanded(
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
+                  style:
+                      ElevatedButton.styleFrom(backgroundColor: AppColors.red),
                   onPressed: () => Navigator.of(context).pop(true),
                   child: const Text('حذف'),
                 ),

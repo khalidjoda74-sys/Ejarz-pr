@@ -50,7 +50,8 @@ class NicknameTakenException implements Exception {
 class NicknameLockedException implements Exception {
   const NicknameLockedException();
 
-  String get message => 'لا يمكن تغيير الاسم مرة أخرى. الاسم يتغير مرة واحدة فقط.';
+  String get message =>
+      'لا يمكن تغيير الاسم مرة أخرى. الاسم يتغير مرة واحدة فقط.';
 
   @override
   String toString() => message;
@@ -63,9 +64,7 @@ class NicknameCooldownException implements Exception {
 
   String get message {
     final difference = availableAt.difference(DateTime.now());
-    final days = difference.isNegative
-        ? 0
-        : (difference.inHours + 23) ~/ 24;
+    final days = difference.isNegative ? 0 : (difference.inHours + 23) ~/ 24;
     return 'يمكنك تغيير الاسم بعد $days يوم.';
   }
 
@@ -95,7 +94,10 @@ class FirebaseUserRepository {
     return UserModel.fromFirestore(snapshot);
   }
 
-  Future<void> ensureUserDocument(User user) async {
+  Future<void> ensureUserDocument(
+    User user, {
+    bool knownReturningUser = false,
+  }) async {
     final ref = _firestore.user(user.uid);
     final snapshot = await ref.get();
     final providerIds = user.providerData
@@ -103,6 +105,7 @@ class FirebaseUserRepository {
         .where((providerId) => providerId.isNotEmpty)
         .toSet()
         .toList(growable: false);
+    final providerDisplayName = user.displayName?.trim();
 
     if (!snapshot.exists) {
       await ref.set(
@@ -113,7 +116,12 @@ class FirebaseUserRepository {
             'email': user.email!.trim(),
           if (user.photoURL?.trim().isNotEmpty == true)
             'photoUrl': user.photoURL!.trim(),
+          if (knownReturningUser && providerDisplayName?.isNotEmpty == true)
+            'displayName': providerDisplayName,
+          if (knownReturningUser && providerDisplayName?.isNotEmpty == true)
+            'name': providerDisplayName,
           'providerIds': providerIds,
+          if (knownReturningUser) 'identityCompleted': true,
           'role': 'user',
           'status': 'active',
           'badge': 'عضو نشط',
@@ -145,18 +153,18 @@ class FirebaseUserRepository {
     }
 
     final data = snapshot.data() ?? const {};
-    final identityCompleted = hasCompletedIdentityData(data);
-    final displayName = user.displayName?.trim();
+    final hadCompletedIdentity = hasCompletedIdentityData(data);
+    final identityCompleted = knownReturningUser || hadCompletedIdentity;
     await ref.set({
-      if (!identityCompleted && displayName?.isNotEmpty == true)
-        'displayName': displayName,
-      if (!identityCompleted && displayName?.isNotEmpty == true)
-        'name': displayName,
+      if (!hadCompletedIdentity && providerDisplayName?.isNotEmpty == true)
+        'displayName': providerDisplayName,
+      if (!hadCompletedIdentity && providerDisplayName?.isNotEmpty == true)
+        'name': providerDisplayName,
       if (user.email?.trim().isNotEmpty == true) 'email': user.email!.trim(),
       if (user.photoURL?.trim().isNotEmpty == true)
         'photoUrl': user.photoURL!.trim(),
       'providerIds': providerIds,
-      'identityCompleted': identityCompleted,
+      if (identityCompleted) 'identityCompleted': true,
       'lastSignInAt': FieldValue.serverTimestamp(),
       'lastActiveAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -173,12 +181,31 @@ class FirebaseUserRepository {
     return !await hasCompletedIdentity(uid);
   }
 
-  bool hasCompletedIdentityData(Map<String, dynamic>? data) {
+  static bool hasCompletedIdentityData(Map<String, dynamic>? data) {
     if (data == null) return false;
     if (data['identityCompleted'] == true) return true;
 
     final nicknameKey = _stringValue(data['nicknameKey']);
-    return nicknameKey != null && nicknameKey.isNotEmpty;
+    if (nicknameKey != null && nicknameKey.isNotEmpty) return true;
+
+    // Modern documents explicitly marked incomplete must not be upgraded from
+    // placeholder nickname/display fields.
+    if (data.containsKey('identityCompleted')) return false;
+
+    // Older app versions stored the chosen identity without nicknameKey or
+    // identityCompleted. A real nickname is sufficient legacy evidence.
+    final nickname = _stringValue(data['nickname']);
+    if (nickname != null && nickname.isNotEmpty) return true;
+
+    // A provider display name can be copied for a genuinely new account, so it
+    // is only legacy evidence when the old schema's username also exists.
+    final username = _stringValue(data['username']);
+    final legacyName =
+        _stringValue(data['displayName']) ?? _stringValue(data['name']);
+    return username != null &&
+        username.isNotEmpty &&
+        legacyName != null &&
+        legacyName.isNotEmpty;
   }
 
   Future<NicknameClaim> claimNickname({
@@ -188,11 +215,14 @@ class FirebaseUserRepository {
   }) async {
     final cleanNickname = cleanNicknameOrThrow(nickname);
     final nicknameKey = nicknameKeyFor(cleanNickname);
-    final safeAvatar = avatarEmoji.trim().isEmpty ? 'business:person_growth' : avatarEmoji.trim();
+    final safeAvatar = avatarEmoji.trim().isEmpty
+        ? 'business:person_growth'
+        : avatarEmoji.trim();
     final userRef = _firestore.user(uid);
     final nicknameRef = _firestore.nickname(nicknameKey);
 
-    final claim = await _firestore.runTransaction<NicknameClaim>((transaction) async {
+    final claim =
+        await _firestore.runTransaction<NicknameClaim>((transaction) async {
       final userSnap = await transaction.get(userRef);
       final userData = userSnap.data() ?? const <String, dynamic>{};
       final oldNicknameKey = _stringValue(userData['nicknameKey']);
@@ -274,8 +304,7 @@ class FirebaseUserRepository {
           'updatedAt': FieldValue.serverTimestamp(),
           if (nicknameKeyChanged)
             'nicknameChangedAt': FieldValue.serverTimestamp(),
-          if (lockAfterChange)
-            'nicknameLockedAt': FieldValue.serverTimestamp(),
+          if (lockAfterChange) 'nicknameLockedAt': FieldValue.serverTimestamp(),
           if (!userSnap.exists) 'role': 'user',
           if (!userSnap.exists) 'status': 'active',
           if (!userSnap.exists) 'createdAt': FieldValue.serverTimestamp(),
@@ -397,6 +426,7 @@ class FirebaseUserRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
+
   Future<void> saveFcmToken({
     required String uid,
     required String token,
@@ -489,7 +519,7 @@ class FirebaseUserRepository {
     }
   }
 
-  String? _stringValue(Object? value) {
+  static String? _stringValue(Object? value) {
     if (value is String && value.trim().isNotEmpty) return value.trim();
     return null;
   }

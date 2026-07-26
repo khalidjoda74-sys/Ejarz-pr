@@ -9,6 +9,7 @@ import 'app.dart';
 import 'core/auth/auth_controller.dart';
 import 'core/constants/app_strings.dart';
 import 'core/notifications/notification_service.dart';
+import 'core/performance/navigation_performance_probe.dart';
 import 'data/repositories/firebase_user_repository.dart';
 import 'firebase_options.dart';
 import 'navigation/app_routes.dart';
@@ -16,6 +17,7 @@ import 'navigation/app_routes.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   _installErrorHandlers();
+  NavigationPerformanceProbe.startIfEnabled();
 
   runApp(const _StartupGate());
 }
@@ -96,6 +98,7 @@ class _StartupGateState extends State<_StartupGate> {
     final uid = auth.user?.uid;
 
     if (auth.isSignedIn && uid != null) {
+      if (auth.isIdentityReady(uid)) return AppRoutes.main;
       try {
         final needsIdentity =
             await FirebaseUserRepository.instance.needsIdentitySetup(uid);
@@ -240,6 +243,7 @@ class _StartupLogo extends StatelessWidget {
       width: 190,
       fit: BoxFit.contain,
       filterQuality: FilterQuality.high,
+      cacheWidth: (190 * MediaQuery.devicePixelRatioOf(context)).ceil(),
       semanticLabel: AppStrings.appName,
     );
   }

@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/navigation/app_focus.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -8,10 +10,22 @@ import '../../core/widgets/custom_app_bar.dart';
 import '../../core/widgets/discussion_card.dart';
 import '../../core/widgets/empty_state.dart';
 import '../../core/widgets/premium_background.dart';
+import '../../core/widgets/tab_activity_scope.dart';
 import '../../data/models/council_model.dart';
 import '../../data/repositories/council_repository.dart';
 
 enum _OpportunitySort { latest, interaction, comments, opinions }
+
+@immutable
+class CouncilCategorySelection {
+  const CouncilCategorySelection({
+    required this.category,
+    required this.version,
+  });
+
+  final String category;
+  final int version;
+}
 
 class CouncilsScreen extends StatefulWidget {
   const CouncilsScreen({
@@ -19,11 +33,13 @@ class CouncilsScreen extends StatefulWidget {
     required this.onOpenCouncil,
     this.initialCategory = 'الكل',
     this.initialCategoryVersion = 0,
+    this.categorySelection,
   });
 
   final ValueChanged<String> onOpenCouncil;
   final String initialCategory;
   final int initialCategoryVersion;
+  final ValueListenable<CouncilCategorySelection>? categorySelection;
 
   @override
   State<CouncilsScreen> createState() => _CouncilsScreenState();
@@ -33,17 +49,38 @@ class _CouncilsScreenState extends State<CouncilsScreen> {
   final repo = CouncilRepository.instance;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
-  late String selectedCategory = widget.initialCategory;
+  late String selectedCategory =
+      widget.categorySelection?.value.category ?? widget.initialCategory;
+  late int _categorySelectionVersion =
+      widget.categorySelection?.value.version ?? widget.initialCategoryVersion;
   _OpportunitySort selectedSort = _OpportunitySort.latest;
   String query = '';
   bool _searchVisible = false;
+  CouncilFeedState? _cachedFeedState;
+  String? _cachedCategory;
+  String? _cachedQuery;
+  _OpportunitySort? _cachedSort;
+  List<CouncilModel> _cachedFilteredCouncils = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    widget.categorySelection?.addListener(_handleCategorySelection);
+  }
 
   @override
   void didUpdateWidget(covariant CouncilsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.categorySelection != oldWidget.categorySelection) {
+      oldWidget.categorySelection?.removeListener(_handleCategorySelection);
+      widget.categorySelection?.addListener(_handleCategorySelection);
+      _handleCategorySelection();
+      return;
+    }
     if (widget.initialCategory != oldWidget.initialCategory ||
         widget.initialCategoryVersion != oldWidget.initialCategoryVersion) {
       selectedCategory = widget.initialCategory;
+      _categorySelectionVersion = widget.initialCategoryVersion;
       query = '';
       _searchVisible = false;
       _searchController.clear();
@@ -53,16 +90,35 @@ class _CouncilsScreenState extends State<CouncilsScreen> {
 
   @override
   void dispose() {
+    widget.categorySelection?.removeListener(_handleCategorySelection);
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
   }
 
+  void _handleCategorySelection() {
+    final selection = widget.categorySelection?.value;
+    if (selection == null ||
+        selection.version == _categorySelectionVersion &&
+            selection.category == selectedCategory) {
+      return;
+    }
+    setState(() {
+      selectedCategory = selection.category;
+      _categorySelectionVersion = selection.version;
+      query = '';
+      _searchVisible = false;
+      _searchController.clear();
+      _searchFocusNode.unfocus();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final sizes = AppSizes.of(context);
+    final active = TabActivityScope.isActiveOf(context);
     return AnimatedBuilder(
-      animation: repo,
+      animation: active ? repo.feedState : kAlwaysCompleteAnimation,
       builder: (context, _) {
         final filtered = _filteredCouncils();
         final categoryHint = _categoryHint(selectedCategory);
@@ -83,104 +139,112 @@ class _CouncilsScreenState extends State<CouncilsScreen> {
                   ),
                 ),
                 Expanded(
-                  child: ListView(
+                  child: ListView.builder(
                     padding: EdgeInsets.fromLTRB(
                       sizes.horizontalPadding,
                       12,
                       sizes.horizontalPadding,
-                      sizes.bottomNavHeight + 18 +
+                      sizes.bottomNavHeight +
+                          18 +
                           MediaQuery.viewPaddingOf(context).bottom,
                     ),
-                    children: [
-                      if (_searchVisible) ...[
-                        _SearchField(
-                          controller: _searchController,
-                          focusNode: _searchFocusNode,
-                          query: query,
-                          onChanged: (value) {
-                            if (value == query) return;
-                            setState(() => query = value);
-                          },
-                          onClear: () {
-                            _searchController.clear();
-                            setState(() => query = '');
-                            _searchFocusNode.requestFocus();
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      SizedBox(
-                        height: 34,
-                        child: Directionality(
-                          textDirection: TextDirection.rtl,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: repo.categories.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(width: 8),
-                            itemBuilder: (context, index) {
-                              final category = repo.categories[index];
-                              final selected = selectedCategory == category;
-                              return _CategoryChip(
-                                label: category,
-                                selected: selected,
-                                onTap: () => setState(() {
-                                  selectedCategory = category;
-                                }),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                      if (categoryHint != null) ...[
-                        const SizedBox(height: 8),
-                        _CategoryHint(text: categoryHint),
-                      ],
-                      if (repo.hasConnectionIssue) ...[
-                        const SizedBox(height: 10),
-                        ConnectionStatusBanner(
-                          lastUpdatedAt: repo.lastRemoteSyncAt,
-                          onRetry: repo.retryFirestoreSync,
-                        ),
-                      ],
-                      const SizedBox(height: 14),
-                      Row(
+                    itemCount: filtered.length + 1,
+                    itemBuilder: (context, index) {
+                      if (index > 0) {
+                        final council = filtered[index - 1];
+                        return DiscussionCard(
+                          council: council,
+                          compact: true,
+                          onTap: () => widget.onOpenCouncil(council.id),
+                        );
+                      }
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            'كل الفرص',
-                            style: AppTextStyles.cardTitle.copyWith(
-                              fontSize: 15,
+                          if (_searchVisible) ...[
+                            _SearchField(
+                              controller: _searchController,
+                              focusNode: _searchFocusNode,
+                              query: query,
+                              onChanged: (value) {
+                                if (value == query) return;
+                                setState(() => query = value);
+                              },
+                              onClear: () {
+                                _searchController.clear();
+                                setState(() => query = '');
+                                _searchFocusNode.requestFocus();
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          SizedBox(
+                            height: 34,
+                            child: Directionality(
+                              textDirection: TextDirection.rtl,
+                              child: ListView.separated(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: repo.categories.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(width: 8),
+                                itemBuilder: (context, index) {
+                                  final category = repo.categories[index];
+                                  final selected = selectedCategory == category;
+                                  return _CategoryChip(
+                                    label: category,
+                                    selected: selected,
+                                    onTap: () => setState(() {
+                                      selectedCategory = category;
+                                    }),
+                                  );
+                                },
+                              ),
                             ),
                           ),
-                          const Spacer(),
-                          _SortButton(
-                            selected: selectedSort,
-                            onSelected: (sort) {
-                              setState(() => selectedSort = sort);
-                            },
+                          if (categoryHint != null) ...[
+                            const SizedBox(height: 8),
+                            _CategoryHint(text: categoryHint),
+                          ],
+                          if (repo.hasConnectionIssue) ...[
+                            const SizedBox(height: 10),
+                            ConnectionStatusBanner(
+                              lastUpdatedAt: repo.lastRemoteSyncAt,
+                              onRetry: repo.retryFirestoreSync,
+                            ),
+                          ],
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Text(
+                                'كل الفرص',
+                                style: AppTextStyles.cardTitle.copyWith(
+                                  fontSize: 15,
+                                ),
+                              ),
+                              const Spacer(),
+                              _SortButton(
+                                selected: selectedSort,
+                                onSelected: (sort) {
+                                  setState(() => selectedSort = sort);
+                                },
+                              ),
+                            ],
                           ),
+                          const SizedBox(height: 10),
+                          if (filtered.isEmpty)
+                            EmptyState(
+                              icon: Icons.manage_search_rounded,
+                              title: query.trim().isEmpty
+                                  ? 'لا توجد فرص بعد'
+                                  : 'لا توجد نتائج مطابقة',
+                              message: query.trim().isEmpty
+                                  ? 'ستظهر الفرص هنا عند توفر منشورات مناسبة.'
+                                  : 'جرّب كلمة أبسط أو اختر قسمًا آخر.',
+                            ),
                         ],
-                      ),
-                      const SizedBox(height: 10),
-                      if (filtered.isEmpty)
-                        EmptyState(
-                          icon: Icons.manage_search_rounded,
-                          title: query.trim().isEmpty
-                              ? 'لا توجد فرص بعد'
-                              : 'لا توجد نتائج مطابقة',
-                          message: query.trim().isEmpty
-                              ? 'ستظهر الفرص هنا عند توفر منشورات مناسبة.'
-                              : 'جرّب كلمة أبسط أو اختر قسمًا آخر.',
-                        )
-                      else
-                        ...filtered.map(
-                          (c) => DiscussionCard(
-                            council: c,
-                            compact: true,
-                            onTap: () => widget.onOpenCouncil(c.id),
-                          ),
-                        ),
-                    ],
+                      );
+                    },
                   ),
                 ),
               ],
@@ -192,13 +256,26 @@ class _CouncilsScreenState extends State<CouncilsScreen> {
   }
 
   List<CouncilModel> _filteredCouncils() {
+    final feedState = repo.feedState.value;
+    if (identical(_cachedFeedState, feedState) &&
+        _cachedCategory == selectedCategory &&
+        _cachedQuery == query &&
+        _cachedSort == selectedSort) {
+      return _cachedFilteredCouncils;
+    }
+
     final base = repo.councilsByCategory(selectedCategory);
     final q = _searchToken(query);
     final filtered = q.isEmpty
         ? List<CouncilModel>.from(base)
         : base.where((council) => _matchesSearch(council, q)).toList();
     _sortCouncils(filtered);
-    return filtered;
+    _cachedFeedState = feedState;
+    _cachedCategory = selectedCategory;
+    _cachedQuery = query;
+    _cachedSort = selectedSort;
+    _cachedFilteredCouncils = List<CouncilModel>.unmodifiable(filtered);
+    return _cachedFilteredCouncils;
   }
 
   bool _matchesSearch(CouncilModel council, String q) {
@@ -431,6 +508,7 @@ class _SortButton extends StatelessWidget {
     return PopupMenuButton<_OpportunitySort>(
       initialValue: selected,
       tooltip: 'فرز الفرص',
+      onOpened: dismissAppKeyboard,
       position: PopupMenuPosition.under,
       color: AppColors.cardWhite,
       elevation: 8,

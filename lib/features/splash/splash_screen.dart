@@ -42,6 +42,7 @@ class _SplashScreenState extends State<SplashScreen> {
     final uid = auth.user?.uid;
 
     if (auth.isSignedIn && uid != null) {
+      if (auth.isIdentityReady(uid)) return AppRoutes.main;
       try {
         final needsIdentity =
             await FirebaseUserRepository.instance.needsIdentitySetup(uid);

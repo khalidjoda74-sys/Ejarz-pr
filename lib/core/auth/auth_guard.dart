@@ -4,10 +4,17 @@ import 'package:flutter/material.dart';
 
 import '../../data/repositories/firebase_user_repository.dart';
 import '../../features/auth/nickname_screen.dart';
+import '../navigation/app_page_route.dart';
 import '../widgets/login_required_sheet.dart';
 import 'auth_controller.dart';
 
 typedef AuthenticatedAction = FutureOr<void> Function();
+
+enum _IdentityCheckResult {
+  complete,
+  needsSetup,
+  unavailable,
+}
 
 class AuthGuard {
   const AuthGuard._();
@@ -55,21 +62,27 @@ class AuthGuard {
     if (!controller.isSignedIn || uid == null) return true;
     if (controller.isIdentityReady(uid)) return true;
 
-    if (controller.isIdentityRequired(uid)) {
-      return _openIdentitySetup(context, controller, uid);
+    final identityResult = await _checkIdentity(context, uid);
+    switch (identityResult) {
+      case _IdentityCheckResult.complete:
+        controller.markIdentityReady(uid);
+        return true;
+      case _IdentityCheckResult.unavailable:
+        // A network/permission failure is not proof that this is a new user.
+        // However, a user positively marked as new must not bypass setup.
+        if (controller.isIdentityRequired(uid)) {
+          if (!context.mounted) return false;
+          return _openIdentitySetup(context, controller, uid);
+        }
+        // Keep an unknown requirement unresolved and retry on the next action.
+        return true;
+      case _IdentityCheckResult.needsSetup:
+        if (!context.mounted) return false;
+        return _openIdentitySetup(context, controller, uid);
     }
-
-    final needsIdentity = await _needsIdentitySetup(context, uid);
-    if (!needsIdentity) {
-      controller.markIdentityReady(uid);
-      return true;
-    }
-
-    if (!context.mounted) return false;
-    return _openIdentitySetup(context, controller, uid);
   }
 
-  static Future<bool> _needsIdentitySetup(
+  static Future<_IdentityCheckResult> _checkIdentity(
     BuildContext context,
     String uid,
   ) async {
@@ -91,9 +104,13 @@ class AuthGuard {
     });
 
     try {
-      return await FirebaseUserRepository.instance.needsIdentitySetup(uid);
+      final needsSetup =
+          await FirebaseUserRepository.instance.needsIdentitySetup(uid);
+      return needsSetup
+          ? _IdentityCheckResult.needsSetup
+          : _IdentityCheckResult.complete;
     } catch (_) {
-      return true;
+      return _IdentityCheckResult.unavailable;
     } finally {
       progressTimer.cancel();
       if (progressVisible && context.mounted) {
@@ -110,7 +127,7 @@ class AuthGuard {
     if (!context.mounted) return false;
 
     final completed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
+      AppPageRoute(
         fullscreenDialog: true,
         builder: (_) => const NicknameScreen(returnToPrevious: true),
       ),

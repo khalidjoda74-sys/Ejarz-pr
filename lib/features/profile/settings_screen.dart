@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import '../../core/auth/auth_controller.dart';
-import '../../core/constants/app_strings.dart';
+import '../../core/navigation/app_focus.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
@@ -26,7 +26,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-
   final repo = CouncilRepository.instance;
   late final TextEditingController nameController;
   late final FocusNode _nameFocusNode;
@@ -44,13 +43,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     nameController = TextEditingController(text: repo.user.name);
     _nameFocusNode = FocusNode();
     _lastSyncedName = repo.user.name.trim();
-    repo.addListener(_syncNameFromRepository);
+    repo.userState.addListener(_syncNameFromRepository);
     unawaited(_loadNotificationPreference());
   }
 
   @override
   void dispose() {
-    repo.removeListener(_syncNameFromRepository);
+    repo.userState.removeListener(_syncNameFromRepository);
     _nameFocusNode.dispose();
     nameController.dispose();
     super.dispose();
@@ -185,9 +184,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: 'الإشعارات',
                         subtitle: 'تنبيهات الفرص والردود',
                         value: notifications,
-                        onChanged: _loadingNotifications || _updatingNotifications
-                            ? null
-                            : _setNotifications,
+                        onChanged:
+                            _loadingNotifications || _updatingNotifications
+                                ? null
+                                : _setNotifications,
                       ),
                     ],
                   ),
@@ -199,12 +199,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         label: 'حذف الحساب',
                         danger: true,
                         onTap: _deletingAccount ? null : _confirmDeleteAccount,
-                      ),
-                      const _ThinDivider(),
-                      _SimpleRow(
-                        icon: Icons.info_outline_rounded,
-                        label: 'حول التطبيق',
-                        onTap: _showAboutApp,
                       ),
                     ],
                   ),
@@ -262,6 +256,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) setState(() => _updatingNotifications = false);
     }
   }
+
   Future<void> _saveNickname() async {
     if (repo.user.nicknameLocked) {
       setState(() {
@@ -343,7 +338,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     return 'تعذر حفظ الاسم. حاول مرة أخرى.';
   }
+
   Future<void> _confirmDeleteAccount() async {
+    dismissAppKeyboard();
     final confirmed = await showDialog<bool>(
       context: context,
       barrierColor: AppColors.textDark.withValues(alpha: .34),
@@ -393,14 +390,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return 'يلزم تأكيد حساب Apple لإكمال حذف الحساب.';
     }
     return 'تعذر حذف الحساب. حاول مرة أخرى.';
-  }
-
-  void _showAboutApp() {
-    showDialog<void>(
-      context: context,
-      barrierColor: AppColors.textDark.withValues(alpha: .34),
-      builder: (_) => const _AboutAppDialog(),
-    );
   }
 }
 
@@ -542,19 +531,6 @@ class _SimpleRow extends StatelessWidget {
   }
 }
 
-class _ThinDivider extends StatelessWidget {
-  const _ThinDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Divider(
-      height: 1,
-      thickness: 1,
-      color: AppColors.borderBeige,
-    );
-  }
-}
-
 class _DeleteAccountDialog extends StatelessWidget {
   const _DeleteAccountDialog();
 
@@ -646,153 +622,6 @@ class _DeleteAccountDialog extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _AboutAppDialog extends StatelessWidget {
-  const _AboutAppDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 18),
-        backgroundColor: Colors.transparent,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 380),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-            decoration: BoxDecoration(
-              color: AppColors.cardWhite,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: AppColors.borderBeige),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.textDark.withValues(alpha: .14),
-                  blurRadius: 28,
-                  offset: const Offset(0, 14),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        gradient: AppColors.headerGradient,
-                        borderRadius: BorderRadius.circular(17),
-                      ),
-                      child: const Icon(
-                        Icons.forum_rounded,
-                        color: AppColors.cardWhite,
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(width: 11),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            AppStrings.appName,
-                            style: AppTextStyles.cardTitle.copyWith(
-                              fontSize: 17,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            AppStrings.tagline,
-                            style: AppTextStyles.caption.copyWith(
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                const _AboutLine(
-                  icon: Icons.how_to_vote_outlined,
-                  title: 'نقاشات يومية',
-                  text: 'فرص قصيرة برأي سريع وقراءة آراء واضحة.',
-                ),
-                const _AboutLine(
-                  icon: Icons.badge_outlined,
-                  title: 'هوية مستعارة',
-                  text: 'تشارك باسم داخل الفرص مع الحفاظ على بساطة التجربة.',
-                ),
-                const _AboutLine(
-                  icon: Icons.campaign_outlined,
-                  title: 'رعاية واضحة',
-                  text: 'أي إعلان راعٍ يظهر بشكل معلن وغير مخادع.',
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 42,
-                  child: _DialogActionButton(
-                    label: 'تم',
-                    icon: Icons.check_rounded,
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AboutLine extends StatelessWidget {
-  const _AboutLine({
-    required this.icon,
-    required this.title,
-    required this.text,
-  });
-
-  final IconData icon;
-  final String title;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: AppColors.primaryDarkGreen, size: 19),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: AppTextStyles.body.copyWith(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  text,
-                  style: AppTextStyles.caption.copyWith(fontSize: 10.8),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

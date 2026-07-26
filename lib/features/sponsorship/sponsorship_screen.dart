@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/auth/auth_guard.dart';
+import '../../core/navigation/app_focus.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -70,7 +71,8 @@ class _SponsorshipScreenState extends State<SponsorshipScreen> {
 
     _selectedCategory ??= categories.isNotEmpty ? categories.first : null;
     final selectedPlacement = _selectedPlacement;
-    final bottomPadding = widget.onBack == null ? 24.0 : sizes.bottomNavHeight + 18;
+    final bottomPadding =
+        widget.onBack == null ? 24.0 : sizes.bottomNavHeight + 18;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -141,12 +143,14 @@ class _SponsorshipScreenState extends State<SponsorshipScreen> {
       ),
       const SizedBox(height: 8),
       StreamBuilder<List<AdPackageOption>>(
-        stream: SponsorshipRepository.instance.watchPackagesFor(product.placement),
-        initialData:
-            SponsorshipRepository.instance.defaultPackagesFor(product.placement),
+        stream:
+            SponsorshipRepository.instance.watchPackagesFor(product.placement),
+        initialData: SponsorshipRepository.instance
+            .defaultPackagesFor(product.placement),
         builder: (context, snapshot) {
           final packages = snapshot.data ??
-              SponsorshipRepository.instance.defaultPackagesFor(product.placement);
+              SponsorshipRepository.instance
+                  .defaultPackagesFor(product.placement);
           return Column(
             children: [
               for (final package in packages) ...[
@@ -179,7 +183,8 @@ class _SponsorshipScreenState extends State<SponsorshipScreen> {
           selectedScope: _scope,
           submitting: _submitting,
           onScopeChanged: (scope) => setState(() => _scope = scope),
-          onCategoryChanged: (value) => setState(() => _selectedCategory = value),
+          onCategoryChanged: (value) =>
+              setState(() => _selectedCategory = value),
           onSubmit: _submitInterest,
         )
       else
@@ -267,6 +272,7 @@ class _SponsorshipScreenState extends State<SponsorshipScreen> {
   }
 
   void _closeProduct() {
+    dismissAppKeyboard();
     setState(() {
       _selectedPlacement = null;
       _selectedPackage = null;
@@ -293,20 +299,21 @@ class _SponsorshipScreenState extends State<SponsorshipScreen> {
 
   Future<void> _submitInterest() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    dismissAppKeyboard();
 
     await AuthGuard.requireAuth(
       context,
       () async {
         setState(() => _submitting = true);
         try {
-          final placement = _selectedPlacement ?? AdPlacement.councilSponsorship;
+          final placement =
+              _selectedPlacement ?? AdPlacement.councilSponsorship;
           final product = _productFor(placement);
           final package = _selectedPackage;
           final scope = _scope;
-          final categoryName =
-              placement != AdPlacement.councilSponsorship ||
-                      scope == SponsorshipPlacementScope.allMajalis
-                  ? 'كل الفرص'
+          final categoryName = placement != AdPlacement.councilSponsorship ||
+                  scope == SponsorshipPlacementScope.allMajalis
+              ? 'كل الفرص'
               : (_selectedCategory ?? 'كل الفرص');
           final rawNotes = _notesController.text.trim();
           final notes = [
@@ -532,8 +539,7 @@ class _AdProductCard extends StatelessWidget {
                           product.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style:
-                              AppTextStyles.cardTitle.copyWith(fontSize: 15),
+                          style: AppTextStyles.cardTitle.copyWith(fontSize: 15),
                         ),
                       ),
                       _MiniBadge(label: product.badge),
@@ -606,8 +612,7 @@ class _AdDetailHero extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(product.icon,
-                  color: AppColors.primaryDarkGreen, size: 24),
+              Icon(product.icon, color: AppColors.primaryDarkGreen, size: 24),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -693,8 +698,7 @@ class _AdPlacementPreview extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTextStyles.cardTitle.copyWith(
-                    color:
-                        isBanner ? AppColors.cardWhite : AppColors.textDark,
+                    color: isBanner ? AppColors.cardWhite : AppColors.textDark,
                     fontSize: 15.5,
                   ),
                 ),
@@ -788,9 +792,8 @@ class _AdPackageChoiceCard extends StatelessWidget {
                 backgroundColor: selected
                     ? AppColors.primaryDarkGreen
                     : AppColors.background,
-                foregroundColor: selected
-                    ? AppColors.cardWhite
-                    : AppColors.primaryDarkGreen,
+                foregroundColor:
+                    selected ? AppColors.cardWhite : AppColors.primaryDarkGreen,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(13),
@@ -816,7 +819,8 @@ class _SelectPackageHint extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.primaryGreen.withValues(alpha: .08),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.primaryGreen.withValues(alpha: .18)),
+        border:
+            Border.all(color: AppColors.primaryGreen.withValues(alpha: .18)),
       ),
       child: Row(
         children: [
@@ -876,7 +880,8 @@ class _AdRequestFormCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCouncilSponsor = product.placement == AdPlacement.councilSponsorship;
+    final isCouncilSponsor =
+        product.placement == AdPlacement.councilSponsorship;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -911,10 +916,12 @@ class _AdRequestFormCard extends StatelessWidget {
                 value: selectedScope,
                 onChanged: onScopeChanged,
               ),
-              if (selectedScope == SponsorshipPlacementScope.categoryMajlis) ...[
+              if (selectedScope ==
+                  SponsorshipPlacementScope.categoryMajlis) ...[
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
                   initialValue: selectedCategory,
+                  onTap: dismissAppKeyboard,
                   isExpanded: true,
                   decoration: _inputDecoration('نوع الفرصة'),
                   items: categories
@@ -1158,7 +1165,8 @@ class _PackageShowcase extends StatelessWidget {
         const SizedBox(height: 8),
         _PackageCard(
           title: 'راعي فرصة محددة',
-          subtitle: 'ظهور مناسب لنوع الفرصة المختار مثل فرص التقبيل أو الشراكات.',
+          subtitle:
+              'ظهور مناسب لنوع الفرصة المختار مثل فرص التقبيل أو الشراكات.',
           icon: Icons.forum_rounded,
           scope: SponsorshipPlacementScope.categoryMajlis,
           selectedScope: selectedScope,
@@ -1421,6 +1429,7 @@ class _InterestFormCard extends StatelessWidget {
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 initialValue: selectedCategory,
+                onTap: dismissAppKeyboard,
                 isExpanded: true,
                 decoration: _inputDecoration('نوع الفرصة'),
                 items: categories

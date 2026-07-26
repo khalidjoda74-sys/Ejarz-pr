@@ -202,7 +202,8 @@ class _MajalisnaPageTransitionsBuilder extends PageTransitionsBuilder {
     }
 
     final direction = Directionality.maybeOf(context) ?? TextDirection.rtl;
-    final beginOffset = Offset(direction == TextDirection.rtl ? -0.025 : 0.025, 0);
+    final beginOffset =
+        Offset(direction == TextDirection.rtl ? -0.025 : 0.025, 0);
     final curved = CurvedAnimation(
       parent: animation,
       curve: Curves.easeOutCubic,
@@ -211,15 +212,12 @@ class _MajalisnaPageTransitionsBuilder extends PageTransitionsBuilder {
 
     return ColoredBox(
       color: AppColors.background,
-      child: FadeTransition(
-        opacity: Tween<double>(begin: 0.97, end: 1).animate(curved),
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: route.fullscreenDialog ? Offset.zero : beginOffset,
-            end: Offset.zero,
-          ).animate(curved),
-          child: child,
-        ),
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: route.fullscreenDialog ? Offset.zero : beginOffset,
+          end: Offset.zero,
+        ).animate(curved),
+        child: child,
       ),
     );
   }

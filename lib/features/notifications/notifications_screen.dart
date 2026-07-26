@@ -23,7 +23,26 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   final repo = CouncilRepository.instance;
   final Set<String> _locallyReadNotificationIds = <String>{};
+  Stream<List<NotificationModel>>? _notificationsStream;
+  String? _notificationsUid;
   bool _openingNotification = false;
+
+  Stream<List<NotificationModel>> _streamFor(String uid) {
+    if (_notificationsUid != uid || _notificationsStream == null) {
+      _notificationsUid = uid;
+      _notificationsStream =
+          FirebaseNotificationRepository.instance.watchNotifications(uid: uid);
+    }
+    return _notificationsStream!;
+  }
+
+  void _retry(String uid) {
+    setState(() {
+      _notificationsUid = uid;
+      _notificationsStream =
+          FirebaseNotificationRepository.instance.watchNotifications(uid: uid);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,9 +55,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         final uid = auth.user?.uid;
         if (auth.isSignedIn && uid != null) {
           return StreamBuilder<List<NotificationModel>>(
-            stream: FirebaseNotificationRepository.instance.watchNotifications(
-              uid: uid,
-            ),
+            stream: _streamFor(uid),
             builder: (context, snapshot) {
               final firestoreNotifications = snapshot.data;
               final hasFirestoreNotifications = firestoreNotifications != null;
@@ -54,7 +71,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 errorMessage: snapshot.hasError && !snapshot.hasData
                     ? 'تعذر تحميل الإشعارات. تحقق من الاتصال ثم حاول مرة أخرى.'
                     : null,
-                onRetry: () => setState(() {}),
+                onRetry: () => _retry(uid),
                 onMarkAllAsRead: notifications.any((item) => !item.read)
                     ? () => _markAllAsRead(
                           uid: uid,
@@ -100,9 +117,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         .where((notification) =>
             notification.type != 'best_comment' &&
             !notification.title.contains('أفضل مساهمة'))
-        .map((notification) => _locallyReadNotificationIds.contains(notification.id)
-            ? _notificationWithRead(notification)
-            : notification)
+        .map((notification) =>
+            _locallyReadNotificationIds.contains(notification.id)
+                ? _notificationWithRead(notification)
+                : notification)
         .toList(growable: false);
   }
 
@@ -200,7 +218,8 @@ String _notificationDisplayTitle(NotificationModel notification) {
     'فرصة اليوم متاحة الآن',
     'فرصة مميزة',
   };
-  if (featuredTitles.contains(title) || featuredTitles.contains(normalizedTitle)) {
+  if (featuredTitles.contains(title) ||
+      featuredTitles.contains(normalizedTitle)) {
     return 'فرصة مميزة بانتظار رأيك';
   }
   return normalizedTitle.replaceAll('فرصة اليوم', 'فرصة مميزة');
@@ -208,17 +227,18 @@ String _notificationDisplayTitle(NotificationModel notification) {
 
 String _notificationDisplayMessage(NotificationModel notification) {
   final message = _opportunityNotificationCopy(notification.message.trim());
-  final normalized = message
-      .replaceAll('فرصة اليوم بدأت، شارك برأيك الآن.',
-          'فرصة مميزة بانتظار رأيك. شارك رأيك الآن.')
-      .replaceAll('فرصة اليوم بدأ، شارك برأيك الآن.',
-          'فرصة مميزة بانتظار رأيك. شارك رأيك الآن.')
-      .replaceAll('فرصة اليوم بدأت، شارك برأيك الآن',
-          'فرصة مميزة بانتظار رأيك. شارك رأيك الآن')
-      .replaceAll('فرصة اليوم بدأ، شارك برأيك الآن',
-          'فرصة مميزة بانتظار رأيك. شارك رأيك الآن')
-      .replaceAll('فرصة اليوم', 'الفرصة المميزة')
-      .replaceAll('شارك برأيك الآن', 'شارك رأيك الآن');
+  final normalized =
+      message
+          .replaceAll('فرصة اليوم بدأت، شارك برأيك الآن.',
+              'فرصة مميزة بانتظار رأيك. شارك رأيك الآن.')
+          .replaceAll('فرصة اليوم بدأ، شارك برأيك الآن.',
+              'فرصة مميزة بانتظار رأيك. شارك رأيك الآن.')
+          .replaceAll('فرصة اليوم بدأت، شارك برأيك الآن',
+              'فرصة مميزة بانتظار رأيك. شارك رأيك الآن')
+          .replaceAll('فرصة اليوم بدأ، شارك برأيك الآن',
+              'فرصة مميزة بانتظار رأيك. شارك رأيك الآن')
+          .replaceAll('فرصة اليوم', 'الفرصة المميزة')
+          .replaceAll('شارك برأيك الآن', 'شارك رأيك الآن');
   return normalized;
 }
 
@@ -239,6 +259,7 @@ String _opportunityNotificationCopy(String value) {
       .replaceAll('الفرصة المميز', 'الفرصة المميزة')
       .replaceAll('فرصة مميز', 'فرصة مميزة');
 }
+
 class _NotificationsScaffold extends StatelessWidget {
   const _NotificationsScaffold({
     required this.sizes,
@@ -293,29 +314,36 @@ class _NotificationsScaffold extends StatelessWidget {
                           ? const _NotificationsStatus(
                               icon: Icons.notifications_none_rounded,
                               title: 'لا توجد إشعارات',
-                              message: 'ستظهر هنا التنبيهات والتحديثات الجديدة.',
+                              message:
+                                  'ستظهر هنا التنبيهات والتحديثات الجديدة.',
                             )
-                          : ListView(
+                          : ListView.builder(
                               padding: EdgeInsets.fromLTRB(
                                 sizes.horizontalPadding,
                                 12,
                                 sizes.horizontalPadding,
                                 bottomPadding,
                               ),
-                              children: [
-                                if (onMarkAllAsRead != null && unreadCount > 0)
-                                  _NotificationsActionBar(
+                              itemCount: notifications.length +
+                                  (onMarkAllAsRead != null && unreadCount > 0
+                                      ? 1
+                                      : 0),
+                              itemBuilder: (context, index) {
+                                final hasAction =
+                                    onMarkAllAsRead != null && unreadCount > 0;
+                                if (hasAction && index == 0) {
+                                  return _NotificationsActionBar(
                                     unreadCount: unreadCount,
                                     onMarkAllAsRead: onMarkAllAsRead!,
-                                  ),
-                                ...notifications.map(
-                                  (notification) => _NotificationCard(
-                                    notification: notification,
-                                    onTap: () =>
-                                        onNotificationTap(notification),
-                                  ),
-                                ),
-                              ],
+                                  );
+                                }
+                                final notification =
+                                    notifications[index - (hasAction ? 1 : 0)];
+                                return _NotificationCard(
+                                  notification: notification,
+                                  onTap: () => onNotificationTap(notification),
+                                );
+                              },
                             ),
             ),
           ],
@@ -380,7 +408,8 @@ class _NotificationsStatus extends StatelessWidget {
           children: [
             Icon(icon, size: 48, color: AppColors.primaryDarkGreen),
             const SizedBox(height: 12),
-            Text(title, textAlign: TextAlign.center, style: AppTextStyles.cardTitle),
+            Text(title,
+                textAlign: TextAlign.center, style: AppTextStyles.cardTitle),
             const SizedBox(height: 6),
             Text(
               message,
@@ -401,6 +430,7 @@ class _NotificationsStatus extends StatelessWidget {
     );
   }
 }
+
 class _NotificationsActionBar extends StatelessWidget {
   const _NotificationsActionBar({
     required this.unreadCount,
@@ -453,6 +483,7 @@ class _NotificationsActionBar extends StatelessWidget {
     );
   }
 }
+
 class _NotificationCard extends StatelessWidget {
   const _NotificationCard({required this.notification, required this.onTap});
 

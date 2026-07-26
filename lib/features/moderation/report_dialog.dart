@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/navigation/app_focus.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 
@@ -7,6 +8,7 @@ Future<void> showReportDialog(
   BuildContext context, {
   required Future<void> Function(String reason) onSubmit,
 }) {
+  dismissAppKeyboard();
   return showDialog<void>(
     context: context,
     builder: (_) => ReportDialog(onSubmit: onSubmit),
@@ -87,22 +89,6 @@ class _ReportDialogState extends State<ReportDialog> {
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton(
-                      onPressed:
-                          sending ? null : () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(42),
-                        side: const BorderSide(color: AppColors.borderBeige),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        textStyle: AppTextStyles.button.copyWith(fontSize: 12),
-                      ),
-                      child: const Text('إلغاء'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
                     child: ElevatedButton(
                       onPressed: sending ? null : _submit,
                       style: ElevatedButton.styleFrom(
@@ -124,6 +110,21 @@ class _ReportDialogState extends State<ReportDialog> {
                               ),
                             )
                           : const Text('إرسال البلاغ'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: sending ? null : () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(42),
+                        side: const BorderSide(color: AppColors.borderBeige),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        textStyle: AppTextStyles.button.copyWith(fontSize: 12),
+                      ),
+                      child: const Text('إلغاء'),
                     ),
                   ),
                 ],

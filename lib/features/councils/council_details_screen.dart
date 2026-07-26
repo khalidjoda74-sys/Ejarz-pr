@@ -2,10 +2,14 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
+import '../../core/navigation/app_page_route.dart';
+import '../../core/navigation/app_route_observer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/auth/auth_guard.dart';
 import '../../core/moderation/content_moderation.dart';
+import '../../core/navigation/app_focus.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -21,6 +25,7 @@ import '../../data/models/comment_model.dart';
 import '../../data/models/council_model.dart';
 import '../../data/models/sponsorship_campaign.dart';
 import '../../data/repositories/council_repository.dart';
+import '../../data/repositories/firebase_council_repository.dart';
 import '../../data/repositories/messaging_repository.dart';
 import '../../data/repositories/sponsorship_repository.dart';
 import '../messages/conversation_screen.dart';
@@ -36,7 +41,8 @@ class CouncilDetailsScreen extends StatefulWidget {
   State<CouncilDetailsScreen> createState() => _CouncilDetailsScreenState();
 }
 
-class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
+class _CouncilDetailsScreenState extends State<CouncilDetailsScreen>
+    with PageRouteActivityMixin<CouncilDetailsScreen> {
   final repo = CouncilRepository.instance;
   final commentController = TextEditingController();
   final commentFocusNode = FocusNode();
@@ -46,12 +52,12 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
   CommentModel? _replyingTo;
   bool _openingConversation = false;
   int _voteRequestId = 0;
-  final Set<String> _precachedImageUrls = <String>{};
+  late CouncilDetailsSession _detailsSession;
 
   @override
   void initState() {
     super.initState();
-    repo.watchCouncilComments(widget.councilId);
+    _detailsSession = repo.openDetailsSession(widget.councilId);
   }
 
   @override
@@ -61,12 +67,20 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
       _replyingTo = null;
       commentController.clear();
       _visibleReplyLimits.clear();
-      repo.watchCouncilComments(widget.councilId);
+      _detailsSession.dispose();
+      _detailsSession = repo.openDetailsSession(widget.councilId);
+      _detailsSession.setPresentationActive(isPageRouteActive);
     }
   }
 
   @override
+  void onPageRouteActivityChanged(bool isActive) {
+    _detailsSession.setPresentationActive(isActive);
+  }
+
+  @override
   void dispose() {
+    _detailsSession.dispose();
     commentController.dispose();
     commentFocusNode.dispose();
     super.dispose();
@@ -75,10 +89,10 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: repo,
+      animation: _detailsSession,
       builder: (context, _) {
         final sizes = AppSizes.of(context);
-        final council = repo.findCouncilById(widget.councilId);
+        final council = _detailsSession.council;
         if (council == null) {
           return const Scaffold(
             backgroundColor: AppColors.background,
@@ -94,7 +108,6 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
             ),
           );
         }
-        _precacheCouncilImages(council.thumbnailImageUrls);
         final voteCopy = OpportunityVoteCopy.forCouncil(council);
         final isOwner = repo.isCouncilOwner(council);
         final commentThreads = _threadComments(council.comments);
@@ -109,170 +122,142 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
                   showBack: true,
                   trailing: isOwner
                       ? null
-                      : HeaderRoundButton(
-                          icon: Icons.flag_outlined,
-                          onTap: () => _reportCouncil(council),
+                      : _CouncilHeaderMenu(
+                          onReport: () => _reportCouncil(council),
                         ),
                 ),
                 Expanded(
-                  child: ListView(
-                    padding: EdgeInsets.fromLTRB(
-                      sizes.horizontalPadding,
-                      10,
-                      sizes.horizontalPadding,
-                      10,
-                    ),
-                    children: [
-                      _QuestionPanel(council: council),
-                      if (council.imageUrls.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        _CouncilImagesGrid(council: council),
-                      ],
-                      if (_canContactOwner(council) || isOwner) ...[
-                        const SizedBox(height: 8),
-                        _CouncilQuickActions(
-                          showContact: _canContactOwner(council),
-                          showOwnerActions: isOwner,
-                          contactLoading: _openingConversation,
-                          onContact: () => _openConversation(council),
-                          onRefresh: () => _refreshVisibility(council),
-                          onDelete: () => _confirmDeleteCouncil(council),
+                  child: CustomScrollView(
+                    slivers: [
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          sizes.horizontalPadding,
+                          10,
+                          sizes.horizontalPadding,
+                          0,
                         ),
-                      ],
-                      if (!isOwner) ...[
-                        const SizedBox(height: 9),
-                        Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: Text(
-                            voteCopy.prompt,
-                            style: AppTextStyles.caption.copyWith(
-                              color: AppColors.textGray,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            VoteButton(
-                              label: voteCopy.labelFor(VoteOption.support),
-                              icon: voteCopy.iconFor(VoteOption.support),
-                              option: VoteOption.support,
-                              colorOverride:
-                                  voteCopy.colorFor(VoteOption.support),
-                              selected:
-                                  council.selectedOption == VoteOption.support,
-                              onTap: () => _vote(council, VoteOption.support),
-                            ),
-                            const SizedBox(width: 8),
-                            VoteButton(
-                              label: voteCopy.labelFor(VoteOption.against),
-                              icon: voteCopy.iconFor(VoteOption.against),
-                              option: VoteOption.against,
-                              colorOverride:
-                                  voteCopy.colorFor(VoteOption.against),
-                              selected:
-                                  council.selectedOption == VoteOption.against,
-                              onTap: () => _vote(council, VoteOption.against),
-                            ),
-                            const SizedBox(width: 8),
-                            VoteButton(
-                              label: voteCopy.labelFor(VoteOption.neutral),
-                              icon: voteCopy.iconFor(VoteOption.neutral),
-                              option: VoteOption.neutral,
-                              colorOverride:
-                                  voteCopy.colorFor(VoteOption.neutral),
-                              selected:
-                                  council.selectedOption == VoteOption.neutral,
-                              onTap: () => _vote(council, VoteOption.neutral),
-                            ),
-                          ],
-                        ),
-                      ],
-                      _CouncilSponsorSlot(council: council),
-                      const SizedBox(height: 10),
-                      _ResultsPanel(council: council, isOwner: isOwner),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Text(
-                            'التعليقات (${council.commentsCount})',
-                            style: AppTextStyles.cardTitle.copyWith(
-                              fontSize: 15,
-                            ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            'الأحدث',
-                            style: AppTextStyles.caption.copyWith(fontSize: 11),
-                          ),
-                          const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            color: AppColors.textGray,
-                            size: 18,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 7),
-                      ...commentThreads.map((thread) {
-                        final comment = thread.comment;
-                        final replyLimit = _replyLimitFor(comment.id);
-                        return _CommentTile(
-                          comment: comment,
-                          replies: thread.replies,
-                          visibleReplyLimit: replyLimit,
-                          onShowMoreReplies: thread.replies.length > replyLimit
-                              ? () => _showMoreReplies(
-                                    comment.id,
-                                    thread.replies.length,
-                                  )
-                              : null,
-                          allowReplies: council.allowComments,
-                          onAuthorTap: comment.isSeedContent
-                              ? () => unawaited(
-                                    _showEditorialNotice(account: true),
-                                  )
-                              : null,
-                          isOwnComment: _isOwnComment(comment),
-                          isConvinced: repo.hasConvincingVote(
-                            council.id,
-                            comment.id,
-                          ),
-                          onReport: () => AuthGuard.requireAuth(
-                            context,
-                            () => showReportDialog(
-                              context,
-                              onSubmit: (reason) => repo.createReport(
-                                targetType: 'comment',
-                                targetPath:
-                                    'councils/${council.id}/comments/${comment.id}',
-                                reason: reason,
-                                councilId: council.id,
-                                commentId: comment.id,
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate([
+                            _QuestionPanel(council: council),
+                            if (council.imageUrls.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              _CouncilImagesGrid(council: council),
+                            ],
+                            if (_canContactOwner(council) || isOwner) ...[
+                              const SizedBox(height: 8),
+                              _CouncilQuickActions(
+                                showContact: _canContactOwner(council),
+                                showOwnerActions: isOwner,
+                                contactLoading: _openingConversation,
+                                onContact: () => _openConversation(council),
+                                onRefresh: () => _refreshVisibility(council),
+                                onDelete: () => _confirmDeleteCouncil(council),
                               ),
+                            ],
+                            if (!isOwner) ...[
+                              const SizedBox(height: 9),
+                              Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Text(
+                                  voteCopy.prompt,
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.textGray,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  VoteButton(
+                                    label:
+                                        voteCopy.labelFor(VoteOption.support),
+                                    icon: voteCopy.iconFor(VoteOption.support),
+                                    option: VoteOption.support,
+                                    colorOverride:
+                                        voteCopy.colorFor(VoteOption.support),
+                                    selected: council.selectedOption ==
+                                        VoteOption.support,
+                                    onTap: () =>
+                                        _vote(council, VoteOption.support),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  VoteButton(
+                                    label:
+                                        voteCopy.labelFor(VoteOption.against),
+                                    icon: voteCopy.iconFor(VoteOption.against),
+                                    option: VoteOption.against,
+                                    colorOverride:
+                                        voteCopy.colorFor(VoteOption.against),
+                                    selected: council.selectedOption ==
+                                        VoteOption.against,
+                                    onTap: () =>
+                                        _vote(council, VoteOption.against),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  VoteButton(
+                                    label:
+                                        voteCopy.labelFor(VoteOption.neutral),
+                                    icon: voteCopy.iconFor(VoteOption.neutral),
+                                    option: VoteOption.neutral,
+                                    colorOverride:
+                                        voteCopy.colorFor(VoteOption.neutral),
+                                    selected: council.selectedOption ==
+                                        VoteOption.neutral,
+                                    onTap: () =>
+                                        _vote(council, VoteOption.neutral),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            _CouncilSponsorSlot(council: council),
+                            const SizedBox(height: 10),
+                            _ResultsPanel(council: council, isOwner: isOwner),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Text(
+                                  'التعليقات (${council.commentsCount})',
+                                  style: AppTextStyles.cardTitle.copyWith(
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  'الأحدث',
+                                  style: AppTextStyles.caption
+                                      .copyWith(fontSize: 11),
+                                ),
+                                const Icon(
+                                  Icons.keyboard_arrow_down_rounded,
+                                  color: AppColors.textGray,
+                                  size: 18,
+                                ),
+                              ],
                             ),
+                            const SizedBox(height: 7),
+                          ]),
+                        ),
+                      ),
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          sizes.horizontalPadding,
+                          0,
+                          sizes.horizontalPadding,
+                          10,
+                        ),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => _buildCommentTile(
+                              context,
+                              council,
+                              commentThreads[index],
+                            ),
+                            childCount: commentThreads.length,
                           ),
-                          onConvince: () => _runAfterDemoCheck(
-                            council,
-                            () async {
-                              await AuthGuard.requireAuth(
-                                context,
-                                () => _convince(council, comment),
-                              );
-                            },
-                          ),
-                          onReply: () => _runAfterDemoCheck(
-                            council,
-                            () async {
-                              await AuthGuard.requireAuth(
-                                context,
-                                () => _startReply(council, comment),
-                              );
-                            },
-                          ),
-                        );
-                      }),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -296,7 +281,68 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
     );
   }
 
+  Widget _buildCommentTile(
+    BuildContext context,
+    CouncilModel council,
+    _CommentThread thread,
+  ) {
+    final comment = thread.comment;
+    final replyLimit = _replyLimitFor(comment.id);
+    return _CommentTile(
+      key: ValueKey(comment.id),
+      councilId: council.id,
+      voterUid: FirebaseAuth.instance.currentUser?.uid,
+      comment: comment,
+      replies: thread.replies,
+      visibleReplyLimit: replyLimit,
+      onShowMoreReplies: thread.replies.length > replyLimit
+          ? () => _showMoreReplies(
+                comment.id,
+                thread.replies.length,
+              )
+          : null,
+      allowReplies: council.allowComments,
+      onAuthorTap: comment.isSeedContent
+          ? () => unawaited(_showEditorialNotice(account: true))
+          : null,
+      isOwnComment: _isOwnComment(comment),
+      isConvinced: repo.hasConvincingVote(council.id, comment.id),
+      onReport: () => AuthGuard.requireAuth(
+        context,
+        () => showReportDialog(
+          context,
+          onSubmit: (reason) => repo.createReport(
+            targetType: 'comment',
+            targetPath: 'councils/${council.id}/comments/${comment.id}',
+            reason: reason,
+            councilId: council.id,
+            commentId: comment.id,
+          ),
+        ),
+      ),
+      onConvince: () => _runAfterDemoCheck(
+        council,
+        () async {
+          await AuthGuard.requireAuth(
+            context,
+            () => _convince(council, comment),
+          );
+        },
+      ),
+      onReply: () => _runAfterDemoCheck(
+        council,
+        () async {
+          await AuthGuard.requireAuth(
+            context,
+            () => _startReply(council, comment),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _showEditorialNotice({bool account = false}) async {
+    dismissAppKeyboard();
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -352,16 +398,6 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
     await action();
   }
 
-  void _precacheCouncilImages(List<String> urls) {
-    for (final url in urls.take(10)) {
-      final uri = Uri.tryParse(url);
-      if (uri == null || !uri.hasScheme || !_precachedImageUrls.add(url)) {
-        continue;
-      }
-      unawaited(precacheImage(NetworkImage(url), context));
-    }
-  }
-
   bool _canContactOwner(CouncilModel council) {
     if (council.isSeedContent) return false;
     final ownerId = council.createdBy?.trim() ?? '';
@@ -400,7 +436,7 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
               .getOrCreateConversation(council);
           if (!mounted) return;
           await Navigator.of(context).push(
-            MaterialPageRoute<void>(
+            AppPageRoute<void>(
               builder: (_) => ConversationScreen(
                 conversationId: conversation.id,
                 initialConversation: conversation,
@@ -425,6 +461,7 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
 
   // ignore: unused_element
   Future<void> _showCouncilActions(CouncilModel council) async {
+    dismissAppKeyboard();
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.cardWhite,
@@ -500,6 +537,7 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
   }
 
   Future<void> _confirmDeleteCouncil(CouncilModel council) async {
+    dismissAppKeyboard();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => Directionality(
@@ -734,7 +772,7 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
       ..text = text
       ..selection = TextSelection.collapsed(offset: text.length);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) commentFocusNode.requestFocus();
+      if (mounted && isPageRouteActive) commentFocusNode.requestFocus();
     });
   }
 
@@ -780,14 +818,14 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
 
     setState(() => _replyingTo = comment);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) commentFocusNode.requestFocus();
+      if (mounted && isPageRouteActive) commentFocusNode.requestFocus();
     });
   }
 
   void _cancelReply() {
     if (_replyingTo == null) return;
     setState(() => _replyingTo = null);
-    commentFocusNode.requestFocus();
+    commentFocusNode.unfocus();
   }
 
   List<_CommentThread> _threadComments(List<CommentModel> comments) {
@@ -837,6 +875,65 @@ class _CouncilDetailsScreenState extends State<CouncilDetailsScreen> {
   }
 }
 
+enum _CouncilHeaderAction { report }
+
+class _CouncilHeaderMenu extends StatelessWidget {
+  const _CouncilHeaderMenu({required this.onReport});
+
+  final VoidCallback onReport;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<_CouncilHeaderAction>(
+      tooltip: 'المزيد',
+      onOpened: dismissAppKeyboard,
+      position: PopupMenuPosition.under,
+      offset: const Offset(0, 6),
+      color: AppColors.cardWhite,
+      surfaceTintColor: Colors.transparent,
+      elevation: 10,
+      constraints: const BoxConstraints(minWidth: 190, maxWidth: 220),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: AppColors.borderBeige),
+      ),
+      onSelected: (action) {
+        if (action == _CouncilHeaderAction.report) onReport();
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem<_CouncilHeaderAction>(
+          value: _CouncilHeaderAction.report,
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.flag_outlined,
+                color: AppColors.red,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'إبلاغ عن محتوى',
+                  style: AppTextStyles.body.copyWith(
+                    color: AppColors.textDark,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+      child: const IgnorePointer(
+        child: HeaderRoundButton(icon: Icons.more_vert_rounded),
+      ),
+    );
+  }
+}
+
 class _CommentThread {
   const _CommentThread({required this.comment, required this.replies});
 
@@ -856,11 +953,28 @@ class _CouncilSponsorSlot extends StatefulWidget {
 class _CouncilSponsorSlotState extends State<_CouncilSponsorSlot> {
   final _sponsorshipRepo = SponsorshipRepository.instance;
   bool _openingSponsorshipRequest = false;
+  late Stream<SponsorshipCampaign?> _campaignStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _campaignStream =
+        _sponsorshipRepo.watchActiveForCategory(widget.council.category);
+  }
+
+  @override
+  void didUpdateWidget(covariant _CouncilSponsorSlot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.council.category != widget.council.category) {
+      _campaignStream =
+          _sponsorshipRepo.watchActiveForCategory(widget.council.category);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<SponsorshipCampaign?>(
-      stream: _sponsorshipRepo.watchActiveForCategory(widget.council.category),
+      stream: _campaignStream,
       builder: (context, snapshot) {
         final activeSponsorship = snapshot.data;
 
@@ -893,7 +1007,7 @@ class _CouncilSponsorSlotState extends State<_CouncilSponsorSlot> {
     _openingSponsorshipRequest = true;
     try {
       await Navigator.of(context).push(
-        MaterialPageRoute(
+        AppPageRoute(
           builder: (_) =>
               SponsorshipScreen(initialCategory: widget.council.category),
         ),
@@ -917,6 +1031,7 @@ class _CouncilSponsorSlotState extends State<_CouncilSponsorSlot> {
     }
 
     try {
+      dismissAppKeyboard();
       unawaited(_sponsorshipRepo.recordClick(sponsorship.id));
       final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!opened) _showSponsorLinkError();
@@ -1475,17 +1590,48 @@ class _CouncilActionIcon extends StatelessWidget {
   }
 }
 
-class _CouncilImagesGrid extends StatelessWidget {
+class _CouncilImagesGrid extends StatefulWidget {
   const _CouncilImagesGrid({required this.council});
 
   final CouncilModel council;
 
   @override
+  State<_CouncilImagesGrid> createState() => _CouncilImagesGridState();
+}
+
+class _CouncilImagesGridState extends State<_CouncilImagesGrid> {
+  int _visibleCount = 5;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleRemainingThumbnails();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CouncilImagesGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.council.id != widget.council.id) {
+      _visibleCount = 5;
+      _scheduleRemainingThumbnails();
+    }
+  }
+
+  void _scheduleRemainingThumbnails() {
+    if (widget.council.imageUrls.length <= _visibleCount) return;
+    Future<void>.delayed(const Duration(milliseconds: 180), () {
+      if (!mounted) return;
+      setState(() => _visibleCount = widget.council.imageUrls.length);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final originals = council.imageUrls.take(10).toList(growable: false);
+    final originals = widget.council.imageUrls.take(10).toList(growable: false);
     if (originals.isEmpty) return const SizedBox.shrink();
     final thumbnails =
-        council.thumbnailImageUrls.take(10).toList(growable: false);
+        widget.council.thumbnailImageUrls.take(10).toList(growable: false);
+    final visibleCount = _visibleCount.clamp(0, originals.length);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1494,7 +1640,7 @@ class _CouncilImagesGrid extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            for (var index = 0; index < originals.length; index++)
+            for (var index = 0; index < visibleCount; index++)
               _CouncilImageThumb(
                 url: index < thumbnails.length
                     ? thumbnails[index]
@@ -1513,6 +1659,7 @@ class _CouncilImagesGrid extends StatelessWidget {
     List<String> urls,
     int initialIndex,
   ) {
+    dismissAppKeyboard();
     showDialog<void>(
       context: context,
       barrierColor: AppColors.textDark.withValues(alpha: .84),
@@ -1737,8 +1884,11 @@ class _ResultsPanel extends StatelessWidget {
   }
 }
 
-class _CommentTile extends StatelessWidget {
+class _CommentTile extends StatefulWidget {
   const _CommentTile({
+    super.key,
+    required this.councilId,
+    required this.voterUid,
     required this.comment,
     required this.replies,
     required this.visibleReplyLimit,
@@ -1752,6 +1902,8 @@ class _CommentTile extends StatelessWidget {
     this.onShowMoreReplies,
   });
 
+  final String councilId;
+  final String? voterUid;
   final CommentModel comment;
   final List<CommentModel> replies;
   final int visibleReplyLimit;
@@ -1765,7 +1917,82 @@ class _CommentTile extends StatelessWidget {
   final VoidCallback? onShowMoreReplies;
 
   @override
+  State<_CommentTile> createState() => _CommentTileState();
+}
+
+class _CommentTileState extends State<_CommentTile> {
+  StreamSubscription<bool>? _voteSubscription;
+  late bool _isConvinced;
+
+  @override
+  void initState() {
+    super.initState();
+    _isConvinced = widget.isConvinced;
+    _subscribeToVote();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CommentTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.councilId != widget.councilId ||
+        oldWidget.comment.id != widget.comment.id ||
+        oldWidget.voterUid != widget.voterUid ||
+        oldWidget.isOwnComment != widget.isOwnComment) {
+      _isConvinced = widget.isConvinced;
+      _subscribeToVote();
+    } else if (oldWidget.isConvinced != widget.isConvinced) {
+      _isConvinced = widget.isConvinced;
+    }
+  }
+
+  @override
+  void dispose() {
+    _voteSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _subscribeToVote() {
+    _voteSubscription?.cancel();
+    _voteSubscription = null;
+    final uid = widget.voterUid;
+    if (uid == null ||
+        uid.isEmpty ||
+        widget.isOwnComment ||
+        widget.councilId.startsWith('demo_') ||
+        widget.comment.id.startsWith('local_')) {
+      return;
+    }
+
+    _voteSubscription = FirebaseCouncilRepository.instance
+        .watchConvincingVote(commentId: widget.comment.id, uid: uid)
+        .distinct()
+        .listen(
+      (selected) {
+        CouncilRepository.instance.syncConvincingVote(
+          widget.councilId,
+          widget.comment.id,
+          selected,
+        );
+        if (!mounted || _isConvinced == selected) return;
+        setState(() => _isConvinced = selected);
+      },
+      onError: (_) {},
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final comment = widget.comment;
+    final replies = widget.replies;
+    final visibleReplyLimit = widget.visibleReplyLimit;
+    final allowReplies = widget.allowReplies;
+    final isOwnComment = widget.isOwnComment;
+    final isConvinced = _isConvinced;
+    final onAuthorTap = widget.onAuthorTap;
+    final onReport = widget.onReport;
+    final onConvince = widget.onConvince;
+    final onReply = widget.onReply;
+    final onShowMoreReplies = widget.onShowMoreReplies;
     final visibleReplies =
         replies.take(visibleReplyLimit).toList(growable: false);
     final remainingReplies = replies.length - visibleReplies.length;

@@ -47,8 +47,7 @@ service cloud.firestore {
 
     function isConversationParticipant(data) {
       return isSignedIn()
-        && data.participantIds is list
-        && data.participantIds.hasAny([request.auth.uid]);
+        && request.auth.uid in data.participantIds;
     }
 
     function canReadConversation(conversationId) {

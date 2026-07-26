@@ -114,6 +114,7 @@ class MajlisCard extends StatelessWidget {
       ],
     );
   }
+
   void _handleVote(BuildContext context, VoteOption option) => onVote(option);
 }
 
@@ -139,8 +140,10 @@ class _TodayQuestionCard extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final hasSponsorSlot = sponsorship != null || onSponsorBookTap != null;
-        final cardHeight = (constraints.maxWidth / (hasSponsorSlot ? 1.58 : 1.72))
-            .clamp(hasSponsorSlot ? 236.0 : 214.0, hasSponsorSlot ? 264.0 : 238.0)
+        final cardHeight = (constraints.maxWidth /
+                (hasSponsorSlot ? 1.58 : 1.72))
+            .clamp(
+                hasSponsorSlot ? 236.0 : 214.0, hasSponsorSlot ? 264.0 : 238.0)
             .toDouble();
 
         return GestureDetector(
@@ -168,6 +171,9 @@ class _TodayQuestionCard extends StatelessWidget {
                     _backgroundAsset,
                     fit: BoxFit.cover,
                     filterQuality: FilterQuality.high,
+                    cacheWidth: (constraints.maxWidth *
+                            MediaQuery.devicePixelRatioOf(context))
+                        .ceil(),
                   ),
                   DecoratedBox(
                     decoration: BoxDecoration(
@@ -210,8 +216,7 @@ class _TodayQuestionCard extends StatelessWidget {
                                     overflow: TextOverflow.ellipsis,
                                     style: AppTextStyles.headline.copyWith(
                                       color: AppColors.cardWhite,
-                                      fontSize:
-                                          hasSponsorSlot ? 17.4 : 18.6,
+                                      fontSize: hasSponsorSlot ? 17.4 : 18.6,
                                       height: 1.27,
                                       fontWeight: FontWeight.w900,
                                       shadows: [
@@ -596,7 +601,8 @@ class _OpinionsRow extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.how_to_vote_outlined, color: AppColors.gold, size: 15),
+          const Icon(Icons.how_to_vote_outlined,
+              color: AppColors.gold, size: 15),
           const SizedBox(width: 6),
           Flexible(
             child: Text(

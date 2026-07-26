@@ -49,10 +49,12 @@ class CouncilListSnapshot {
   const CouncilListSnapshot({
     required this.councils,
     required this.isFromCache,
+    required this.dataChanged,
   });
 
   final List<CouncilModel> councils;
   final bool isFromCache;
+  final bool dataChanged;
 }
 
 class CreatedCouncilResult {
@@ -127,36 +129,74 @@ class FirebaseCouncilRepository {
       query = query.where('categoryId', isEqualTo: category);
     }
 
+    var initialized = false;
+    var cachedDataFingerprint = 0;
+    var cachedCouncils = const <CouncilModel>[];
     return query
         .orderBy('createdAt', descending: true)
         .limit(limit)
         .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
-      final councils = snapshot.docs
-          .map(CouncilModel.fromFirestore)
-          .where(
-            (council) =>
-                status == CouncilStatus.closed ||
-                council.status != CouncilStatus.closed,
-          )
-          .where(_isVisiblePublicCouncil)
-          .toList(growable: false);
-      councils.sort((a, b) {
-        final aDemo = a.id.startsWith('demo_laundry_');
-        final bDemo = b.id.startsWith('demo_laundry_');
-        if (aDemo != bDemo) return aDemo ? -1 : 1;
-        final aCreatedAt = a.createdAt;
-        final bCreatedAt = b.createdAt;
-        if (aCreatedAt == null && bCreatedAt == null) return 0;
-        if (aCreatedAt == null) return 1;
-        if (bCreatedAt == null) return -1;
-        return bCreatedAt.compareTo(aCreatedAt);
-      });
+      final dataFingerprint = Object.hashAll(
+        snapshot.docs.map(
+          (document) => Object.hash(
+            document.id,
+            _deepFirestoreValueHash(document.data()),
+          ),
+        ),
+      );
+      final dataChanged =
+          !initialized || dataFingerprint != cachedDataFingerprint;
+      if (dataChanged) {
+        final councils = snapshot.docs
+            .map(CouncilModel.fromFirestore)
+            .where(
+              (council) =>
+                  status == CouncilStatus.closed ||
+                  council.status != CouncilStatus.closed,
+            )
+            .where(_isVisiblePublicCouncil)
+            .toList(growable: false);
+        councils.sort((a, b) {
+          final aDemo = a.id.startsWith('demo_laundry_');
+          final bDemo = b.id.startsWith('demo_laundry_');
+          if (aDemo != bDemo) return aDemo ? -1 : 1;
+          final aCreatedAt = a.createdAt;
+          final bCreatedAt = b.createdAt;
+          if (aCreatedAt == null && bCreatedAt == null) return 0;
+          if (aCreatedAt == null) return 1;
+          if (bCreatedAt == null) return -1;
+          return bCreatedAt.compareTo(aCreatedAt);
+        });
+        cachedCouncils = councils;
+        cachedDataFingerprint = dataFingerprint;
+        initialized = true;
+      }
       return CouncilListSnapshot(
-        councils: councils,
+        councils: cachedCouncils,
         isFromCache: snapshot.metadata.isFromCache,
+        dataChanged: dataChanged,
       );
     });
+  }
+
+  int _deepFirestoreValueHash(Object? value) {
+    if (value is Map) {
+      final keys = value.keys.toList()
+        ..sort((left, right) => '$left'.compareTo('$right'));
+      return Object.hashAll(
+        keys.map(
+          (key) => Object.hash(
+            key,
+            _deepFirestoreValueHash(value[key]),
+          ),
+        ),
+      );
+    }
+    if (value is Iterable) {
+      return Object.hashAll(value.map(_deepFirestoreValueHash));
+    }
+    return value.hashCode;
   }
 
   bool _isVisiblePublicCouncil(CouncilModel council) {
@@ -217,27 +257,65 @@ class FirebaseCouncilRepository {
     required String uid,
     bool privateOnly = false,
     int limit = 80,
-  }) {
-    return _firestore.councils
+  }) async* {
+    final safeLimit = limit < 1 ? 1 : limit;
+    final indexedQuery = _firestore.councils
         .where('createdBy', isEqualTo: uid)
         .orderBy('createdAt', descending: true)
-        .limit(limit)
-        .snapshots()
-        .map((snapshot) {
-      final councils = snapshot.docs
-          .map(CouncilModel.fromFirestore)
-          .where((council) => council.status != CouncilStatus.closed)
-          .where(_isVisiblePublicCouncil)
-          .where((council) => !privateOnly || council.isPrivate)
-          .toList(growable: false);
-      councils.sort((a, b) {
-        final aDemo = a.id.startsWith('demo_laundry_');
-        final bDemo = b.id.startsWith('demo_laundry_');
-        if (aDemo != bDemo) return aDemo ? -1 : 1;
-        return a.status.index.compareTo(b.status.index);
-      });
-      return councils;
+        .limit(safeLimit);
+
+    try {
+      await for (final snapshot in indexedQuery.snapshots()) {
+        yield _userCouncilsFromSnapshot(
+          snapshot,
+          privateOnly: privateOnly,
+          limit: safeLimit,
+        );
+      }
+    } on FirebaseException catch (error) {
+      if (error.code != 'failed-precondition') rethrow;
+
+      // Keep "My opportunities" functional while a newly deployed composite
+      // index is still building. This fallback uses the automatic createdBy
+      // index, then applies stable ordering and the limit on the client.
+      await for (final snapshot in _firestore.councils
+          .where('createdBy', isEqualTo: uid)
+          .snapshots()) {
+        yield _userCouncilsFromSnapshot(
+          snapshot,
+          privateOnly: privateOnly,
+          limit: safeLimit,
+        );
+      }
+    }
+  }
+
+  List<CouncilModel> _userCouncilsFromSnapshot(
+    QuerySnapshot<Map<String, dynamic>> snapshot, {
+    required bool privateOnly,
+    required int limit,
+  }) {
+    final councils = snapshot.docs
+        .map(CouncilModel.fromFirestore)
+        .where((council) => council.status != CouncilStatus.closed)
+        .where(_isVisiblePublicCouncil)
+        .where(
+          (council) =>
+              !council.isSeedContent && !council.id.startsWith('demo_'),
+        )
+        .where((council) => !privateOnly || council.isPrivate)
+        .toList(growable: false);
+    councils.sort((a, b) {
+      final aCreatedAt = a.createdAt;
+      final bCreatedAt = b.createdAt;
+      if (aCreatedAt != null && bCreatedAt != null) {
+        return bCreatedAt.compareTo(aCreatedAt);
+      }
+      if (aCreatedAt != null) return -1;
+      if (bCreatedAt != null) return 1;
+      return b.id.compareTo(a.id);
     });
+    return councils.take(limit).toList(growable: false);
   }
 
   Stream<List<CouncilModel>> watchVotedCouncils({
@@ -357,18 +435,26 @@ class FirebaseCouncilRepository {
       if (seen.add(id)) uniqueIds.add(id);
     }
 
-    final councils = <CouncilModel>[];
-    for (var index = 0; index < uniqueIds.length; index += 10) {
-      final chunk = uniqueIds.skip(index).take(10).toList(growable: false);
-      try {
-        final snapshot = await _firestore.councils
-            .where(FieldPath.documentId, whereIn: chunk)
-            .get();
-        councils.addAll(snapshot.docs.map(CouncilModel.fromFirestore));
-      } catch (_) {
-        // A hidden/deleted council should not break the whole activity screen.
-      }
-    }
+    final chunks = <List<String>>[
+      for (var index = 0; index < uniqueIds.length; index += 10)
+        uniqueIds.skip(index).take(10).toList(growable: false),
+    ];
+    final chunkResults = await Future.wait(
+      chunks.map((chunk) async {
+        try {
+          final snapshot = await _firestore.councils
+              .where(FieldPath.documentId, whereIn: chunk)
+              .get();
+          return snapshot.docs
+              .map(CouncilModel.fromFirestore)
+              .toList(growable: false);
+        } catch (_) {
+          // A hidden/deleted council should not break the activity screen.
+          return const <CouncilModel>[];
+        }
+      }),
+    );
+    final councils = chunkResults.expand((chunk) => chunk).toList();
 
     final byId = {for (final council in councils) council.id: council};
     return uniqueIds
@@ -406,12 +492,11 @@ class FirebaseCouncilRepository {
         .where('status', isEqualTo: 'visible')
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) {
-      final comments =
-          snapshot.docs.map(CommentModel.fromFirestore).toList(growable: false);
-      comments.sort(_compareCommentsNewestFirst);
-      return comments;
-    });
+        .map(
+          (snapshot) => snapshot.docs
+              .map(CommentModel.fromFirestore)
+              .toList(growable: false),
+        );
   }
 
   Stream<bool> watchConvincingVote({
@@ -709,17 +794,6 @@ class FirebaseCouncilRepository {
       default:
         return 'image/jpeg';
     }
-  }
-
-  int _compareCommentsNewestFirst(CommentModel a, CommentModel b) {
-    final aCreatedAt = a.createdAt;
-    final bCreatedAt = b.createdAt;
-    if (aCreatedAt != null && bCreatedAt != null) {
-      return bCreatedAt.compareTo(aCreatedAt);
-    }
-    if (aCreatedAt != null) return -1;
-    if (bCreatedAt != null) return 1;
-    return a.minutesAgo.compareTo(b.minutesAgo);
   }
 
   Future<void> refreshCouncilVisibility({required String councilId}) async {

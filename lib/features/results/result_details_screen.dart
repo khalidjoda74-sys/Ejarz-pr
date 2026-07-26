@@ -22,11 +22,12 @@ class ResultDetailsScreen extends StatelessWidget {
     final repo = CouncilRepository.instance;
 
     return AnimatedBuilder(
-      animation: repo,
+      animation: repo.resultsState,
       builder: (context, _) {
         final sizes = AppSizes.of(context);
         final result = repo.resultById(councilId);
-        final council = result?.toCouncilModel() ?? repo.findCouncilById(councilId);
+        final council =
+            result?.toCouncilModel() ?? repo.findCouncilById(councilId);
         if (council == null) {
           return const Scaffold(
             backgroundColor: AppColors.background,
@@ -71,8 +72,7 @@ class ResultDetailsScreen extends StatelessWidget {
                       const SizedBox(height: 12),
                       Text(
                         'أفضل 3 آراء',
-                        style:
-                            AppTextStyles.cardTitle.copyWith(fontSize: 14.5),
+                        style: AppTextStyles.cardTitle.copyWith(fontSize: 14.5),
                       ),
                       const SizedBox(height: 8),
                       ...topComments.map((comment) => _TopCommentCard(comment)),

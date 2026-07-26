@@ -3,6 +3,8 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/constants/app_strings.dart';
+import 'core/navigation/app_page_route.dart';
+import 'core/navigation/app_route_observer.dart';
 import 'core/notifications/notification_router.dart';
 import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
@@ -28,6 +30,7 @@ class MajalisnaApp extends StatelessWidget {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         navigatorKey: NotificationRouter.navigatorKey,
+        navigatorObservers: [appPageRouteObserver],
         title: AppStrings.appName,
         theme: AppTheme.light(),
         scrollBehavior: const _MajalisnaScrollBehavior(),
@@ -47,23 +50,32 @@ class MajalisnaApp extends StatelessWidget {
           GlobalCupertinoLocalizations.delegate,
         ],
         home: _initialHome(),
-        routes: {
-          AppRoutes.onboarding: (_) => const OnboardingScreen(),
-          AppRoutes.nickname: (_) => const NicknameScreen(),
-          AppRoutes.main: (_) => const MainShell(),
-        },
         onGenerateRoute: (settings) {
           final name = settings.name ?? '';
-          final parts = name.split('/').where((part) => part.isNotEmpty).toList();
+          final page = switch (name) {
+            AppRoutes.onboarding => const OnboardingScreen(),
+            AppRoutes.nickname => const NicknameScreen(),
+            AppRoutes.main => const MainShell(),
+            _ => null,
+          };
+          if (page != null) {
+            return AppPageRoute(
+              builder: (_) => page,
+              settings: settings,
+            );
+          }
+
+          final parts =
+              name.split('/').where((part) => part.isNotEmpty).toList();
           if (parts.length == 2 && parts.first == 'council') {
-            return MaterialPageRoute(
+            return AppPageRoute(
               builder: (_) => CouncilDetailsScreen(councilId: parts.last),
               settings: settings,
             );
           }
 
           if (parts.length == 2 && parts.first == 'result') {
-            return MaterialPageRoute(
+            return AppPageRoute(
               builder: (_) => ResultDetailsScreen(councilId: parts.last),
               settings: settings,
             );

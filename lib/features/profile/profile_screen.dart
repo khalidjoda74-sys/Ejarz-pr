@@ -4,17 +4,16 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/auth_guard.dart';
+import '../../core/navigation/app_page_route.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/avatar_badge.dart';
 import '../../core/widgets/custom_app_bar.dart';
 import '../../core/widgets/premium_background.dart';
+import '../../core/widgets/tab_activity_scope.dart';
 import '../../data/models/user_model.dart';
 import '../../data/repositories/council_repository.dart';
-import '../../data/repositories/firebase_user_repository.dart';
-import '../../data/repositories/messaging_repository.dart';
-import '../messages/messages_screen.dart';
 import '../sponsorship/sponsorship_screen.dart';
 import 'settings_screen.dart';
 
@@ -39,6 +38,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   bool _subpageOpening = false;
   bool _savingAvatar = false;
+
   Future<void> _confirmAndSignOut(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -62,7 +62,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _subpageOpening = true;
     try {
       await Navigator.of(context).push<void>(
-        MaterialPageRoute(builder: builder),
+        AppPageRoute(builder: builder),
       );
     } finally {
       _subpageOpening = false;
@@ -76,20 +76,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (!mounted) return;
         await _openSubpage(
           (routeContext) => SettingsScreen(
-            onBack: () => Navigator.of(routeContext).maybePop(),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _openMessages() {
-    return AuthGuard.requireAuth(
-      context,
-      () async {
-        if (!mounted) return;
-        await _openSubpage(
-          (routeContext) => MessagesScreen(
             onBack: () => Navigator.of(routeContext).maybePop(),
           ),
         );
@@ -175,28 +161,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     setState(() => _savingAvatar = true);
     try {
-      final changed = await CouncilRepository.instance.updateAvatarEmoji(selected);
+      final changed =
+          await CouncilRepository.instance.updateAvatarEmoji(selected);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(changed ? 'تم تغيير الصورة الرمزية' : 'لم تتغير الصورة الرمزية')),
+        SnackBar(
+            content: Text(changed
+                ? 'تم تغيير الصورة الرمزية'
+                : 'لم تتغير الصورة الرمزية')),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر تغيير الصورة الرمزية. حاول مرة أخرى.')),
+        const SnackBar(
+            content: Text('تعذر تغيير الصورة الرمزية. حاول مرة أخرى.')),
       );
     } finally {
       if (mounted) setState(() => _savingAvatar = false);
     }
   }
+
   @override
   Widget build(BuildContext context) {
     final repo = CouncilRepository.instance;
     final auth = AuthController.instance;
     final sizes = AppSizes.of(context);
+    final active = TabActivityScope.isActiveOf(context);
 
     return AnimatedBuilder(
-      animation: Listenable.merge([repo, auth]),
+      animation: active
+          ? Listenable.merge([repo.userState, auth])
+          : kAlwaysCompleteAnimation,
       builder: (context, _) {
         final localUser = repo.user;
         final firebaseUser = auth.user;
@@ -239,7 +234,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         sizes.horizontalPadding,
                         10,
                         sizes.horizontalPadding,
-                        sizes.bottomNavHeight + 18 +
+                        sizes.bottomNavHeight +
+                            18 +
                             MediaQuery.viewPaddingOf(context).bottom,
                       ),
                       children: [
@@ -254,8 +250,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             accountEmail!,
                             textAlign: TextAlign.center,
                             textDirection: TextDirection.ltr,
-                            style:
-                                AppTextStyles.caption.copyWith(fontSize: 12),
+                            style: AppTextStyles.caption.copyWith(fontSize: 12),
                           ),
                         ],
                         const SizedBox(height: 6),
@@ -265,17 +260,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const SizedBox(height: 10),
                         _MenuCard(
                           children: [
-                            StreamBuilder<int>(
-                              stream: MessagingRepository.instance.watchUnreadTotal(),
-                              builder: (context, snapshot) => _MenuRow(
-                                icon: Icons.chat_bubble_outline_rounded,
-                                label: 'الرسائل',
-                                badgeCount: snapshot.data ?? 0,
-                                onTap: () {
-                                  _openMessages();
-                                },
-                              ),
-                            ),
                             _MenuRow(
                               icon: Icons.settings_outlined,
                               label: 'الإعدادات',
@@ -328,12 +312,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           );
         }
 
-        return StreamBuilder<UserModel?>(
-          stream: FirebaseUserRepository.instance.watchUser(firebaseUser.uid),
-          builder: (context, snapshot) {
-            return buildProfile(snapshot.data ?? localUser);
-          },
-        );
+        return buildProfile(localUser);
       },
     );
   }
@@ -373,7 +352,8 @@ class _GuestProfileView extends StatelessWidget {
                   sizes.horizontalPadding,
                   14,
                   sizes.horizontalPadding,
-                  sizes.bottomNavHeight + 18 +
+                  sizes.bottomNavHeight +
+                      18 +
                       MediaQuery.viewPaddingOf(context).bottom,
                 ),
                 children: [
@@ -566,7 +546,8 @@ class _AboutDialog extends StatelessWidget {
                           color: AppColors.primaryGreen.withValues(alpha: .10),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: AppColors.primaryGreen.withValues(alpha: .16),
+                            color:
+                                AppColors.primaryGreen.withValues(alpha: .16),
                           ),
                         ),
                         child: const Icon(
@@ -879,7 +860,8 @@ class _SupportActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final foreground = primary ? AppColors.cardWhite : AppColors.textDark;
-    final background = primary ? AppColors.primaryDarkGreen : AppColors.background;
+    final background =
+        primary ? AppColors.primaryDarkGreen : AppColors.background;
     final borderColor =
         primary ? AppColors.primaryDarkGreen : AppColors.borderBeige;
 
@@ -992,7 +974,8 @@ class _EditableProfileAvatar extends StatelessWidget {
           children: [
             Opacity(
               opacity: saving ? .72 : 1,
-              child: _ProfileAvatar(label: label, photoUrl: photoUrl, size: size),
+              child:
+                  _ProfileAvatar(label: label, photoUrl: photoUrl, size: size),
             ),
             Positioned(
               left: -1,
@@ -1096,7 +1079,8 @@ class _AvatarPickerSheet extends StatelessWidget {
                             : AppColors.background.withValues(alpha: .58),
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: selected ? AppColors.gold : AppColors.borderBeige,
+                          color:
+                              selected ? AppColors.gold : AppColors.borderBeige,
                           width: selected ? 1.5 : 1,
                         ),
                       ),
@@ -1393,35 +1377,6 @@ class _DialogActionButton extends StatelessWidget {
   }
 }
 
-class _ProfileUnreadBadge extends StatelessWidget {
-  const _ProfileUnreadBadge({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = count > 99 ? '99+' : '$count';
-    return Container(
-      constraints: const BoxConstraints(minWidth: 22),
-      height: 22,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 7),
-      decoration: const BoxDecoration(
-        color: AppColors.red,
-        borderRadius: BorderRadius.all(Radius.circular(999)),
-      ),
-      child: Text(
-        label,
-        style: AppTextStyles.caption.copyWith(
-          color: AppColors.cardWhite,
-          fontSize: 10.5,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}
-
 class _MenuRow extends StatelessWidget {
   const _MenuRow({
     required this.icon,
@@ -1429,7 +1384,6 @@ class _MenuRow extends StatelessWidget {
     this.onTap,
     this.danger = false,
     this.showDivider = true,
-    this.badgeCount = 0,
     this.external = false,
   });
 
@@ -1438,7 +1392,6 @@ class _MenuRow extends StatelessWidget {
   final VoidCallback? onTap;
   final bool danger;
   final bool showDivider;
-  final int badgeCount;
   final bool external;
 
   @override
@@ -1471,10 +1424,6 @@ class _MenuRow extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (badgeCount > 0) ...[
-                    _ProfileUnreadBadge(count: badgeCount),
-                    const SizedBox(width: 8),
-                  ],
                   Icon(
                     external
                         ? Icons.open_in_new_rounded

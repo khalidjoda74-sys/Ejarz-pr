@@ -56,6 +56,11 @@ class _NicknameScreenState extends State<NicknameScreen> {
       return;
     }
 
+    if (auth.isIdentityReady(uid)) {
+      _finish(completed: true);
+      return;
+    }
+
     try {
       final needsIdentity =
           await FirebaseUserRepository.instance.needsIdentitySetup(uid);
@@ -71,9 +76,8 @@ class _NicknameScreenState extends State<NicknameScreen> {
   @override
   Widget build(BuildContext context) {
     final sizes = AppSizes.of(context);
-    final logoWidth = (MediaQuery.sizeOf(context).width * .28)
-        .clamp(96.0, 125.0)
-        .toDouble();
+    final logoWidth =
+        (MediaQuery.sizeOf(context).width * .28).clamp(96.0, 125.0).toDouble();
 
     return PopScope(
       canPop: false,

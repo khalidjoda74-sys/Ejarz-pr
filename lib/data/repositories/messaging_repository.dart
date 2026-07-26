@@ -38,7 +38,8 @@ class MessagingRepository {
     return user.uid;
   }
 
-  Future<ConversationModel> getOrCreateConversation(CouncilModel council) async {
+  Future<ConversationModel> getOrCreateConversation(
+      CouncilModel council) async {
     final user = _auth.currentUser;
     if (user == null || user.isAnonymous) {
       throw FirebaseException(
@@ -141,7 +142,8 @@ class MessagingRepository {
         }
 
         emit();
-        final subscription = _demoConversationChanges.stream.listen((_) => emit());
+        final subscription =
+            _demoConversationChanges.stream.listen((_) => emit());
         controller.onCancel = subscription.cancel;
       });
     }
@@ -156,7 +158,8 @@ class MessagingRepository {
     bool includeArchived = false,
   }) {
     final user = _auth.currentUser;
-    final currentUid = user == null || user.isAnonymous ? _demoCurrentUid : user.uid;
+    final currentUid =
+        user == null || user.isAnonymous ? _demoCurrentUid : user.uid;
 
     return Stream<List<ConversationModel>>.multi((controller) {
       List<ConversationModel>? firestoreConversations;
@@ -171,8 +174,10 @@ class MessagingRepository {
       }
 
       emit();
-      final demoSubscription = _demoConversationChanges.stream.listen((_) => emit());
-      StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? firestoreSubscription;
+      final demoSubscription =
+          _demoConversationChanges.stream.listen((_) => emit());
+      StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+          firestoreSubscription;
 
       if (user != null && !user.isAnonymous) {
         firestoreSubscription = _firestore.conversations
@@ -217,15 +222,18 @@ class MessagingRepository {
         .toList(growable: false);
     return List<ConversationModel>.unmodifiable(conversations);
   }
+
   Stream<int> watchUnreadTotal() {
     final user = _auth.currentUser;
     if (user == null || user.isAnonymous) return Stream.value(0);
-    return watchMyConversations().map(
-      (conversations) => conversations.fold<int>(
-        0,
-        (total, conversation) => total + conversation.unreadFor(user.uid),
-      ),
-    );
+    return watchMyConversations()
+        .map(
+          (conversations) => conversations.fold<int>(
+            0,
+            (total, conversation) => total + conversation.unreadFor(user.uid),
+          ),
+        )
+        .distinct();
   }
 
   Stream<List<MessageModel>> watchMessages(String conversationId) {
@@ -297,8 +305,10 @@ class MessagingRepository {
       );
     }
 
-    final fileName = '${DateTime.now().millisecondsSinceEpoch}_${_safeFileName(image.name)}';
-    final ref = _firestore.conversationImageRef(conversationId, user.uid, fileName);
+    final fileName =
+        '${DateTime.now().millisecondsSinceEpoch}_${_safeFileName(image.name)}';
+    final ref =
+        _firestore.conversationImageRef(conversationId, user.uid, fileName);
     await ref.putData(
       bytes,
       SettableMetadata(
@@ -356,7 +366,6 @@ class MessagingRepository {
     await _firestore.conversation(conversationId).update({
       'unreadCounts.${user.uid}': 0,
       'lastReadAt.${user.uid}': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
@@ -438,7 +447,8 @@ class MessagingRepository {
         orElse: () => '',
       );
       if (otherUid.isEmpty) {
-        throw FirebaseException(plugin: 'majlisna', code: 'missing-participant');
+        throw FirebaseException(
+            plugin: 'majlisna', code: 'missing-participant');
       }
       final blockedUserRef = _firestore.db
           .collection('users')
@@ -533,7 +543,8 @@ class MessagingRepository {
       transaction.set(reportRef, {
         'targetType': 'conversation',
         'targetId': conversationId,
-        'targetPreview': _stringValue(data['councilTitle'], fallback: conversationId),
+        'targetPreview':
+            _stringValue(data['councilTitle'], fallback: conversationId),
         'conversationId': conversationId,
         'councilId': _stringValue(data['councilId']),
         'reason': cleanReason,
@@ -659,8 +670,10 @@ class MessagingRepository {
             fallback: _stringValue(fallbackName, fallback: 'عضو Forsa Pro'),
           ),
         ),
-        'avatarEmoji': _stringValue(data['avatarEmoji'], fallback: _stringValue(data['avatar'])),
-        'photoUrl': _stringValue(data['photoUrl'], fallback: _stringValue(fallbackPhotoUrl)),
+        'avatarEmoji': _stringValue(data['avatarEmoji'],
+            fallback: _stringValue(data['avatar'])),
+        'photoUrl': _stringValue(data['photoUrl'],
+            fallback: _stringValue(fallbackPhotoUrl)),
       });
     } catch (_) {
       return ParticipantSnapshot(
@@ -829,7 +842,8 @@ class MessagingRepository {
     yield* controller.stream;
   }
 
-  List<MessageModel> _demoMessagesFor(String conversationId, String currentUid) {
+  List<MessageModel> _demoMessagesFor(
+      String conversationId, String currentUid) {
     final existing = _demoMessages[conversationId];
     if (existing != null) return existing;
 
@@ -842,36 +856,129 @@ class MessagingRepository {
     switch (conversationId) {
       case 'demo_message_partner_riyadh':
         messages = <MessageModel>[
-          _demoMessage('m1', otherUid, 'السلام عليكم، شفت فرصة الشراكة لتوسعة المطعم. هل التوسعة لفرع جديد أو زيادة الطاقة الحالية؟', now, 95, currentUid),
-          _demoMessage('m2', currentUid, 'وعليكم السلام. الخطة فرع ثاني داخل نفس النطاق، والمطبخ المركزي موجود.', now, 82, currentUid),
-          _demoMessage('m3', otherUid, 'ممتاز. كم متوسط المبيعات الشهرية للفرع الحالي؟ وهل يوجد قوائم مالية مختصرة؟', now, 54, currentUid),
-          _demoMessage('m4', currentUid, 'المتوسط قريب من 165 ألف، وصافي التشغيل يتغير حسب المواسم. أقدر أرسل ملخص بدون بيانات حساسة.', now, 26, currentUid),
-          _demoMessage('m5', otherUid, 'ممتاز، أرسل لي تفاصيل المبيعات الشهرية وموقع الفرع.', now, 7, currentUid),
+          _demoMessage(
+              'm1',
+              otherUid,
+              'السلام عليكم، شفت فرصة الشراكة لتوسعة المطعم. هل التوسعة لفرع جديد أو زيادة الطاقة الحالية؟',
+              now,
+              95,
+              currentUid),
+          _demoMessage(
+              'm2',
+              currentUid,
+              'وعليكم السلام. الخطة فرع ثاني داخل نفس النطاق، والمطبخ المركزي موجود.',
+              now,
+              82,
+              currentUid),
+          _demoMessage(
+              'm3',
+              otherUid,
+              'ممتاز. كم متوسط المبيعات الشهرية للفرع الحالي؟ وهل يوجد قوائم مالية مختصرة؟',
+              now,
+              54,
+              currentUid),
+          _demoMessage(
+              'm4',
+              currentUid,
+              'المتوسط قريب من 165 ألف، وصافي التشغيل يتغير حسب المواسم. أقدر أرسل ملخص بدون بيانات حساسة.',
+              now,
+              26,
+              currentUid),
+          _demoMessage(
+              'm5',
+              otherUid,
+              'ممتاز، أرسل لي تفاصيل المبيعات الشهرية وموقع الفرع.',
+              now,
+              7,
+              currentUid),
         ];
         break;
       case 'demo_message_transfer_jeddah':
         messages = <MessageModel>[
-          _demoMessage('m1', currentUid, 'مرحبًا فهد، هل فرصة المغسلة لا تزال متاحة للتقبيل؟', now, 190, currentUid),
-          _demoMessage('m2', otherUid, 'نعم متاحة. الموقع على شارع نشط وفيه عقود شهرية مع شركتين.', now, 160, currentUid),
-          _demoMessage('m3', currentUid, 'ممتاز. هل الإيجار طويل وهل توجد مديونيات على النشاط؟', now, 80, currentUid),
-          _demoMessage('m4', otherUid, 'العقد باقي عليه 18 شهر ولا توجد مديونيات تشغيلية.', now, 36, currentUid),
-          _demoMessage('m5', otherUid, 'هل يشمل التقبيل المعدات والعمالة الحالية؟', now, 32, currentUid),
+          _demoMessage(
+              'm1',
+              currentUid,
+              'مرحبًا فهد، هل فرصة المغسلة لا تزال متاحة للتقبيل؟',
+              now,
+              190,
+              currentUid),
+          _demoMessage(
+              'm2',
+              otherUid,
+              'نعم متاحة. الموقع على شارع نشط وفيه عقود شهرية مع شركتين.',
+              now,
+              160,
+              currentUid),
+          _demoMessage(
+              'm3',
+              currentUid,
+              'ممتاز. هل الإيجار طويل وهل توجد مديونيات على النشاط؟',
+              now,
+              80,
+              currentUid),
+          _demoMessage(
+              'm4',
+              otherUid,
+              'العقد باقي عليه 18 شهر ولا توجد مديونيات تشغيلية.',
+              now,
+              36,
+              currentUid),
+          _demoMessage('m5', otherUid,
+              'هل يشمل التقبيل المعدات والعمالة الحالية؟', now, 32, currentUid),
         ];
         break;
       case 'demo_message_funding_dammam':
         messages = <MessageModel>[
-          _demoMessage('m1', otherUid, 'أهلاً، ذكرت أنك تبحث عن فرصة تشغيلية بمبلغ 180 ألف. هل تفضل قطاع غذائي أو خدمات؟', now, 280, currentUid),
-          _demoMessage('m2', currentUid, 'أفضل الخدمات لأنها أوضح في التكاليف، لكن إذا الغذائي أرقامه قوية ممكن أدرسه.', now, 244, currentUid),
-          _demoMessage('m3', otherUid, 'عندي فرصة توريد وتشغيل صغيرة تحتاج شريك ممول ومتابعة أسبوعية.', now, 170, currentUid),
-          _demoMessage('m4', currentUid, 'الأهم عندي وضوح المصاريف قبل الدخول.', now, 118, currentUid),
+          _demoMessage(
+              'm1',
+              otherUid,
+              'أهلاً، ذكرت أنك تبحث عن فرصة تشغيلية بمبلغ 180 ألف. هل تفضل قطاع غذائي أو خدمات؟',
+              now,
+              280,
+              currentUid),
+          _demoMessage(
+              'm2',
+              currentUid,
+              'أفضل الخدمات لأنها أوضح في التكاليف، لكن إذا الغذائي أرقامه قوية ممكن أدرسه.',
+              now,
+              244,
+              currentUid),
+          _demoMessage(
+              'm3',
+              otherUid,
+              'عندي فرصة توريد وتشغيل صغيرة تحتاج شريك ممول ومتابعة أسبوعية.',
+              now,
+              170,
+              currentUid),
+          _demoMessage('m4', currentUid, 'الأهم عندي وضوح المصاريف قبل الدخول.',
+              now, 118, currentUid),
         ];
         break;
       default:
         messages = <MessageModel>[
-          _demoMessage('m1', otherUid, 'السلام عليكم، قرأت تجربتك في تشغيل متجر القهوة. أكثر نقطة شدتني موضوع الإيجار.', now, 430, currentUid),
-          _demoMessage('m2', currentUid, 'وعليكم السلام، فعلًا الإيجار كان العامل الأكبر في الضغط على الربحية.', now, 390, currentUid),
-          _demoMessage('m3', otherUid, 'هل تنصح بالبدء داخل مجمع أو شارع تجاري؟', now, 330, currentUid),
-          _demoMessage('m4', currentUid, 'حسب المنتج. إذا العلامة جديدة أفضل موقع بتكلفة أخف وتجربة بيع واضحة قبل مجمع مكلف.', now, 260, currentUid),
+          _demoMessage(
+              'm1',
+              otherUid,
+              'السلام عليكم، قرأت تجربتك في تشغيل متجر القهوة. أكثر نقطة شدتني موضوع الإيجار.',
+              now,
+              430,
+              currentUid),
+          _demoMessage(
+              'm2',
+              currentUid,
+              'وعليكم السلام، فعلًا الإيجار كان العامل الأكبر في الضغط على الربحية.',
+              now,
+              390,
+              currentUid),
+          _demoMessage('m3', otherUid,
+              'هل تنصح بالبدء داخل مجمع أو شارع تجاري؟', now, 330, currentUid),
+          _demoMessage(
+              'm4',
+              currentUid,
+              'حسب المنتج. إذا العلامة جديدة أفضل موقع بتكلفة أخف وتجربة بيع واضحة قبل مجمع مكلف.',
+              now,
+              260,
+              currentUid),
         ];
         break;
     }

@@ -71,7 +71,14 @@ class AuthController extends ChangeNotifier {
 
     _initialized = true;
     _user = _service.currentUser;
-    unawaited(_syncFirestoreUser(_user));
+    final returningSession = _isKnownReturningSession(_user);
+    if (returningSession) markIdentityReady(_user?.uid);
+    unawaited(
+      _syncFirestoreUser(
+        _user,
+        knownReturningUser: returningSession,
+      ),
+    );
     _subscription = _service.authStateChanges.listen((user) {
       _user = user;
       unawaited(_syncFirestoreUser(user));
@@ -137,12 +144,27 @@ class AuthController extends ChangeNotifier {
   ) async {
     _setBusy(true);
     try {
+      final anonymousUidBeforeSignIn =
+          _user?.isAnonymous == true ? _user?.uid : null;
       final credential = await signIn();
       _user = credential.user;
+      final isNewUser = credential.additionalUserInfo?.isNewUser;
+      final knownReturningUser = isKnownReturningSignIn(
+        isNewUser: isNewUser,
+        anonymousUidBeforeSignIn: anonymousUidBeforeSignIn,
+        signedInUid: _user?.uid,
+      );
       if (credential.additionalUserInfo?.isNewUser == true) {
         markIdentityRequired(_user?.uid);
+      } else if (knownReturningUser) {
+        markIdentityReady(_user?.uid);
       }
-      unawaited(_syncFirestoreUser(_user));
+      unawaited(
+        _syncFirestoreUser(
+          _user,
+          knownReturningUser: knownReturningUser,
+        ),
+      );
       final uid = _user?.uid;
       if (uid != null) {
         unawaited(NotificationService.instance.enableForSignedInUser(uid));
@@ -162,11 +184,49 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _syncFirestoreUser(User? user) async {
+  @visibleForTesting
+  static bool isKnownReturningSignIn({
+    required bool? isNewUser,
+    required String? anonymousUidBeforeSignIn,
+    required String? signedInUid,
+  }) {
+    if (isNewUser != false || signedInUid == null || signedInUid.isEmpty) {
+      return false;
+    }
+
+    return anonymousUidBeforeSignIn == null ||
+        anonymousUidBeforeSignIn != signedInUid;
+  }
+
+  @visibleForTesting
+  static bool hasPreviousAuthSignIn({
+    required DateTime? creationTime,
+    required DateTime? lastSignInTime,
+  }) {
+    if (creationTime == null || lastSignInTime == null) return false;
+    return lastSignInTime.difference(creationTime) > const Duration(seconds: 1);
+  }
+
+  bool _isKnownReturningSession(User? user) {
+    return user != null &&
+        !user.isAnonymous &&
+        hasPreviousAuthSignIn(
+          creationTime: user.metadata.creationTime,
+          lastSignInTime: user.metadata.lastSignInTime,
+        );
+  }
+
+  Future<void> _syncFirestoreUser(
+    User? user, {
+    bool knownReturningUser = false,
+  }) async {
     if (user == null) return;
 
     try {
-      await _userRepository.ensureUserDocument(user);
+      await _userRepository.ensureUserDocument(
+        user,
+        knownReturningUser: knownReturningUser,
+      );
       await NotificationService.instance.refreshTokenSilently(user.uid);
     } catch (_) {
       // Profile and token sync run in the background. Their permission/network

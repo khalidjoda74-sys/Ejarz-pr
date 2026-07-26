@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../navigation/app_focus.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_sizes.dart';
 import '../theme/app_text_styles.dart';
@@ -68,7 +69,15 @@ class CustomGreenHeader extends StatelessWidget {
                     child: Center(
                       child: _RoundIconButton(
                         icon: Icons.arrow_back_ios_new_rounded,
-                        onTap: onBack ?? () => Navigator.of(context).maybePop(),
+                        onTap: () {
+                          dismissAppKeyboard();
+                          final callback = onBack;
+                          if (callback != null) {
+                            callback();
+                          } else {
+                            Navigator.of(context).maybePop();
+                          }
+                        },
                         compact: true,
                       ),
                     ),
@@ -107,8 +116,9 @@ class CustomGreenHeader extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: AppTextStyles.caption.copyWith(
                               color: AppColors.cardWhite.withValues(alpha: .78),
-                              fontSize:
-                                  sizes.captionFont.clamp(11.5, 12.5).toDouble(),
+                              fontSize: sizes.captionFont
+                                  .clamp(11.5, 12.5)
+                                  .toDouble(),
                             ),
                           ),
                         ],

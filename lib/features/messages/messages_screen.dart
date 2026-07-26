@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/navigation/app_page_route.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_sizes.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -24,16 +25,29 @@ class MessagesScreen extends StatefulWidget {
 class _MessagesScreenState extends State<MessagesScreen> {
   bool _showArchived = false;
   bool _openingConversation = false;
+  late final Stream<List<ConversationModel>> _activeConversationsStream;
+  late final Stream<List<ConversationModel>> _archivedConversationsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    final repository = MessagingRepository.instance;
+    _activeConversationsStream =
+        repository.watchMyConversations(includeArchived: false);
+    _archivedConversationsStream =
+        repository.watchMyConversations(includeArchived: true);
+  }
 
   Future<void> _openConversation(ConversationModel conversation) async {
     if (_openingConversation || !mounted) return;
     _openingConversation = true;
     try {
-      unawaited(
-        MessagingRepository.instance.markConversationRead(conversation.id),
-      );
+      final repository = MessagingRepository.instance;
+      if (conversation.unreadFor(repository.viewerUid) > 0) {
+        unawaited(repository.markConversationRead(conversation.id));
+      }
       await Navigator.of(context).push(
-        MaterialPageRoute<void>(
+        AppPageRoute<void>(
           builder: (_) => ConversationScreen(
             conversationId: conversation.id,
             initialConversation: conversation,
@@ -58,7 +72,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
           children: [
             CustomGreenHeader(
               title: _showArchived ? 'الأرشيف' : 'الرسائل',
-              subtitle: _showArchived ? 'المحادثات المؤرشفة' : 'محادثاتك المرتبطة بالفرص',
+              subtitle: _showArchived
+                  ? 'المحادثات المؤرشفة'
+                  : 'محادثاتك المرتبطة بالفرص',
               showBack: true,
               onBack: widget.onBack,
               trailing: HeaderRoundButton(
@@ -70,15 +86,19 @@ class _MessagesScreenState extends State<MessagesScreen> {
             ),
             Expanded(
               child: StreamBuilder<List<ConversationModel>>(
-                stream: repo.watchMyConversations(includeArchived: _showArchived),
+                stream: _showArchived
+                    ? _archivedConversationsStream
+                    : _activeConversationsStream,
                 builder: (context, snapshot) {
-                  final conversations = snapshot.data ?? const <ConversationModel>[];
+                  final conversations =
+                      snapshot.data ?? const <ConversationModel>[];
 
                   if (snapshot.hasError) {
                     return const _MessagesState(
                       icon: Icons.wifi_off_rounded,
                       title: 'تعذر تحميل الرسائل',
-                      message: 'راجع الاتصال أو صلاحيات الحساب ثم حاول مرة أخرى.',
+                      message:
+                          'راجع الاتصال أو صلاحيات الحساب ثم حاول مرة أخرى.',
                     );
                   }
 
@@ -160,6 +180,7 @@ class _MessagesSkeleton extends StatelessWidget {
     );
   }
 }
+
 class _ConversationTile extends StatelessWidget {
   const _ConversationTile({
     required this.conversation,
@@ -341,7 +362,9 @@ class _ConversationAvatar extends StatelessWidget {
         ),
       ),
       child: AvatarBadge(
-        label: (label == null || label!.isEmpty) ? 'business:person_growth' : label!,
+        label: (label == null || label!.isEmpty)
+            ? 'business:person_growth'
+            : label!,
         size: 40,
         border: active,
       ),

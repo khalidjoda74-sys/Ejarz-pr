@@ -1,6 +1,7 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 
+import '../navigation/app_page_route.dart';
 import '../../data/models/notification_model.dart';
 import '../../features/councils/council_details_screen.dart';
 import '../../features/messages/conversation_screen.dart';
@@ -30,11 +31,14 @@ class NotificationRouter {
       {
         if (notification.targetRoute != null)
           'targetRoute': notification.targetRoute!,
-        if (notification.councilId != null) 'councilId': notification.councilId!,
-        if (notification.commentId != null) 'commentId': notification.commentId!,
+        if (notification.councilId != null)
+          'councilId': notification.councilId!,
+        if (notification.commentId != null)
+          'commentId': notification.commentId!,
         if (notification.conversationId != null)
           'conversationId': notification.conversationId!,
-        if (notification.messageId != null) 'messageId': notification.messageId!,
+        if (notification.messageId != null)
+          'messageId': notification.messageId!,
         'type': notification.type,
       },
       context: context,
@@ -121,7 +125,7 @@ class NotificationRouter {
     _routeOpening = true;
     try {
       await navigator.push(
-        MaterialPageRoute(builder: builder),
+        AppPageRoute(builder: builder),
       );
     } finally {
       _routeOpening = false;

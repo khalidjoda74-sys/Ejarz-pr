@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/auth/auth_controller.dart';
@@ -10,6 +10,7 @@ import '../../core/widgets/custom_app_bar.dart';
 import '../../core/widgets/premium_background.dart';
 import '../../core/widgets/result_bar.dart';
 import '../../core/widgets/relative_time_text.dart';
+import '../../core/widgets/tab_activity_scope.dart';
 import '../../data/models/council_model.dart';
 import '../../data/repositories/council_repository.dart';
 import '../../data/repositories/firebase_council_repository.dart';
@@ -36,6 +37,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
   Widget build(BuildContext context) {
     final uid = AuthController.instance.user?.uid;
     final sizes = AppSizes.of(context);
+    final active = TabActivityScope.isActiveOf(context);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -58,6 +60,8 @@ class _ResultsScreenState extends State<ResultsScreen> {
                   : _ActivityList(
                       uid: uid,
                       filter: _filter,
+                      active: active,
+                      streamsActive: active,
                       horizontalPadding: sizes.horizontalPadding,
                       onOpenCouncil: widget.onOpenCouncil,
                     ),
@@ -170,31 +174,64 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
-class _ActivityList extends StatelessWidget {
+class _ActivityList extends StatefulWidget {
   const _ActivityList({
     required this.uid,
     required this.filter,
+    required this.active,
+    required this.streamsActive,
     required this.horizontalPadding,
     required this.onOpenCouncil,
   });
 
   final String uid;
   final _ActivityFilter filter;
+  final bool active;
+  final bool streamsActive;
   final double horizontalPadding;
   final ValueChanged<String> onOpenCouncil;
 
   @override
+  State<_ActivityList> createState() => _ActivityListState();
+}
+
+class _ActivityListState extends State<_ActivityList> {
+  late Stream<List<CouncilModel>> _createdStream;
+  late Stream<List<VotedCouncilActivity>> _votedStream;
+  late Stream<List<CommentedCouncilActivity>> _commentedStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeStreams();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ActivityList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.uid != widget.uid) _initializeStreams();
+  }
+
+  void _initializeStreams() {
+    final repository = FirebaseCouncilRepository.instance;
+    _createdStream = repository.watchUserCouncils(uid: widget.uid);
+    _votedStream = repository.watchVotedCouncilActivities(uid: widget.uid);
+    _commentedStream =
+        repository.watchCommentedCouncilActivities(uid: widget.uid);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    switch (filter) {
+    switch (widget.filter) {
       case _ActivityFilter.created:
         return AnimatedBuilder(
-          animation: CouncilRepository.instance,
+          animation: widget.active
+              ? CouncilRepository.instance.feedState
+              : kAlwaysCompleteAnimation,
           builder: (context, _) {
-            final localCreatedCouncils = _localCreatedCouncils(uid);
+            final localCreatedCouncils = _localCreatedCouncils(widget.uid);
             return _buildActivityStream<CouncilModel>(
-              stream: FirebaseCouncilRepository.instance.watchUserCouncils(
-                uid: uid,
-              ),
+              stream: widget.streamsActive ? _createdStream : null,
               initialData: localCreatedCouncils,
               mergeItems: (remoteCouncils) => _mergeCreatedCouncils(
                 localCreatedCouncils,
@@ -202,42 +239,38 @@ class _ActivityList extends StatelessWidget {
               ),
               itemBuilder: (council) => _ActivityCouncilCard(
                 council: council,
-                onOpen: () => onOpenCouncil(council.id),
+                onOpen: () => widget.onOpenCouncil(council.id),
               ),
             );
           },
         );
       case _ActivityFilter.voted:
         return _buildActivityStream<VotedCouncilActivity>(
-          stream:
-              FirebaseCouncilRepository.instance.watchVotedCouncilActivities(
-            uid: uid,
-          ),
+          stream: widget.streamsActive ? _votedStream : null,
           itemBuilder: (activity) => _ActivityCouncilCard(
             council: activity.council,
             noteIcon: Icons.how_to_vote_outlined,
             noteLabel: 'رأيك',
             noteText: _voteLabel(activity.council, activity.vote),
-            onOpen: () => onOpenCouncil(activity.council.id),
+            onOpen: () => widget.onOpenCouncil(activity.council.id),
           ),
         );
       case _ActivityFilter.commented:
         return _buildActivityStream<CommentedCouncilActivity>(
-          stream: FirebaseCouncilRepository.instance
-              .watchCommentedCouncilActivities(uid: uid),
+          stream: widget.streamsActive ? _commentedStream : null,
           itemBuilder: (activity) => _ActivityCouncilCard(
             council: activity.council,
             noteIcon: Icons.chat_bubble_outline_rounded,
             noteLabel: 'تعليقك',
             noteText: activity.comment.text,
-            onOpen: () => onOpenCouncil(activity.council.id),
+            onOpen: () => widget.onOpenCouncil(activity.council.id),
           ),
         );
     }
   }
 
   Widget _buildActivityStream<T>({
-    required Stream<List<T>> stream,
+    required Stream<List<T>>? stream,
     required Widget Function(T item) itemBuilder,
     List<T>? initialData,
     List<T> Function(List<T> items)? mergeItems,
@@ -255,21 +288,14 @@ class _ActivityList extends StatelessWidget {
         }
 
         if (snapshot.hasError && items.isEmpty) {
-          return const _ActivityEmptyState(
+          return _ActivityEmptyState(
             icon: Icons.error_outline_rounded,
-            title: 'تعذر تحميل النشاط',
-            message: 'راجع الاتصال أو صلاحيات قاعدة البيانات ثم حاول مرة أخرى.',
+            title: 'تعذر تحديث النشاط',
+            message: _activityErrorMessage(snapshot.error),
           );
         }
 
         if (items.isEmpty) {
-          if (kDebugMode) {
-            return _ActivityPreviewList(
-              filter: filter,
-              horizontalPadding: horizontalPadding,
-            );
-          }
-
           return _ActivityEmptyState(
             icon: _emptyIcon,
             title: _emptyTitle,
@@ -279,9 +305,9 @@ class _ActivityList extends StatelessWidget {
 
         return ListView.builder(
           padding: EdgeInsets.fromLTRB(
-            horizontalPadding,
+            widget.horizontalPadding,
             4,
-            horizontalPadding,
+            widget.horizontalPadding,
             AppSizes.of(context).bottomNavHeight +
                 18 +
                 MediaQuery.viewPaddingOf(context).bottom,
@@ -301,7 +327,12 @@ class _ActivityList extends StatelessWidget {
 
   List<CouncilModel> _localCreatedCouncils(String uid) {
     final councils = CouncilRepository.instance.councils
-        .where((council) => council.createdBy == uid)
+        .where(
+          (council) =>
+              council.createdBy == uid &&
+              !council.isSeedContent &&
+              !council.id.startsWith('demo_'),
+        )
         .toList(growable: false);
     councils.sort(_compareCouncilsLatestFirst);
     return councils;
@@ -335,7 +366,7 @@ class _ActivityList extends StatelessWidget {
   }
 
   IconData get _emptyIcon {
-    switch (filter) {
+    switch (widget.filter) {
       case _ActivityFilter.created:
         return Icons.add_circle_outline_rounded;
       case _ActivityFilter.voted:
@@ -346,7 +377,7 @@ class _ActivityList extends StatelessWidget {
   }
 
   String get _emptyTitle {
-    switch (filter) {
+    switch (widget.filter) {
       case _ActivityFilter.created:
         return 'لا توجد فرص لديك';
       case _ActivityFilter.voted:
@@ -357,7 +388,7 @@ class _ActivityList extends StatelessWidget {
   }
 
   String get _emptyMessage {
-    switch (filter) {
+    switch (widget.filter) {
       case _ActivityFilter.created:
         return 'أي فرصة تنشئها ستظهر هنا للرجوع إليها بسرعة.';
       case _ActivityFilter.voted:
@@ -366,94 +397,22 @@ class _ActivityList extends StatelessWidget {
         return 'الفرص التي تكتب فيها تعليقات ستظهر هنا.';
     }
   }
-}
 
-class _ActivityPreviewList extends StatelessWidget {
-  const _ActivityPreviewList({
-    required this.filter,
-    required this.horizontalPadding,
-  });
-
-  final _ActivityFilter filter;
-  final double horizontalPadding;
-
-  @override
-  Widget build(BuildContext context) {
-    final card = switch (filter) {
-      _ActivityFilter.created => _ActivityCouncilCard(
-          council: _previewCouncil(
-            id: 'preview-created',
-            title: 'نموذج فرصة قمت بإنشائه',
-            support: 58,
-            against: 27,
-            neutral: 15,
-          ),
-          onOpen: () {},
-        ),
-      _ActivityFilter.voted => _ActivityCouncilCard(
-          council: _previewCouncil(
-            id: 'preview-voted',
-            title: 'نموذج فرصة تركت فيها رأيك',
-            support: 44,
-            against: 41,
-            neutral: 15,
-          ),
-          noteIcon: Icons.how_to_vote_outlined,
-          noteLabel: 'رأيك',
-          noteText: OpportunityVoteCopy.forCategory('فرص للتقبيل')
-              .labelFor(VoteOption.support),
-          onOpen: () {},
-        ),
-      _ActivityFilter.commented => _ActivityCouncilCard(
-          council: _previewCouncil(
-            id: 'preview-commented',
-            title: 'نموذج فرصة كتبت فيه تعليقًا',
-            support: 36,
-            against: 49,
-            neutral: 15,
-          ),
-          noteIcon: Icons.chat_bubble_outline_rounded,
-          noteLabel: 'تعليقك',
-          noteText: 'هذا مثال لشكل مقتطف تعليقك داخل كرت الفرصة.',
-          onOpen: () {},
-        ),
-    };
-
-    return ListView(
-      padding: EdgeInsets.fromLTRB(
-        horizontalPadding,
-        4,
-        horizontalPadding,
-        AppSizes.of(context).bottomNavHeight +
-            18 +
-            MediaQuery.viewPaddingOf(context).bottom,
-      ),
-      children: [card],
-    );
-  }
-
-  CouncilModel _previewCouncil({
-    required String id,
-    required String title,
-    required int support,
-    required int against,
-    required int neutral,
-  }) {
-    return CouncilModel(
-      id: id,
-      title: title,
-      description: 'نموذج عرض',
-      category: 'فرص للتقبيل',
-      status: CouncilStatus.active,
-      participants: 64,
-      commentsCount: 0,
-      votesCount: 64,
-      supportPercent: support,
-      againstPercent: against,
-      neutralPercent: neutral,
-      endsIn: 'ينتهي قريبًا',
-      comments: const [],
-    );
+  String _activityErrorMessage(Object? error) {
+    if (error is FirebaseException) {
+      switch (error.code) {
+        case 'permission-denied':
+        case 'unauthenticated':
+          return 'تعذر الوصول إلى نشاط الحساب. أعد تسجيل الدخول ثم حاول مرة أخرى.';
+        case 'unavailable':
+        case 'deadline-exceeded':
+        case 'network-request-failed':
+          return 'تعذر الاتصال بالخدمة مؤقتًا. تحقق من الإنترنت ثم حاول مرة أخرى.';
+        case 'failed-precondition':
+          return 'تعذر تجهيز قائمة النشاط مؤقتًا. انتقل إلى تبويب آخر ثم ارجع للمحاولة.';
+      }
+    }
+    return 'تعذر تحديث النشاط الآن. حاول مرة أخرى بعد قليل.';
   }
 }
 

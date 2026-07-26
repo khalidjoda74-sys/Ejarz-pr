@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../auth/auth_controller.dart';
+import '../navigation/app_focus.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 
 Future<bool> showLoginRequiredSheet(BuildContext context) async {
+  dismissAppKeyboard();
   final result = await showModalBottomSheet<bool>(
     context: context,
     useRootNavigator: true,

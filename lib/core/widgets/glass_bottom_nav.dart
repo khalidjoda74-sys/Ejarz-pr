@@ -24,7 +24,8 @@ class GlassBottomNav extends StatelessWidget {
     _NavItem('الفرص', Icons.groups_rounded, Icons.groups_outlined),
     _NavItem('أنشئ', Icons.add_rounded, Icons.add_rounded),
     _NavItem('نشاطي', Icons.bar_chart_rounded, Icons.bar_chart_outlined),
-    _NavItem('حسابي', Icons.account_circle_rounded, Icons.account_circle_outlined),
+    _NavItem(
+        'حسابي', Icons.account_circle_rounded, Icons.account_circle_outlined),
   ];
 
   @override
@@ -44,92 +45,94 @@ class GlassBottomNav extends StatelessWidget {
         systemNavigationBarContrastEnforced: false,
       ),
       child: Directionality(
-      textDirection: TextDirection.rtl,
-      child: SafeArea(
-        top: false,
-        bottom: true,
-        child: SizedBox(
-          height: totalHeight,
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.bottomCenter,
-            children: [
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: navHeight,
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(24),
-                  ),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.cardWhite.withValues(alpha: .92),
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(24),
-                        ),
-                        border: Border(
-                          top: BorderSide(
-                            color: AppColors.borderBeige.withValues(alpha: .72),
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          top: false,
+          bottom: true,
+          child: SizedBox(
+            height: totalHeight,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.bottomCenter,
+              children: [
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: navHeight,
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(24),
+                    ),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.cardWhite.withValues(alpha: .92),
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(24),
                           ),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                AppColors.primaryDarkGreen.withValues(alpha: .11),
-                            blurRadius: 16,
-                            offset: const Offset(0, -5),
+                          border: Border(
+                            top: BorderSide(
+                              color:
+                                  AppColors.borderBeige.withValues(alpha: .72),
+                            ),
                           ),
-                        ],
-                      ),
-                      child: Material(
-                        type: MaterialType.transparency,
-                        child: Row(
-                          children: List.generate(_items.length, (index) {
-                            final item = _items[index];
-                            final selected = currentIndex == index;
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primaryDarkGreen
+                                  .withValues(alpha: .11),
+                              blurRadius: 16,
+                              offset: const Offset(0, -5),
+                            ),
+                          ],
+                        ),
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: Row(
+                            children: List.generate(_items.length, (index) {
+                              final item = _items[index];
+                              final selected = currentIndex == index;
 
-                            if (index == 2) {
+                              if (index == 2) {
+                                return Expanded(
+                                  child: SizedBox(height: navHeight),
+                                );
+                              }
+
                               return Expanded(
-                                child: SizedBox(height: navHeight),
+                                child: _BottomNavItem(
+                                  buttonKey: ValueKey('bottom_nav_$index'),
+                                  item: item,
+                                  selected: selected,
+                                  iconSize: iconSize,
+                                  labelSize: labelSize,
+                                  badgeCount:
+                                      index == 4 ? profileBadgeCount : 0,
+                                  onTap: () => onTap(index),
+                                ),
                               );
-                            }
-
-                            return Expanded(
-                              child: _BottomNavItem(
-                                buttonKey: ValueKey('bottom_nav_$index'),
-                                item: item,
-                                selected: selected,
-                                iconSize: iconSize,
-                                labelSize: labelSize,
-                                badgeCount: index == 4 ? profileBadgeCount : 0,
-                                onTap: () => onTap(index),
-                              ),
-                            );
-                          }),
+                            }),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              Positioned(
-                top: 0,
-                child: _CenterCreateButton(
-                  buttonKey: const ValueKey('bottom_nav_2'),
-                  label: _items[2].label,
-                  selected: currentIndex == 2,
-                  size: centerSize,
-                  onTap: () => onTap(2),
+                Positioned(
+                  top: 0,
+                  child: _CenterCreateButton(
+                    buttonKey: const ValueKey('bottom_nav_2'),
+                    label: _items[2].label,
+                    selected: currentIndex == 2,
+                    size: centerSize,
+                    onTap: () => onTap(2),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -168,14 +171,14 @@ class _BottomNavItem extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+          duration: const Duration(milliseconds: 110),
           padding: const EdgeInsets.fromLTRB(2, 2, 2, 1),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
               AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
+                duration: const Duration(milliseconds: 110),
                 width: selected ? 40 : 34,
                 height: 29,
                 alignment: Alignment.center,
@@ -186,7 +189,7 @@ class _BottomNavItem extends StatelessWidget {
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: AnimatedScale(
-                  duration: const Duration(milliseconds: 180),
+                  duration: const Duration(milliseconds: 110),
                   scale: selected ? 1.05 : 1,
                   child: Stack(
                     clipBehavior: Clip.none,
@@ -305,7 +308,7 @@ class _CenterCreateButtonState extends State<_CenterCreateButton> {
             alignment: Alignment.center,
             children: [
               AnimatedContainer(
-                duration: const Duration(milliseconds: 210),
+                duration: const Duration(milliseconds: 120),
                 curve: Curves.easeOutCubic,
                 width: haloSize,
                 height: haloSize,
@@ -319,7 +322,7 @@ class _CenterCreateButtonState extends State<_CenterCreateButton> {
                 ),
               ),
               AnimatedContainer(
-                duration: const Duration(milliseconds: 210),
+                duration: const Duration(milliseconds: 120),
                 curve: Curves.easeOutCubic,
                 width: dockSize,
                 height: dockSize,
@@ -340,11 +343,11 @@ class _CenterCreateButtonState extends State<_CenterCreateButton> {
                 ),
               ),
               AnimatedScale(
-                duration: const Duration(milliseconds: 130),
+                duration: const Duration(milliseconds: 90),
                 curve: Curves.easeOutCubic,
                 scale: _pressed ? .92 : (widget.selected ? 1.04 : 1),
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 190),
+                  duration: const Duration(milliseconds: 110),
                   curve: Curves.easeOutCubic,
                   width: widget.size,
                   height: widget.size,
@@ -366,7 +369,7 @@ class _CenterCreateButtonState extends State<_CenterCreateButton> {
                     ],
                   ),
                   child: AnimatedRotation(
-                    duration: const Duration(milliseconds: 160),
+                    duration: const Duration(milliseconds: 100),
                     curve: Curves.easeOutCubic,
                     turns: _pressed ? .035 : 0,
                     child: const Icon(
