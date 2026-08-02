@@ -31,6 +31,9 @@ workflows:
           test -f ios/Runner/PrivacyInfo.xcprivacy
           test -f ios/Runner/RunnerRelease.entitlements
           test "$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' ios/Runner/GoogleService-Info.plist)" = "$BUNDLE_ID"
+          test -n "$(/usr/libexec/PlistBuddy -c 'Print :NSPhotoLibraryUsageDescription' ios/Runner/Info.plist)"
+          test -n "$(/usr/libexec/PlistBuddy -c 'Print :NSCameraUsageDescription' ios/Runner/Info.plist)"
+          test -n "$(/usr/libexec/PlistBuddy -c 'Print :NSLocationWhenInUseUsageDescription' ios/Runner/Info.plist)"
 
       - name: Get Flutter packages
         script: flutter pub get
@@ -64,5 +67,5 @@ workflows:
     publishing:
       app_store_connect:
         auth: integration
-        submit_to_testflight: false
+        submit_to_testflight: true
         submit_to_app_store: false

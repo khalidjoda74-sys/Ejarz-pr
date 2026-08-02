@@ -43,6 +43,14 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>يحتاج تطبيق عقود برو إلى الوصول إلى مكتبة الصور لاختيار صور المستندات والمرفقات وإضافتها إلى العقود وطلبات الدعم.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>يحتاج تطبيق عقود برو إلى استخدام الكاميرا لالتقاط صور المستندات والمرفقات وإضافتها إلى العقود وطلبات الدعم.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>يحتاج تطبيق عقود برو إلى موقعك أثناء الاستخدام لتسهيل تحديد عنوان العقار عند اختيار الخدمات المرتبطة بالموقع.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
