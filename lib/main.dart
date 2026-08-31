@@ -21,34 +21,55 @@ import 'widgets/common.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final isAdminRoute = kIsWeb && Uri.base.path.startsWith('/admin');
-  if (kEjarzLocalDemoMode && !isAdminRoute) {
-    debugPrint(
-        'Aqood Pro local demo mode is enabled; Firebase startup is skipped.');
-  } else if (kIsWeb) {
-    unawaited(
-      FirebaseBootstrap.scheduleInitialization(
-        options: DefaultFirebaseOptions.currentPlatform,
-        delay: const Duration(milliseconds: 600),
-        timeout: const Duration(seconds: 12),
-      ).catchError((Object error) {
-        debugPrint('Firebase initialization did not complete: $error');
-      }),
-    );
-  } else {
-    try {
-      await FirebaseBootstrap.ensureInitialized(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-      await AppNotificationService.initialize();
-    } catch (error) {
-      debugPrint('Firebase initialization did not complete: $error');
-    }
-  }
+
+  // Render the first Flutter frame immediately. Firebase, APNs, or a platform
+  // plugin must never be allowed to hold the iOS launch screen indefinitely.
+  unawaited(_initializePlatformServices(isAdminRoute: isAdminRoute));
+
   if (isAdminRoute) {
     runApp(const AdminDashboardApp());
     return;
   }
   runApp(const AqoodProApp());
+}
+
+Future<void> _initializePlatformServices({required bool isAdminRoute}) async {
+  if (kEjarzLocalDemoMode && !isAdminRoute) {
+    debugPrint(
+        'Aqood Pro local demo mode is enabled; Firebase startup is skipped.');
+    return;
+  } else if (kIsWeb) {
+    try {
+      await FirebaseBootstrap.scheduleInitialization(
+        options: DefaultFirebaseOptions.currentPlatform,
+        delay: const Duration(milliseconds: 600),
+        timeout: const Duration(seconds: 12),
+      );
+    } catch (error) {
+      debugPrint('Firebase initialization did not complete: $error');
+    }
+    return;
+  } else {
+    try {
+      await FirebaseBootstrap.ensureInitialized(
+        options: DefaultFirebaseOptions.currentPlatform,
+        timeout: const Duration(seconds: 12),
+      );
+    } catch (error) {
+      debugPrint('Firebase initialization did not complete: $error');
+      return;
+    }
+
+    try {
+      await AppNotificationService.initialize().timeout(
+        const Duration(seconds: 8),
+      );
+    } catch (error) {
+      // Notifications are optional. A failure in APNs or the local notification
+      // plugin must not prevent login or any other part of the application.
+      debugPrint('Notification initialization did not complete: $error');
+    }
+  }
 }
 
 class AqoodProApp extends StatefulWidget {

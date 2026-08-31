@@ -140,10 +140,13 @@ class AppController extends ChangeNotifier {
       _seedData();
       return;
     }
-    if (kIsWeb) {
-      unawaited(_configureFirebaseWhenReady());
-    } else if (FirebaseBootstrap.initialized) {
+    if (FirebaseBootstrap.initialized) {
       _configureFirebase();
+    } else {
+      // Startup is intentionally non-blocking on every platform. Attach the
+      // controller as soon as Firebase becomes ready instead of requiring it
+      // to have completed before runApp.
+      unawaited(_configureFirebaseWhenReady());
     }
     if (!kReleaseMode && !kEjarzDemoMode) {
       _seedData();
@@ -151,7 +154,13 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _configureFirebaseWhenReady() async {
-    await FirebaseBootstrap.ready;
+    try {
+      await FirebaseBootstrap.ready;
+    } catch (_) {
+      // Firebase is optional during launch. The UI remains usable and the
+      // authentication flow can report an actionable connection error later.
+      return;
+    }
     if (!FirebaseBootstrap.initialized) return;
     _configureFirebase();
   }
@@ -1491,8 +1500,26 @@ class AppController extends ChangeNotifier {
 
   void togglePushNotifications(bool value) {
     pushNotificationsEnabled = value;
+    if (value) {
+      // Ask only after an explicit user action. Never show the iOS permission
+      // dialog while the application is still launching.
+      unawaited(_enablePushNotifications());
+    }
     _persistNotificationPrefs();
     notifyListeners();
+  }
+
+  Future<void> _enablePushNotifications() async {
+    try {
+      final authorized = await AppNotificationService.requestPermission();
+      if (!authorized) return;
+      final user = FirebaseBootstrap.initialized
+          ? FirebaseAuth.instance.currentUser
+          : null;
+      if (user != null) await _registerMessagingToken(user.uid);
+    } catch (_) {
+      // Notification failures must never affect the rest of the application.
+    }
   }
 
   void _persistNotificationPrefs() {

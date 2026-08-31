@@ -31,6 +31,7 @@ class AppNotificationService {
 
   static void Function(Map<String, dynamic> data)? onNotificationTap;
   static bool _initialized = false;
+  static Future<void>? _initialization;
   static Map<String, dynamic>? _pendingNotificationTap;
 
   static void deferNotificationTap(Map<String, dynamic> data) {
@@ -54,21 +55,15 @@ class AppNotificationService {
     handler(data);
   }
 
-  static Future<void> initialize() async {
+  static Future<void> initialize() {
+    if (_initialized) return Future<void>.value();
+    return _initialization ??= _initialize();
+  }
+
+  static Future<void> _initialize() async {
     if (_initialized) return;
-    _initialized = true;
 
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-
-    try {
-      await FirebaseMessaging.instance.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-    } catch (_) {
-      // Web or platform permission errors must not block app startup.
-    }
 
     if (!kIsWeb) {
       const initialization = InitializationSettings(
@@ -87,13 +82,14 @@ class AppNotificationService {
             }
           } catch (_) {}
         },
-      );
+      ).timeout(const Duration(seconds: 5));
       await _localNotifications
           .resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>()
           ?.createNotificationChannel(_androidChannel);
-      final launchDetails =
-          await _localNotifications.getNotificationAppLaunchDetails();
+      final launchDetails = await _localNotifications
+          .getNotificationAppLaunchDetails()
+          .timeout(const Duration(seconds: 5));
       final launchPayload = launchDetails?.notificationResponse?.payload;
       if (launchDetails?.didNotificationLaunchApp == true &&
           launchPayload != null &&
@@ -113,9 +109,34 @@ class AppNotificationService {
     });
 
     try {
-      final initial = await FirebaseMessaging.instance.getInitialMessage();
+      final initial = await FirebaseMessaging.instance
+          .getInitialMessage()
+          .timeout(const Duration(seconds: 5));
       if (initial != null) deferNotificationTap(_messageData(initial));
     } catch (_) {}
+
+    _initialized = true;
+  }
+
+  /// Requests notification access only in response to a user action.
+  ///
+  /// This is deliberately separate from [initialize] so the iOS permission
+  /// alert can never block the application's first frame.
+  static Future<bool> requestPermission() async {
+    try {
+      await initialize().timeout(const Duration(seconds: 8));
+      final settings = await FirebaseMessaging.instance
+          .requestPermission(
+            alert: true,
+            badge: true,
+            sound: true,
+          )
+          .timeout(const Duration(seconds: 8));
+      return settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<String?> currentToken() async {
