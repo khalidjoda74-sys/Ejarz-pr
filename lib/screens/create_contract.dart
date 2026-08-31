@@ -7,6 +7,7 @@ import '../core/models.dart';
 import '../core/theme.dart';
 import '../widgets/common.dart';
 import '../widgets/illustrations.dart';
+import '../widgets/saudi_reference_fields.dart';
 import 'contracts.dart';
 
 String _digitsOnly(String value) => value.replaceAll(RegExp(r'\D'), '');
@@ -1408,37 +1409,17 @@ class _PropertyStep extends StatelessWidget {
               validator: (value) =>
                   _requiredPositiveInt(value, min: 1, max: 9999),
             ),
-            AppDropdownField(
-              label: 'المدينة',
-              value: property.city,
-              items: const <String>[
-                'الرياض',
-                'جدة',
-                'مكة المكرمة',
-                'المدينة المنورة',
-                'الدمام',
-                'الخبر',
-                'الطائف',
-                'أبها',
-                'تبوك',
-              ],
-              icon: Icons.location_city_outlined,
-              onChanged: (value) {
-                property.city = value!;
+            SaudiLocationFields(
+              city: property.city,
+              district: property.district,
+              onCityChanged: (value) {
+                property.city = value;
                 onChanged();
               },
-            ),
-            AppTextField(
-              label: 'الحي',
-              hint: 'أدخل اسم الحي',
-              initialValue: property.district,
-              icon: Icons.location_on_outlined,
-              required: true,
-              onChanged: (value) {
+              onDistrictChanged: (value) {
                 property.district = value;
                 onChanged();
               },
-              validator: _requiredName,
             ),
             AppTextField(
               label: 'الشارع',
@@ -2163,36 +2144,17 @@ class _PartyForm extends StatelessWidget {
         const SectionTitle(
             title: 'العنوان الوطني', icon: Icons.location_on_outlined),
         const SizedBox(height: 12),
-        FieldGrid(
-          children: <Widget>[
-            AppDropdownField(
-              label: 'المدينة',
-              value: data.city,
-              items: const <String>[
-                'الرياض',
-                'جدة',
-                'مكة المكرمة',
-                'المدينة المنورة',
-                'الدمام',
-                'الخبر',
-                'الطائف',
-              ],
-              icon: Icons.location_city_outlined,
-              onChanged: (value) {
-                data.city = value!;
-                onChanged();
-              },
-            ),
-            AppTextField(
-              label: 'الحي',
-              hint: 'اسم الحي',
-              initialValue: data.district,
-              icon: Icons.location_on_outlined,
-              required: true,
-              onChanged: (value) => data.district = value,
-              validator: _requiredName,
-            ),
-          ],
+        SaudiLocationFields(
+          city: data.city,
+          district: data.district,
+          onCityChanged: (value) {
+            data.city = value;
+            onChanged();
+          },
+          onDistrictChanged: (value) {
+            data.district = value;
+            onChanged();
+          },
         ),
         const SizedBox(height: 14),
         AppTextField(
@@ -2228,14 +2190,12 @@ class _PartyForm extends StatelessWidget {
                 onChanged: (value) => data.iban = value,
                 validator: _requiredIban,
               ),
-              AppTextField(
-                label: 'اسم البنك',
-                hint: 'أدخل اسم البنك',
-                initialValue: data.bankName,
-                icon: Icons.account_balance_outlined,
-                onChanged: (value) => data.bankName = value,
-                required: true,
-                validator: _requiredName,
+              SaudiBankField(
+                value: data.bankName,
+                onChanged: (value) {
+                  data.bankName = value;
+                  onChanged();
+                },
               ),
               AppTextField(
                 label: 'اسم صاحب الحساب',
