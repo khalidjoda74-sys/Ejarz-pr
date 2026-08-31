@@ -308,209 +308,255 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: Text(widget.existing == null ? 'إضافة عقار' : 'تعديل العقار'),
       ),
       body: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 18,
-          ),
-          child: ResponsiveContent(
-            maxWidth: 700,
-            padding: EdgeInsets.zero,
-            child: Form(
-              key: _formKey,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-              child: SingleChildScrollView(
-                controller: _scrollController,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Text(
-                      'احفظ بيانات العقار والوحدة لاستخدامها لاحقًا في العقود.',
-                      style: TextStyle(
-                        color: context.ejarzTheme.muted,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const SectionTitle(
-                      title: 'بيانات الملكية',
-                      icon: Icons.verified_outlined,
-                    ),
-                    const SizedBox(height: 10),
-                    FieldGrid(
-                      children: <Widget>[
-                        AppDropdownField(
-                          label: 'نوع الإثبات',
-                          value: _ownershipType,
-                          items: const <String>['صك إلكتروني', 'تسجيل عيني'],
-                          icon: Icons.fact_check_outlined,
-                          required: true,
-                          onChanged: (value) => setState(
-                              () => _ownershipType = value ?? _ownershipType),
-                        ),
-                        AppTextField(
-                          key: _ownershipNumberKey,
-                          label: 'رقم الوثيقة',
-                          hint: 'أدخل رقم الوثيقة',
-                          controller: _ownershipNumber,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: <TextInputFormatter>[
-                            FilteringTextInputFormatter.digitsOnly,
-                            LengthLimitingTextInputFormatter(20),
-                          ],
-                          icon: Icons.description_outlined,
-                          required: true,
-                          validator: _ownershipNumberValidator,
-                        ),
-                        AppTextField(
-                          key: _ownershipDateKey,
-                          label: 'تاريخ الوثيقة',
-                          hint: 'YYYY/MM/DD',
-                          controller: _ownershipDate,
-                          keyboardType: TextInputType.datetime,
-                          icon: Icons.date_range_outlined,
-                          required: true,
-                          validator: _ownershipDateValidator,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    const SectionTitle(
-                      title: 'بيانات العقار والعنوان',
-                      icon: Icons.business_outlined,
-                    ),
-                    const SizedBox(height: 10),
-                    AppTextField(
-                      label: 'اسم العقار',
-                      hint: 'مثال: عمارة الياسمين',
-                      controller: _title,
-                      icon: Icons.apartment_outlined,
-                    ),
-                    const SizedBox(height: 10),
-                    FieldGrid(
-                      children: <Widget>[
-                        AppTextField(
-                          key: _streetKey,
-                          label: 'الشارع',
-                          hint: 'اسم الشارع',
-                          controller: _street,
-                          icon: Icons.signpost_outlined,
-                          required: true,
-                          validator: _requiredValidator,
-                        ),
-                        AppTextField(
-                          key: _buildingNumberKey,
-                          label: 'رقم المبنى',
-                          hint: '4 أرقام',
-                          controller: _buildingNumber,
-                          keyboardType: TextInputType.number,
-                          icon: Icons.numbers_rounded,
-                          required: true,
-                          validator: (value) => _fixedDigitsValidator(value, 4),
-                        ),
-                        AppTextField(
-                          key: _additionalNumberKey,
-                          label: 'الرقم الإضافي',
-                          hint: '4 أرقام',
-                          controller: _additionalNumber,
-                          keyboardType: TextInputType.number,
-                          icon: Icons.add_box_outlined,
-                          required: true,
-                          validator: (value) => _fixedDigitsValidator(value, 4),
-                        ),
-                        AppTextField(
-                          key: _postalCodeKey,
-                          label: 'الرمز البريدي',
-                          hint: '5 أرقام',
-                          controller: _postalCode,
-                          keyboardType: TextInputType.number,
-                          icon: Icons.markunread_mailbox_outlined,
-                          required: true,
-                          validator: (value) => _fixedDigitsValidator(value, 5),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: AppTextField(
-                            key: _cityKey,
-                            label: 'المدينة',
-                            hint: 'الرياض',
-                            controller: _city,
-                            icon: Icons.location_city_outlined,
-                            required: true,
-                            validator: _requiredValidator,
+        bottom: false,
+        child: Column(
+          children: <Widget>[
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: ResponsiveContent(
+                  maxWidth: 700,
+                  padding: EdgeInsets.zero,
+                  scrollable: false,
+                  child: Form(
+                    key: _formKey,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    child: SingleChildScrollView(
+                      controller: _scrollController,
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          Text(
+                            'احفظ بيانات العقار والوحدة لاستخدامها لاحقًا في العقود.',
+                            style: TextStyle(
+                              color: context.ejarzTheme.muted,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: AppTextField(
-                            key: _districtKey,
-                            label: 'الحي',
-                            hint: 'العليا',
-                            controller: _district,
-                            icon: Icons.location_on_outlined,
-                            required: true,
-                            validator: _requiredValidator,
+                          const SizedBox(height: 12),
+                          const SectionTitle(
+                            title: 'بيانات الملكية',
+                            icon: Icons.verified_outlined,
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: AppDropdownField(
-                            label: 'نوع العقار',
-                            value: _propertyType,
-                            items: const <String>[
-                              'عمارة',
-                              'برج',
-                              'أرض',
-                              'شقة',
-                              'فيلا'
+                          const SizedBox(height: 10),
+                          FieldGrid(
+                            children: <Widget>[
+                              AppDropdownField(
+                                label: 'نوع الإثبات',
+                                value: _ownershipType,
+                                items: const <String>[
+                                  'صك إلكتروني',
+                                  'تسجيل عيني'
+                                ],
+                                icon: Icons.fact_check_outlined,
+                                required: true,
+                                onChanged: (value) => setState(() =>
+                                    _ownershipType = value ?? _ownershipType),
+                              ),
+                              AppTextField(
+                                key: _ownershipNumberKey,
+                                label: 'رقم الوثيقة',
+                                hint: 'أدخل رقم الوثيقة',
+                                controller: _ownershipNumber,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: <TextInputFormatter>[
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(20),
+                                ],
+                                icon: Icons.description_outlined,
+                                required: true,
+                                validator: _ownershipNumberValidator,
+                              ),
+                              AppTextField(
+                                key: _ownershipDateKey,
+                                label: 'تاريخ الوثيقة',
+                                hint: 'YYYY/MM/DD',
+                                controller: _ownershipDate,
+                                keyboardType: TextInputType.datetime,
+                                icon: Icons.date_range_outlined,
+                                required: true,
+                                validator: _ownershipDateValidator,
+                              ),
                             ],
-                            icon: Icons.home_work_outlined,
-                            onChanged: (value) => setState(
-                                () => _propertyType = value ?? _propertyType),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: AppDropdownField(
-                            label: 'الاستخدام',
-                            value: _usage,
-                            items: const <String>[
-                              'سكن عوائل',
-                              'سكن أفراد',
-                              'سكن جماعي',
-                              'تجاري'
+                          const SizedBox(height: 14),
+                          const SectionTitle(
+                            title: 'بيانات العقار والعنوان',
+                            icon: Icons.business_outlined,
+                          ),
+                          const SizedBox(height: 10),
+                          AppTextField(
+                            label: 'اسم العقار',
+                            hint: 'مثال: عمارة الياسمين',
+                            controller: _title,
+                            icon: Icons.apartment_outlined,
+                          ),
+                          const SizedBox(height: 10),
+                          FieldGrid(
+                            children: <Widget>[
+                              AppTextField(
+                                key: _streetKey,
+                                label: 'الشارع',
+                                hint: 'اسم الشارع',
+                                controller: _street,
+                                icon: Icons.signpost_outlined,
+                                required: true,
+                                validator: _requiredValidator,
+                              ),
+                              AppTextField(
+                                key: _buildingNumberKey,
+                                label: 'رقم المبنى',
+                                hint: '4 أرقام',
+                                controller: _buildingNumber,
+                                keyboardType: TextInputType.number,
+                                icon: Icons.numbers_rounded,
+                                required: true,
+                                validator: (value) =>
+                                    _fixedDigitsValidator(value, 4),
+                              ),
+                              AppTextField(
+                                key: _additionalNumberKey,
+                                label: 'الرقم الإضافي',
+                                hint: '4 أرقام',
+                                controller: _additionalNumber,
+                                keyboardType: TextInputType.number,
+                                icon: Icons.add_box_outlined,
+                                required: true,
+                                validator: (value) =>
+                                    _fixedDigitsValidator(value, 4),
+                              ),
+                              AppTextField(
+                                key: _postalCodeKey,
+                                label: 'الرمز البريدي',
+                                hint: '5 أرقام',
+                                controller: _postalCode,
+                                keyboardType: TextInputType.number,
+                                icon: Icons.markunread_mailbox_outlined,
+                                required: true,
+                                validator: (value) =>
+                                    _fixedDigitsValidator(value, 5),
+                              ),
                             ],
-                            icon: Icons.category_outlined,
-                            onChanged: (value) =>
-                                setState(() => _usage = value ?? _usage),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: AppTextField(
-                            key: _floorsKey,
-                            label: 'عدد الأدوار',
+                          const SizedBox(height: 10),
+                          Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: AppTextField(
+                                  key: _cityKey,
+                                  label: 'المدينة',
+                                  hint: 'الرياض',
+                                  controller: _city,
+                                  icon: Icons.location_city_outlined,
+                                  required: true,
+                                  validator: _requiredValidator,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: AppTextField(
+                                  key: _districtKey,
+                                  label: 'الحي',
+                                  hint: 'العليا',
+                                  controller: _district,
+                                  icon: Icons.location_on_outlined,
+                                  required: true,
+                                  validator: _requiredValidator,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: AppDropdownField(
+                                  label: 'نوع العقار',
+                                  value: _propertyType,
+                                  items: const <String>[
+                                    'عمارة',
+                                    'برج',
+                                    'أرض',
+                                    'شقة',
+                                    'فيلا'
+                                  ],
+                                  icon: Icons.home_work_outlined,
+                                  onChanged: (value) => setState(() =>
+                                      _propertyType = value ?? _propertyType),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: AppDropdownField(
+                                  label: 'الاستخدام',
+                                  value: _usage,
+                                  items: const <String>[
+                                    'سكن عوائل',
+                                    'سكن أفراد',
+                                    'سكن جماعي',
+                                    'تجاري'
+                                  ],
+                                  icon: Icons.category_outlined,
+                                  onChanged: (value) =>
+                                      setState(() => _usage = value ?? _usage),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: AppTextField(
+                                  key: _floorsKey,
+                                  label: 'عدد الأدوار',
+                                  hint: '1',
+                                  controller: _floors,
+                                  keyboardType: TextInputType.number,
+                                  icon: Icons.layers_outlined,
+                                  required: true,
+                                  validator: (value) => _integerValidator(
+                                    value,
+                                    min: 1,
+                                    max: 200,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: AppTextField(
+                                  key: _totalUnitsKey,
+                                  label: 'إجمالي الوحدات',
+                                  hint: '1',
+                                  controller: _totalUnits,
+                                  keyboardType: TextInputType.number,
+                                  icon: Icons.numbers_outlined,
+                                  required: true,
+                                  validator: (value) => _integerValidator(
+                                    value,
+                                    min: 1,
+                                    max: 9999,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          AppTextField(
+                            key: _unitsPerFloorKey,
+                            label: 'عدد الوحدات في كل دور',
                             hint: '1',
-                            controller: _floors,
+                            controller: _unitsPerFloor,
                             keyboardType: TextInputType.number,
-                            icon: Icons.layers_outlined,
+                            icon: Icons.grid_view_outlined,
                             required: true,
                             validator: (value) => _integerValidator(
                               value,
@@ -518,285 +564,291 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                               max: 200,
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: AppTextField(
-                            key: _totalUnitsKey,
-                            label: 'إجمالي الوحدات',
-                            hint: '1',
-                            controller: _totalUnits,
-                            keyboardType: TextInputType.number,
-                            icon: Icons.numbers_outlined,
-                            required: true,
-                            validator: (value) => _integerValidator(
-                              value,
-                              min: 1,
-                              max: 9999,
-                            ),
+                          const SizedBox(height: 14),
+                          const SectionTitle(
+                            title: 'بيانات الوحدة',
+                            icon: Icons.home_outlined,
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    AppTextField(
-                      key: _unitsPerFloorKey,
-                      label: 'عدد الوحدات في كل دور',
-                      hint: '1',
-                      controller: _unitsPerFloor,
-                      keyboardType: TextInputType.number,
-                      icon: Icons.grid_view_outlined,
-                      required: true,
-                      validator: (value) => _integerValidator(
-                        value,
-                        min: 1,
-                        max: 200,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    const SectionTitle(
-                      title: 'بيانات الوحدة',
-                      icon: Icons.home_outlined,
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: AppTextField(
-                            key: _unitNumberKey,
-                            label: 'رقم الوحدة',
-                            hint: '12',
-                            controller: _unitNumber,
-                            icon: Icons.tag_outlined,
-                            required: true,
-                            validator: _requiredValidator,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: AppDropdownField(
-                            label: 'نوع الوحدة',
-                            value: _unitType,
-                            items: const <String>[
-                              'شقة',
-                              'استديو',
-                              'دور',
-                              'فيلا',
-                              'محل',
-                              'مستودع',
-                              'مكتب إداري'
+                          const SizedBox(height: 10),
+                          Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: AppTextField(
+                                  key: _unitNumberKey,
+                                  label: 'رقم الوحدة',
+                                  hint: '12',
+                                  controller: _unitNumber,
+                                  icon: Icons.tag_outlined,
+                                  required: true,
+                                  validator: _requiredValidator,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: AppDropdownField(
+                                  label: 'نوع الوحدة',
+                                  value: _unitType,
+                                  items: const <String>[
+                                    'شقة',
+                                    'استديو',
+                                    'دور',
+                                    'فيلا',
+                                    'محل',
+                                    'مستودع',
+                                    'مكتب إداري'
+                                  ],
+                                  icon: Icons.meeting_room_outlined,
+                                  onChanged: (value) => setState(
+                                      () => _unitType = value ?? _unitType),
+                                ),
+                              ),
                             ],
-                            icon: Icons.meeting_room_outlined,
-                            onChanged: (value) =>
-                                setState(() => _unitType = value ?? _unitType),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    FieldGrid(
-                      children: <Widget>[
-                        AppTextField(
-                          key: _unitNameKey,
-                          label: 'اسم الوحدة',
-                          hint: 'شقة 12',
-                          controller: _unitName,
-                          icon: Icons.drive_file_rename_outline,
-                          required: true,
-                          validator: _requiredValidator,
-                        ),
-                        AppTextField(
-                          key: _floorKey,
-                          label: 'رقم الدور',
-                          hint: '1',
-                          controller: _floor,
-                          icon: Icons.layers_outlined,
-                          required: true,
-                          validator: _requiredValidator,
-                        ),
-                        AppDropdownField(
-                          label: 'حالة التأثيث',
-                          value: _furnishingStatus,
-                          items: const <String>[
-                            'غير مؤثثة',
-                            'مؤثثة بأثاث جديد',
-                            'مؤثثة بأثاث مستخدم',
-                          ],
-                          icon: Icons.chair_outlined,
-                          onChanged: (value) => setState(() =>
-                              _furnishingStatus = value ?? _furnishingStatus),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    AppTextField(
-                      key: _unitAreaKey,
-                      label: 'مساحة الوحدة (م²)',
-                      hint: '120',
-                      controller: _unitArea,
-                      keyboardType: TextInputType.number,
-                      icon: Icons.square_foot_outlined,
-                      required: true,
-                      validator: _positiveNumberValidator,
-                    ),
-                    const SizedBox(height: 10),
-                    FieldGrid(
-                      children: <Widget>[
-                        AppTextField(
-                          key: _roomsCountKey,
-                          label: 'عدد الغرف',
-                          hint: '3',
-                          controller: _roomsCount,
-                          keyboardType: TextInputType.number,
-                          icon: Icons.bed_outlined,
-                          required: true,
-                          validator: (value) => _integerValidator(
-                            value,
-                            min: 1,
-                            max: 50,
+                          const SizedBox(height: 10),
+                          FieldGrid(
+                            children: <Widget>[
+                              AppTextField(
+                                key: _unitNameKey,
+                                label: 'اسم الوحدة',
+                                hint: 'شقة 12',
+                                controller: _unitName,
+                                icon: Icons.drive_file_rename_outline,
+                                required: true,
+                                validator: _requiredValidator,
+                              ),
+                              AppTextField(
+                                key: _floorKey,
+                                label: 'رقم الدور',
+                                hint: '1',
+                                controller: _floor,
+                                icon: Icons.layers_outlined,
+                                required: true,
+                                validator: _requiredValidator,
+                              ),
+                              AppDropdownField(
+                                label: 'حالة التأثيث',
+                                value: _furnishingStatus,
+                                items: const <String>[
+                                  'غير مؤثثة',
+                                  'مؤثثة بأثاث جديد',
+                                  'مؤثثة بأثاث مستخدم',
+                                ],
+                                icon: Icons.chair_outlined,
+                                onChanged: (value) => setState(() =>
+                                    _furnishingStatus =
+                                        value ?? _furnishingStatus),
+                              ),
+                            ],
                           ),
-                        ),
-                        AppTextField(
-                          key: _bathroomsCountKey,
-                          label: 'دورات المياه',
-                          hint: '1',
-                          controller: _bathroomsCount,
-                          keyboardType: TextInputType.number,
-                          icon: Icons.bathtub_outlined,
-                          required: true,
-                          validator: (value) => _integerValidator(
-                            value,
-                            min: 1,
-                            max: 50,
+                          const SizedBox(height: 10),
+                          AppTextField(
+                            key: _unitAreaKey,
+                            label: 'مساحة الوحدة (م²)',
+                            hint: '120',
+                            controller: _unitArea,
+                            keyboardType: TextInputType.number,
+                            icon: Icons.square_foot_outlined,
+                            required: true,
+                            validator: _positiveNumberValidator,
                           ),
-                        ),
-                        AppTextField(
-                          key: _hallsCountKey,
-                          label: 'الصالات',
-                          hint: '1',
-                          controller: _hallsCount,
-                          keyboardType: TextInputType.number,
-                          icon: Icons.weekend_outlined,
-                          required: true,
-                          validator: (value) => _integerValidator(
-                            value,
-                            min: 0,
-                            max: 50,
+                          const SizedBox(height: 10),
+                          FieldGrid(
+                            children: <Widget>[
+                              AppTextField(
+                                key: _roomsCountKey,
+                                label: 'عدد الغرف',
+                                hint: '3',
+                                controller: _roomsCount,
+                                keyboardType: TextInputType.number,
+                                icon: Icons.bed_outlined,
+                                required: true,
+                                validator: (value) => _integerValidator(
+                                  value,
+                                  min: 1,
+                                  max: 50,
+                                ),
+                              ),
+                              AppTextField(
+                                key: _bathroomsCountKey,
+                                label: 'دورات المياه',
+                                hint: '1',
+                                controller: _bathroomsCount,
+                                keyboardType: TextInputType.number,
+                                icon: Icons.bathtub_outlined,
+                                required: true,
+                                validator: (value) => _integerValidator(
+                                  value,
+                                  min: 1,
+                                  max: 50,
+                                ),
+                              ),
+                              AppTextField(
+                                key: _hallsCountKey,
+                                label: 'الصالات',
+                                hint: '1',
+                                controller: _hallsCount,
+                                keyboardType: TextInputType.number,
+                                icon: Icons.weekend_outlined,
+                                required: true,
+                                validator: (value) => _integerValidator(
+                                  value,
+                                  min: 0,
+                                  max: 50,
+                                ),
+                              ),
+                              AppTextField(
+                                key: _electricityMeterKey,
+                                label: 'رقم عداد الكهرباء',
+                                hint: 'أدخل رقم العداد',
+                                controller: _electricityMeter,
+                                keyboardType: TextInputType.number,
+                                icon: Icons.bolt_outlined,
+                                required: true,
+                                validator: (value) =>
+                                    _integerValidator(value, min: 1),
+                              ),
+                              AppTextField(
+                                key: _waterMeterKey,
+                                label: 'رقم عداد المياه',
+                                hint: 'أدخل رقم العداد',
+                                controller: _waterMeter,
+                                keyboardType: TextInputType.number,
+                                icon: Icons.water_drop_outlined,
+                                required: true,
+                                validator: (value) =>
+                                    _integerValidator(value, min: 1),
+                              ),
+                              AppTextField(
+                                label: 'رقم عداد الغاز',
+                                hint: 'إن وجد',
+                                controller: _gasMeter,
+                                keyboardType: TextInputType.number,
+                                icon: Icons.local_fire_department_outlined,
+                              ),
+                            ],
                           ),
-                        ),
-                        AppTextField(
-                          key: _electricityMeterKey,
-                          label: 'رقم عداد الكهرباء',
-                          hint: 'أدخل رقم العداد',
-                          controller: _electricityMeter,
-                          keyboardType: TextInputType.number,
-                          icon: Icons.bolt_outlined,
-                          required: true,
-                          validator: (value) =>
-                              _integerValidator(value, min: 1),
-                        ),
-                        AppTextField(
-                          key: _waterMeterKey,
-                          label: 'رقم عداد المياه',
-                          hint: 'أدخل رقم العداد',
-                          controller: _waterMeter,
-                          keyboardType: TextInputType.number,
-                          icon: Icons.water_drop_outlined,
-                          required: true,
-                          validator: (value) =>
-                              _integerValidator(value, min: 1),
-                        ),
-                        AppTextField(
-                          label: 'رقم عداد الغاز',
-                          hint: 'إن وجد',
-                          controller: _gasMeter,
-                          keyboardType: TextInputType.number,
-                          icon: Icons.local_fire_department_outlined,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    const SectionTitle(title: 'مرافق الوحدة'),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        _featureChip('غرفة خادمة', _maidRoom,
-                            (value) => setState(() => _maidRoom = value)),
-                        _featureChip('مطبخ', _kitchen,
-                            (value) => setState(() => _kitchen = value)),
-                        _featureChip('مخزن', _storage,
-                            (value) => setState(() => _storage = value)),
-                        _featureChip('مجلس', _majlis,
-                            (value) => setState(() => _majlis = value)),
-                        _featureChip('موقف خاص', _privateParking,
-                            (value) => setState(() => _privateParking = value)),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    const SectionTitle(title: 'التكييف'),
-                    const SizedBox(height: 8),
-                    FormField<bool>(
-                      key: _acKey,
-                      initialValue: _hasAirConditioning,
-                      validator: (_) => _hasAirConditioning
-                          ? null
-                          : 'اختر نوع تكييف واحدًا على الأقل',
-                      builder: (field) => Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
+                          const SizedBox(height: 14),
+                          const SectionTitle(
+                            title: 'مرافق الوحدة',
+                            icon: Icons.widgets_outlined,
+                          ),
+                          const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
                             children: <Widget>[
-                              _featureChip('شباك', _acWindow, (value) {
-                                setState(() => _acWindow = value);
-                                field.didChange(_hasAirConditioning);
-                              }),
-                              _featureChip('سبليت', _acSplit, (value) {
-                                setState(() => _acSplit = value);
-                                field.didChange(_hasAirConditioning);
-                              }),
-                              _featureChip('مركزي', _acCentral, (value) {
-                                setState(() => _acCentral = value);
-                                field.didChange(_hasAirConditioning);
-                              }),
+                              _featureChip('غرفة خادمة', _maidRoom,
+                                  (value) => setState(() => _maidRoom = value)),
+                              _featureChip('مطبخ', _kitchen,
+                                  (value) => setState(() => _kitchen = value)),
+                              _featureChip('مخزن', _storage,
+                                  (value) => setState(() => _storage = value)),
+                              _featureChip('مجلس', _majlis,
+                                  (value) => setState(() => _majlis = value)),
+                              _featureChip(
+                                  'موقف خاص',
+                                  _privateParking,
+                                  (value) =>
+                                      setState(() => _privateParking = value)),
                             ],
                           ),
-                          if (field.hasError) ...<Widget>[
-                            const SizedBox(height: 6),
-                            Text(
-                              field.errorText!,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                                fontSize: context.sp(11.5),
-                              ),
+                          const SizedBox(height: 14),
+                          const SectionTitle(
+                            title: 'التكييف',
+                            icon: Icons.ac_unit_rounded,
+                          ),
+                          const SizedBox(height: 8),
+                          FormField<bool>(
+                            key: _acKey,
+                            initialValue: _hasAirConditioning,
+                            validator: (_) => _hasAirConditioning
+                                ? null
+                                : 'اختر نوع تكييف واحدًا على الأقل',
+                            builder: (field) => Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: <Widget>[
+                                    _featureChip('شباك', _acWindow, (value) {
+                                      setState(() => _acWindow = value);
+                                      field.didChange(_hasAirConditioning);
+                                    }),
+                                    _featureChip('سبليت', _acSplit, (value) {
+                                      setState(() => _acSplit = value);
+                                      field.didChange(_hasAirConditioning);
+                                    }),
+                                    _featureChip('مركزي', _acCentral, (value) {
+                                      setState(() => _acCentral = value);
+                                      field.didChange(_hasAirConditioning);
+                                    }),
+                                  ],
+                                ),
+                                if (field.hasError) ...<Widget>[
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    field.errorText!,
+                                    style: TextStyle(
+                                      color:
+                                          Theme.of(context).colorScheme.error,
+                                      fontSize: context.sp(11.5),
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
-                          ],
+                          ),
+                          const SizedBox(height: 14),
+                          AppTextField(
+                            label: 'ملاحظات على الوحدة',
+                            hint: 'أي تفاصيل إضافية مهمة',
+                            controller: _notes,
+                            icon: Icons.notes_rounded,
+                            maxLines: 3,
+                          ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 14),
-                    AppTextField(
-                      label: 'ملاحظات على الوحدة',
-                      hint: 'أي تفاصيل إضافية مهمة',
-                      controller: _notes,
-                      icon: Icons.notes_rounded,
-                      maxLines: 3,
-                    ),
-                    const SizedBox(height: 14),
-                    PrimaryButton(
-                      label: _saving ? 'جاري الحفظ...' : 'حفظ العقار',
-                      icon: Icons.save_outlined,
-                      loading: _saving,
-                      onPressed: _save,
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: context.ejarzTheme.surface,
+                border: Border(
+                  top: BorderSide(color: context.ejarzTheme.border),
+                ),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 16,
+                    offset: const Offset(0, -4),
+                  ),
+                ],
+              ),
+              child: SafeArea(
+                top: false,
+                minimum: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 700),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: PrimaryButton(
+                        label: _saving ? 'جاري الحفظ...' : 'حفظ العقار',
+                        icon: Icons.save_outlined,
+                        loading: _saving,
+                        onPressed: _save,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -809,16 +861,28 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
   ) {
     return FilterChip(
       selected: selected,
-      showCheckmark: true,
-      label: Text(label),
+      showCheckmark: false,
+      backgroundColor: context.ejarzTheme.surface,
+      selectedColor: AppColors.primary.withValues(alpha: 0.12),
+      label: Text(
+        label,
+        style: TextStyle(
+          color: selected ? AppColors.primaryDark : context.ejarzTheme.text,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
       avatar: Icon(
         selected ? Icons.check_circle_rounded : Icons.circle_outlined,
-        size: 16,
+        size: 18,
         color: selected ? AppColors.primary : context.ejarzTheme.muted,
       ),
-      selectedColor: AppColors.primaryLight,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       side: BorderSide(
-        color: selected ? AppColors.primary : context.ejarzTheme.border,
+        color: selected
+            ? AppColors.primary.withValues(alpha: 0.72)
+            : context.ejarzTheme.border,
+        width: selected ? 1.4 : 1,
       ),
       onSelected: onSelected,
     );
