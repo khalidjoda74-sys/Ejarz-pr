@@ -141,7 +141,7 @@ class AppNotificationService {
 
   static Future<String?> currentToken() async {
     try {
-      return FirebaseMessaging.instance.getToken();
+      return await FirebaseMessaging.instance.getToken();
     } catch (_) {
       return null;
     }
