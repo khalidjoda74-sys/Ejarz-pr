@@ -810,6 +810,9 @@ class DateField extends StatelessWidget {
   final String value;
   final ValueChanged<String> onChanged;
   final bool required;
+  final DateTime? firstDate;
+  final DateTime? lastDate;
+  final FormFieldValidator<String>? validator;
 
   const DateField({
     super.key,
@@ -817,14 +820,37 @@ class DateField extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.required = false,
+    this.firstDate,
+    this.lastDate,
+    this.validator,
   });
 
   Future<void> _pick(BuildContext context) async {
+    final resolvedFirstDate = firstDate ?? DateTime(1950);
+    final resolvedLastDate = lastDate ?? DateTime(2100);
+    final parts = value.split(RegExp(r'[/\-]'));
+    DateTime initialDate = DateTime.now();
+    if (parts.length == 3) {
+      final year = int.tryParse(parts[0]);
+      final month = int.tryParse(parts[1]);
+      final day = int.tryParse(parts[2]);
+      if (year != null && month != null && day != null) {
+        final parsed = DateTime(year, month, day);
+        if (parsed.year == year && parsed.month == month && parsed.day == day) {
+          initialDate = parsed;
+        }
+      }
+    }
+    if (initialDate.isBefore(resolvedFirstDate)) {
+      initialDate = resolvedFirstDate;
+    } else if (initialDate.isAfter(resolvedLastDate)) {
+      initialDate = resolvedLastDate;
+    }
     final result = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(1950),
-      lastDate: DateTime(2100),
+      initialDate: initialDate,
+      firstDate: resolvedFirstDate,
+      lastDate: resolvedLastDate,
       builder: (context, child) => Directionality(
         textDirection: TextDirection.rtl,
         child: child!,
@@ -848,10 +874,12 @@ class DateField extends StatelessWidget {
       onTap: () => _pick(context),
       icon: Icons.calendar_month_outlined,
       required: required,
-      validator: required
-          ? (value) =>
-              value == null || value.trim().isEmpty ? 'هذا الحقل مطلوب' : null
-          : null,
+      validator: validator ??
+          (required
+              ? (value) => value == null || value.trim().isEmpty
+                  ? 'هذا الحقل مطلوب'
+                  : null
+              : null),
     );
   }
 }

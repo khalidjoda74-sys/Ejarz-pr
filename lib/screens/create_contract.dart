@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/app_controller.dart';
+import '../core/contract_validators.dart';
 import '../core/draft_resume_policy.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
@@ -38,26 +39,6 @@ String? _requiredSaudiMobile(String? value) {
   if (digits.length == 10 && digits.startsWith('05')) return null;
   if (digits.length == 9 && digits.startsWith('5')) return null;
   return 'أدخل رقم جوال سعودي صحيح يبدأ بـ 05 أو 5';
-}
-
-String? _requiredIdentityNumber(String? value, String idType) {
-  final cleaned = (value ?? '').trim();
-  if (cleaned.isEmpty) return 'هذا الحقل مطلوب';
-  final digits = _digitsOnly(cleaned);
-  if (idType == 'هوية وطنية') {
-    if (digits.length == 10 && digits.startsWith('1')) return null;
-    return 'الهوية الوطنية يجب أن تكون 10 أرقام وتبدأ بـ 1';
-  }
-  if (idType == 'إقامة') {
-    if (digits.length == 10 && digits.startsWith('2')) return null;
-    return 'رقم الإقامة يجب أن يكون 10 أرقام ويبدأ بـ 2';
-  }
-  if (idType == 'هوية خليجية') {
-    if (digits.length >= 8 && digits.length <= 15) return null;
-    return 'أدخل رقم هوية خليجية صحيحًا';
-  }
-  if (cleaned.length >= 6 && cleaned.length <= 15) return null;
-  return 'أدخل رقم جواز صحيحًا من 6 إلى 15 خانة';
 }
 
 String? _requiredSaudiPersonId(String? value) {
@@ -425,9 +406,10 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     if (party.kind == PartyKind.individual) {
       return <String>[
         if (_requiredName(party.fullName) != null) 'الاسم الكامل',
-        if (_requiredIdentityNumber(party.idNumber, party.idType) != null)
+        if (validateContractIdentityNumber(party.idNumber, party.idType) !=
+            null)
           'رقم الهوية',
-        if (_isBlank(party.birthDate)) 'تاريخ الميلاد',
+        if (validateAdultBirthDate(party.birthDate) != null) 'تاريخ الميلاد',
         if (_requiredSaudiMobile(party.mobile) != null) 'رقم جوال أبشر',
         if (_optionalEmail(party.email) != null) 'البريد الإلكتروني',
         if (_requiredName(party.district) != null) 'حي العنوان الوطني',
@@ -477,10 +459,12 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     return <String>[
       if (_requiredName(representative.fullName) != null)
         'اسم الوكيل أو المفوض',
-      if (_requiredIdentityNumber(
+      if (validateContractIdentityNumber(
               representative.idNumber, representative.idType) !=
           null)
         'رقم هوية الوكيل',
+      if (validateAdultBirthDate(representative.birthDate) != null)
+        'تاريخ ميلاد الوكيل',
       if (_requiredSaudiMobile(representative.mobile) != null) 'جوال الوكيل',
       if (_requiredReferenceNumber(
               representative.authorizationNumber, 'رقم الوكالة أو التفويض') !=
@@ -2005,12 +1989,15 @@ class _PartyForm extends StatelessWidget {
                 required: true,
                 onChanged: (value) => data.idNumber = value,
                 validator: (value) =>
-                    _requiredIdentityNumber(value, data.idType),
+                    validateContractIdentityNumber(value, data.idType),
               ),
               DateField(
                 label: 'تاريخ الميلاد',
                 value: data.birthDate,
                 required: true,
+                firstDate: DateTime(1900),
+                lastDate: adultBirthDateCutoff(),
+                validator: validateAdultBirthDate,
                 onChanged: (value) {
                   data.birthDate = value;
                   onChanged();
@@ -2302,11 +2289,15 @@ class _RepresentativeForm extends StatelessWidget {
                 required: true,
                 onChanged: (value) => data.idNumber = value,
                 validator: (value) =>
-                    _requiredIdentityNumber(value, data.idType),
+                    validateContractIdentityNumber(value, data.idType),
               ),
               DateField(
                 label: 'تاريخ الميلاد',
                 value: data.birthDate,
+                required: true,
+                firstDate: DateTime(1900),
+                lastDate: adultBirthDateCutoff(),
+                validator: validateAdultBirthDate,
                 onChanged: (value) {
                   data.birthDate = value;
                   onChanged();
