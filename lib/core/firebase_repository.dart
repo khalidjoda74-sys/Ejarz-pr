@@ -6,6 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 
 import 'missing_requirement_policy.dart';
 import 'models.dart';
+import 'property_management.dart';
 
 class FirebaseRepository {
   static const int _demoPropertyDataVersion = 2;
@@ -296,26 +297,64 @@ class FirebaseRepository {
     required String uid,
     required PropertyData data,
     String propertyId = '',
+    List<UnitRecord>? unitEdits,
+    List<UnitRecord>? initialUnits,
+    String replacingNumber = '',
+    List<UnitRecord>? expectedUnits,
   }) async {
     final ref = propertyId.trim().isEmpty
         ? firestore.collection('properties').doc()
         : firestore.collection('properties').doc(propertyId.trim());
-    final payload = propertyDocumentData(
-      propertyId: ref.id,
-      uid: uid,
-      contractId: '',
-      data: data,
-    );
-    if (propertyId.trim().isEmpty) {
-      await ref.set(payload);
-    } else {
-      await ref.set(<String, Object?>{
-        ...payload,
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    }
-    final snapshot = await ref.get();
-    return propertyFromDoc(snapshot);
+    late PropertyRecord saved;
+    await firestore.runTransaction((transaction) async {
+      // A new document has no owner yet, so security rules cannot permit a read.
+      final snapshot =
+          propertyId.trim().isEmpty ? null : await transaction.get(ref);
+      final previous = snapshot == null || !snapshot.exists
+          ? null
+          : propertyFromDoc(snapshot);
+      validatePropertyStructure(previous, data);
+      if (expectedUnits != null &&
+          previous != null &&
+          jsonEncode(previous.units.map(unitRecordToMap).toList()) !=
+              jsonEncode(expectedUnits.map(unitRecordToMap).toList())) {
+        throw StateError(
+            'تم تعديل وحدات العمارة من جهاز آخر. حدّث البيانات قبل الحفظ.');
+      }
+      final units = data.rentalMode == 'units'
+          ? expectedUnits != null || previous == null
+              ? (initialUnits ?? unitEdits ?? const <UnitRecord>[])
+              : mergePropertyUnits(
+                  current: previous.units,
+                  additions: unitEdits ?? const [],
+                  capacity: int.tryParse(data.totalUnits) ?? 1,
+                  replacingNumber: replacingNumber,
+                )
+          : <UnitRecord>[
+              UnitRecord.fromData(data,
+                  status: previous?.units.firstOrNull?.status ?? 'متاحة')
+            ];
+      saved = managedPropertyRecord(
+        PropertyData.copyOf(data)
+          ..savedPropertyId = ref.id
+          ..propertySource = 'عقار محفوظ',
+        ref.id,
+        units,
+      );
+      final payload = propertyDocumentData(
+        propertyId: ref.id,
+        uid: uid,
+        contractId: '',
+        data: data,
+        units: units,
+      );
+      if (snapshot?.exists == true) {
+        payload.remove('createdAt');
+        payload.remove('sourceContractId');
+      }
+      transaction.set(ref, payload, SetOptions(merge: true));
+    });
+    return saved;
   }
 
   Future<void> ensureDemoUserData({
@@ -363,7 +402,7 @@ class FirebaseRepository {
         ),
         status: ContractStatus.awaitingPayment,
         paymentStatus: 'pending',
-        note: 'الطلب جاهز للدفع. إجمالي الرسوم 398 ريال.',
+        note: 'الطلب جاهز للدفع. تظهر الرسوم الشاملة في ملخص الطلب.',
       ),
       _DemoContractSeed(
         draft: _demoDraft(
@@ -464,7 +503,8 @@ class FirebaseRepository {
         rejectedAt: now,
       );
       final timeline = timelineItems.map(timelineToMap).toList();
-      final total = seed.status == ContractStatus.draft ? 0.0 : 398.0;
+      final total =
+          seed.status == ContractStatus.draft ? 0.0 : seed.draft.totalPayable;
       batch.set(contractRef, <String, Object?>{
         'id': contractRef.id,
         'requestNumber': requestNumber,
@@ -491,8 +531,7 @@ class FirebaseRepository {
         'draftData': draftToMap(seed.draft),
         'totalFees': total,
         'totalPayable': total,
-        'ejarPlatformFee': 299,
-        'serviceFee': 99,
+        'includesEjarFees': true,
         'paymentStatus': seed.paymentStatus,
         'adminAssignedTo': '',
         'adminInternalNotes': '',
@@ -538,10 +577,9 @@ class FirebaseRepository {
           'uid': uid,
           'userId': uid,
           'contractId': contractRef.id,
-          'amount': 398,
+          'amount': total,
           'currency': 'SAR',
-          'ejarPlatformFee': 299,
-          'serviceFee': 99,
+          'includesEjarFees': true,
           'method': 'mada',
           'provider': 'demo',
           'providerReference': paymentReference,
@@ -560,15 +598,17 @@ class FirebaseRepository {
           'contractId': contractRef.id,
           'invoiceNumber':
               'INV-DEMO-${invoiceRef.id.substring(0, 6).toUpperCase()}',
-          'amount': 398,
+          'amount': total,
           'currency': 'SAR',
           'status': 'paid',
           'paymentId': paymentRef.id,
           'pdfUrl': seed.finalPdf ? kDemoContractPdfUrl : '',
           'isDemo': true,
           'items': <Map<String, Object?>>[
-            <String, Object?>{'title': 'رسوم منصة إيجار', 'amount': 299},
-            <String, Object?>{'title': 'عمولة عقود برو', 'amount': 99},
+            <String, Object?>{
+              'title': 'رسوم العقد شاملة منصة إيجار',
+              'amount': total
+            },
           ],
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
@@ -644,10 +684,9 @@ class FirebaseRepository {
       'propertyDetails': propertyDetailsFromDraft(draft),
       'attachmentFiles': attachmentFilesFromDraft(draft),
       'draftData': draftToMap(draft),
-      'totalFees': 398,
-      'totalPayable': 398,
-      'ejarPlatformFee': 299,
-      'serviceFee': 99,
+      'totalFees': draft.totalPayable,
+      'totalPayable': draft.totalPayable,
+      'includesEjarFees': true,
       'paymentStatus': 'notPaid',
       'adminAssignedTo': '',
       'adminInternalNotes': '',
@@ -875,9 +914,7 @@ class FirebaseRepository {
     required String cardLast4,
     required bool success,
   }) async {
-    const total = 398.0;
-    const ejarFee = 299.0;
-    const serviceFee = 99.0;
+    final total = contract.totalFees;
     final now = DateTime.now();
     final paymentRef = firestore.collection('payments').doc();
     final invoiceRef = firestore.collection('invoices').doc();
@@ -891,8 +928,7 @@ class FirebaseRepository {
       'contractId': contract.id,
       'amount': total,
       'currency': 'SAR',
-      'ejarPlatformFee': ejarFee,
-      'serviceFee': serviceFee,
+      'includesEjarFees': true,
       'method': method.code,
       'provider': 'demo',
       'providerReference': providerReference,
@@ -932,8 +968,10 @@ class FirebaseRepository {
       'pdfUrl': kDemoContractPdfUrl,
       'isDemo': true,
       'items': <Map<String, Object?>>[
-        <String, Object?>{'title': 'رسوم منصة إيجار', 'amount': ejarFee},
-        <String, Object?>{'title': 'رسوم الخدمة', 'amount': serviceFee},
+        <String, Object?>{
+          'title': '${contract.type.label} — شامل رسوم منصة إيجار',
+          'amount': total
+        },
       ],
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -980,8 +1018,6 @@ class FirebaseRepository {
       'paidAt': FieldValue.serverTimestamp(),
       'totalFees': total,
       'totalPayable': total,
-      'ejarPlatformFee': ejarFee,
-      'serviceFee': serviceFee,
       'paymentId': paymentRef.id,
       'invoiceId': invoiceRef.id,
       'invoiceNumber': invoiceNumber,
@@ -1052,7 +1088,7 @@ class FirebaseRepository {
         draft.property.propertySource.trim() == 'إضافة عقار جديد';
     final propertyRef =
         shouldCreateProperty ? firestore.collection('properties').doc() : null;
-    final propertyId = propertyRef?.id ?? '';
+    final propertyId = propertyRef?.id ?? draft.property.savedPropertyId;
     final requestNumber =
         'REQ-${now.year}-${doc.id.substring(0, 6).toUpperCase()}';
     final timeline = initialTimeline(status, now);
@@ -1107,6 +1143,7 @@ class FirebaseRepository {
       'draftData': draftToMap(draft),
       'draftProgress': draftProgressToMap(progress),
       'totalFees': record.totalFees,
+      'paymentStatus': status == ContractStatus.draft ? 'notPaid' : 'pending',
       'adminAssignedTo': '',
       'adminInternalNotes': '',
       'customerVisibleNote': '',
@@ -1201,6 +1238,9 @@ class FirebaseRepository {
             ),
           ]),
           if (shouldCreateProperty) 'propertyId': propertyRef.id,
+          if (!shouldCreateProperty &&
+              draft.property.savedPropertyId.isNotEmpty)
+            'propertyId': draft.property.savedPropertyId,
         },
       };
       transaction.update(contractRef, update);
@@ -1530,6 +1570,8 @@ class FirebaseRepository {
     final unitsPerFloor = ((data['unitsPerFloor'] as num?) ?? 1).toInt();
     final totalUnits = ((data['totalUnits'] as num?) ?? 1).toInt();
     final details = PropertyData(
+      rentalMode: _readableText(data['rentalMode'], ''),
+      savedPropertyId: doc.id,
       propertySource: 'عقار محفوظ',
       ownershipDocumentType:
           _readableText(ownership['documentType'], 'صك إلكتروني'),
@@ -1538,7 +1580,7 @@ class FirebaseRepository {
       propertyUsage: _readableText(data['usage'], 'سكن عوائل'),
       propertyType: _readableText(data['type'], 'عمارة'),
       floorsCount: floors.toString(),
-      unitsPerFloor: unitsPerFloor.toString(),
+      unitsPerFloor: unitsPerFloor > 0 ? unitsPerFloor.toString() : '',
       totalUnits: totalUnits.toString(),
       city: _readableText(address['city'] ?? data['city'], 'الرياض'),
       district: _readableText(address['district'] ?? data['district'], ''),
@@ -1586,7 +1628,7 @@ class FirebaseRepository {
     );
   }
 
-  UnitRecord unitFromMap(Map<String, dynamic> data) {
+  static UnitRecord unitFromMap(Map<String, dynamic> data) {
     return UnitRecord(
       number: _readableText(data['number'], '1'),
       name: _readableText(data['name'], 'وحدة'),
@@ -1594,6 +1636,32 @@ class FirebaseRepository {
       floor: _readableText(data['floor'], '1'),
       area: _readableText(data['area'], ''),
       status: _readableText(data['status'], 'متاحة'),
+      data: data.containsKey('roomsCount')
+          ? PropertyData(
+              unitNumber: _readableText(data['number'], ''),
+              unitName: _readableText(data['name'], ''),
+              unitType: _readableText(data['type'], 'شقة'),
+              floor: _readableText(data['floor'], ''),
+              area: _readableText(data['area'], ''),
+              roomsCount: _readableText(data['roomsCount'], ''),
+              bathroomsCount: _readableText(data['bathroomsCount'], ''),
+              hallsCount: _readableText(data['hallsCount'], ''),
+              maidRoom: data['maidRoom'] == true,
+              kitchen: data['kitchen'] != false,
+              storage: data['storage'] == true,
+              majlis: data['majlis'] == true,
+              furnishingStatus:
+                  _readableText(data['furnishingStatus'], 'غير مؤثثة'),
+              privateParking: data['privateParking'] == true,
+              electricityMeter: _readableText(data['electricityMeter'], ''),
+              waterMeter: _readableText(data['waterMeter'], ''),
+              gasMeter: _readableText(data['gasMeter'], ''),
+              acWindow: data['acWindow'] == true,
+              acSplit: data['acSplit'] != false,
+              acCentral: data['acCentral'] == true,
+              notes: _readableText(data['notes'], ''),
+            )
+          : null,
     );
   }
 
@@ -1790,8 +1858,10 @@ class FirebaseRepository {
         'officialFeePayer': draft.officialFeePayer,
         'serviceFeePayer': draft.serviceFeePayer,
         'paymentMethod': draft.paymentMethod.name,
-        'ejarPlatformFee': draft.officialFee,
-        'serviceFee': draft.serviceFee,
+        'firstYearFee': draft.price.firstYear,
+        'additionalDurationFee': draft.price.additionalAmount,
+        'includesEjarFees': true,
+        'pricingVersion': 2,
         'totalPayable': draft.totalPayable,
       },
       'services': <String, Object?>{
@@ -1843,6 +1913,8 @@ class FirebaseRepository {
 
     final property = _dynamicMap(root['property']);
     draft.property = PropertyData(
+      rentalMode: _mapString(property, 'rentalMode'),
+      savedPropertyId: _mapString(property, 'savedPropertyId'),
       propertySource:
           _mapString(property, 'propertySource', draft.property.propertySource),
       ownershipDocumentNumber: _mapString(property, 'ownershipDocumentNumber'),
@@ -2130,8 +2202,10 @@ class FirebaseRepository {
       'مبلغ الضمان': draft.hasSecurityDeposit
           ? _moneyOrDash(draft.securityDeposit)
           : 'لا يوجد',
-      'رسوم منصة إيجار': '${draft.officialFee.toStringAsFixed(2)} ريال',
-      'عمولة عقود برو': '${draft.serviceFee.toStringAsFixed(2)} ريال',
+      'رسوم السنة الأولى': '${draft.price.firstYear.toStringAsFixed(2)} ريال',
+      'رسوم المدة الإضافية':
+          '${draft.price.additionalAmount.toStringAsFixed(2)} ريال',
+      'شمول الأسعار': 'الأسعار شاملة رسوم منصة إيجار',
       'إجمالي الرسوم': '${draft.totalPayable.toStringAsFixed(2)} ريال',
       'دافع رسوم منصة إيجار': _valueOrDash(draft.officialFeePayer),
       'دافع عمولة عقود برو': _valueOrDash(draft.serviceFeePayer),
@@ -2327,6 +2401,8 @@ class FirebaseRepository {
 
   static Map<String, Object?> propertyDataToMap(PropertyData data) {
     return <String, Object?>{
+      'rentalMode': data.rentalMode,
+      'savedPropertyId': data.savedPropertyId,
       'propertySource': data.propertySource,
       'ownershipDocumentNumber': data.ownershipDocumentNumber,
       'ownershipDocumentType': data.ownershipDocumentType,
@@ -2372,6 +2448,7 @@ class FirebaseRepository {
     required String uid,
     required String contractId,
     required PropertyData data,
+    List<UnitRecord>? units,
   }) {
     final title = data.buildingName.trim().isEmpty
         ? '${data.propertyType} ${data.district}'.trim()
@@ -2386,6 +2463,7 @@ class FirebaseRepository {
       'city': data.city,
       'district': data.district,
       'type': data.propertyType,
+      'rentalMode': data.rentalMode,
       'usage': data.propertyUsage,
       'floors': _intFromText(data.floorsCount, fallback: 1),
       'unitsPerFloor': _intFromText(data.unitsPerFloor),
@@ -2404,7 +2482,11 @@ class FirebaseRepository {
         'documentNumber': data.ownershipDocumentNumber,
         'documentDate': data.ownershipDocumentDate,
       },
-      'units': <Map<String, Object?>>[unit],
+      'units': units != null
+          ? units.map(unitRecordToMap).toList()
+          : data.rentalMode == 'units' && data.unitNumber.isEmpty
+              ? <Map<String, Object?>>[]
+              : <Map<String, Object?>>[unit],
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -2436,6 +2518,16 @@ class FirebaseRepository {
       'notes': data.notes,
     };
   }
+
+  static Map<String, Object?> unitRecordToMap(UnitRecord unit) => {
+        if (unit.data != null) ...unitDocumentData(unit.data!),
+        'number': unit.number,
+        'name': unit.name,
+        'type': unit.type,
+        'floor': unit.floor,
+        'area': unit.area.replaceAll(' م²', ''),
+        'status': unit.isAvailable ? 'available' : unit.status,
+      };
 
   static int _intFromText(String value, {int fallback = 0}) {
     final parsed = int.tryParse(value.trim());
@@ -2761,7 +2853,8 @@ class FirebaseRepository {
   static String _notificationFallbackBody(String type) {
     return switch (type) {
       'payment' => 'تم تسجيل عملية الدفع التجريبية بنجاح.',
-      'paymentRequired' => 'طلبك جاهز للدفع، إجمالي الرسوم 398 ريال.',
+      'paymentRequired' =>
+        'طلبك جاهز للدفع. راجع إجمالي الرسوم في تفاصيل الطلب.',
       'missingRequirement' => 'يوجد نقص مطلوب لاستكمال معالجة الطلب.',
       'finalPdfUploaded' => 'يمكنك الآن عرض تفاصيل العقد النهائي.',
       'rejected' =>

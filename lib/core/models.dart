@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'contract_pricing.dart';
 
 const String kDemoContractPdfFileName = 'ejarz-demo-contract.pdf';
 const String kDemoContractPdfUrl =
@@ -187,6 +188,9 @@ class RepresentativeData {
 }
 
 class PropertyData {
+  /// Empty for legacy records; `whole` or `units` for managed buildings.
+  String rentalMode;
+  String savedPropertyId;
   String propertySource;
   String ownershipDocumentNumber;
   String ownershipDocumentType;
@@ -226,6 +230,8 @@ class PropertyData {
   String notes;
 
   PropertyData({
+    this.rentalMode = '',
+    this.savedPropertyId = '',
     this.propertySource = 'إضافة عقار جديد',
     this.ownershipDocumentNumber = '',
     this.ownershipDocumentType = 'صك إلكتروني',
@@ -273,6 +279,48 @@ class PropertyData {
     ];
     return parts.isEmpty ? 'العقار غير محدد' : parts.join(' - ');
   }
+
+  factory PropertyData.copyOf(PropertyData source) => PropertyData(
+        rentalMode: source.rentalMode,
+        savedPropertyId: source.savedPropertyId,
+        propertySource: source.propertySource,
+        ownershipDocumentNumber: source.ownershipDocumentNumber,
+        ownershipDocumentType: source.ownershipDocumentType,
+        ownershipDocumentDate: source.ownershipDocumentDate,
+        propertyUsage: source.propertyUsage,
+        propertyType: source.propertyType,
+        floorsCount: source.floorsCount,
+        unitsPerFloor: source.unitsPerFloor,
+        totalUnits: source.totalUnits,
+        city: source.city,
+        district: source.district,
+        street: source.street,
+        buildingNumber: source.buildingNumber,
+        additionalNumber: source.additionalNumber,
+        postalCode: source.postalCode,
+        buildingName: source.buildingName,
+        unitNumber: source.unitNumber,
+        unitName: source.unitName,
+        unitType: source.unitType,
+        floor: source.floor,
+        area: source.area,
+        roomsCount: source.roomsCount,
+        bathroomsCount: source.bathroomsCount,
+        hallsCount: source.hallsCount,
+        maidRoom: source.maidRoom,
+        kitchen: source.kitchen,
+        storage: source.storage,
+        majlis: source.majlis,
+        furnishingStatus: source.furnishingStatus,
+        acWindow: source.acWindow,
+        acSplit: source.acSplit,
+        acCentral: source.acCentral,
+        privateParking: source.privateParking,
+        electricityMeter: source.electricityMeter,
+        waterMeter: source.waterMeter,
+        gasMeter: source.gasMeter,
+        notes: source.notes,
+      );
 }
 
 class ServiceCharge {
@@ -296,6 +344,7 @@ class UnitRecord {
   final String floor;
   final String area;
   final String status;
+  final PropertyData? data;
 
   const UnitRecord({
     required this.number,
@@ -304,7 +353,63 @@ class UnitRecord {
     required this.floor,
     required this.area,
     required this.status,
+    this.data,
   });
+
+  factory UnitRecord.fromData(PropertyData data, {String status = 'متاحة'}) =>
+      UnitRecord(
+        number: data.unitNumber.trim(),
+        name: data.unitName.trim(),
+        type: data.unitType,
+        floor: data.floor,
+        area: data.area,
+        status: status,
+        data: PropertyData.copyOf(data),
+      );
+
+  bool get isAvailable => status == 'available' || status == 'متاحة';
+
+  PropertyData detailsFor(PropertyRecord property) {
+    final result = data == null
+        ? PropertyData(
+            roomsCount: '',
+            hallsCount: '',
+            bathroomsCount: '',
+          )
+        : PropertyData.copyOf(data!);
+    final parent = property.data;
+    result
+      ..savedPropertyId = property.id
+      ..rentalMode = parent?.rentalMode ?? ''
+      ..propertySource = 'عقار محفوظ'
+      ..ownershipDocumentType = parent?.ownershipDocumentType ?? 'صك إلكتروني'
+      ..ownershipDocumentNumber = parent?.ownershipDocumentNumber ?? ''
+      ..ownershipDocumentDate = parent?.ownershipDocumentDate ?? ''
+      ..propertyType = property.type
+      ..propertyUsage = property.usage
+      ..buildingName = property.title
+      ..floorsCount = '${property.floors}'
+      ..totalUnits = '${property.totalUnits}'
+      ..unitsPerFloor = parent?.unitsPerFloor ?? ''
+      ..city = property.city
+      ..district = property.district
+      ..street = parent?.street ?? ''
+      ..buildingNumber = parent?.buildingNumber ?? ''
+      ..additionalNumber = parent?.additionalNumber ?? ''
+      ..postalCode = parent?.postalCode ?? ''
+      ..unitNumber = number
+      ..unitName = name
+      ..unitType = type
+      ..floor = floor
+      ..area = area.replaceAll(' م²', '');
+    // Older records stored the first unit's full details on the property.
+    if (data == null && parent != null && parent.unitNumber == number) {
+      return PropertyData.copyOf(parent)
+        ..savedPropertyId = property.id
+        ..propertySource = 'عقار محفوظ';
+    }
+    return result;
+  }
 }
 
 class PropertyRecord {
@@ -333,6 +438,13 @@ class PropertyRecord {
   });
 
   String get location => '$city - $district';
+
+  bool get managesUnits =>
+      data?.rentalMode == 'units' ||
+      ((data?.rentalMode.isEmpty ?? true) &&
+          (type == 'عمارة' || type == 'برج'));
+
+  int get remainingUnits => (totalUnits - units.length).clamp(0, totalUnits);
 }
 
 class InstallmentData {
@@ -480,6 +592,8 @@ class ContractDraft {
       ..type = source.type
       ..role = source.role
       ..property = PropertyData(
+        rentalMode: source.property.rentalMode,
+        savedPropertyId: source.property.savedPropertyId,
         propertySource: source.property.propertySource,
         ownershipDocumentNumber: source.property.ownershipDocumentNumber,
         ownershipDocumentType: source.property.ownershipDocumentType,
@@ -625,11 +739,14 @@ class ContractDraft {
   double get depositNumber =>
       double.tryParse(securityDeposit.replaceAll(',', '')) ?? 0;
 
-  double get serviceFee => 99;
+  ContractPrice get price => ContractPrice.calculate(
+        commercial: type == ContractType.commercial,
+        years: int.tryParse(durationYears) ?? 0,
+        months: int.tryParse(durationMonths) ?? 0,
+        days: int.tryParse(durationDays) ?? 0,
+      );
 
-  double get officialFee => 299;
-
-  double get totalPayable => serviceFee + officialFee;
+  double get totalPayable => price.total;
 
   String get title {
     final unit = property.unitType.trim().isEmpty ? 'وحدة' : property.unitType;

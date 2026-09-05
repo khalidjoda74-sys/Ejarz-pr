@@ -37,7 +37,7 @@ export function PaymentsPage() {
     { accessorKey: 'createdAt', header: 'التاريخ', cell: ({ row }) => formatDate(row.original.createdAt) },
   ], []);
   return <div className="stack"><PageHeader title="المدفوعات" subtitle="سجل مالي داخلي فقط. لا توجد بوابة دفع إنتاجية مربوطة حاليًا." actions={<><Button variant="soft" onClick={refresh}>تحديث</Button><Button variant="gold" onClick={() => exportCsv('payments.csv', rows)}>تصدير CSV</Button></>} />
-    <div className="kpi-grid"><Kpi title="عدد المدفوعات" value={totals.count} /><Kpi title="إجمالي مسجل" value={formatCurrency(totals.amount)} /><Kpi title="المدفوع" value={formatCurrency(totals.paid)} /><Kpi title="رسوم العقد" value="398 ر.س" /></div>
+    <div className="kpi-grid"><Kpi title="عدد المدفوعات" value={totals.count} /><Kpi title="إجمالي مسجل" value={formatCurrency(totals.amount)} /><Kpi title="المدفوع" value={formatCurrency(totals.paid)} /><Kpi title="التسعير" value="حسب النوع والمدة" /></div>
     <Card style={{ padding: 18 }} goldLine><h2 className="section-title">تنبيه مالي</h2><p className="page-subtitle">هذه العمليات Demo فقط ولا تمثل خصمًا فعليًا. لا يتم تخزين رقم البطاقة الكامل أو CVV، وتظهر آخر 4 أرقام فقط عند توفرها.</p><div style={{ display:'flex', gap:8, flexWrap:'wrap' }}><Badge tone="gold">Demo Payment</Badge><Badge tone="navy">Mada</Badge><Badge tone="blue">Visa / Mastercard</Badge><Badge tone="green">Apple Pay Demo</Badge><Badge tone="purple">STC Pay Demo</Badge></div></Card>
     <Card style={{ padding: 14 }}>
       <Field label="تصفية المدفوعات">

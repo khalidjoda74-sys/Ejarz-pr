@@ -61,8 +61,8 @@ export function LoginPage() {
     <section className="login-art">
       <div className="command-orb">
         <div style={{ textAlign: 'center', maxWidth: 260 }}>
-          <div style={{ fontSize: '3rem', fontWeight: 900, color: 'var(--gold-400)' }}>398</div>
-          <div style={{ color: 'rgba(255,255,255,.76)' }}>رسوم العقد الجاهزة للمتابعة: 299 إيجار + 99 عقود برو</div>
+          <div style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--gold-400)' }}>سكني 299 • تجاري 399</div>
+          <div style={{ color: 'rgba(255,255,255,.76)' }}>للسنة الأولى؛ كل سنة إضافية: سكني 125 ريال، تجاري 400 ريال. الأسعار شاملة رسوم منصة إيجار.</div>
         </div>
       </div>
       <h2 style={{ fontSize: 'clamp(2rem, 5vw, 4rem)', margin: '28px 0 8px', letterSpacing: '-.05em' }}>Aqood Pro Command Center</h2>

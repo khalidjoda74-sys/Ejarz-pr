@@ -230,7 +230,9 @@ class _PaymentForm extends StatelessWidget {
         ],
         const SizedBox(height: 14),
         PrimaryButton(
-          label: processing ? 'جاري معالجة الدفع...' : 'دفع 398 ر.س',
+          label: processing
+              ? 'جاري معالجة الدفع...'
+              : 'دفع ${contract.totalFees.toStringAsFixed(2)} ر.س',
           icon: processing ? Icons.hourglass_top_rounded : Icons.lock_rounded,
           onPressed: processing ? null : onPay,
         ),
@@ -309,10 +311,16 @@ class _SummaryCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          const _FeeLine(label: 'رسوم منصة إيجار', value: '299 ر.س'),
-          const _FeeLine(label: 'رسوم الخدمة', value: '99 ر.س'),
+          for (final label in ['رسوم السنة الأولى', 'رسوم المدة الإضافية'])
+            if (contract.contractDetails.containsKey(label))
+              _FeeLine(label: label, value: contract.contractDetails[label]!),
+          const Text('الأسعار شاملة رسوم منصة إيجار',
+              style: TextStyle(color: Colors.white)),
           Divider(color: Colors.white.withValues(alpha: 0.18)),
-          const _FeeLine(label: 'الإجمالي', value: '398 ر.س', strong: true),
+          _FeeLine(
+              label: 'الإجمالي',
+              value: '${contract.totalFees.toStringAsFixed(2)} ر.س',
+              strong: true),
         ],
       ),
     );
@@ -681,7 +689,9 @@ class _PaymentReceipt extends StatelessWidget {
                   label: 'البطاقة',
                   value: '$cardBrand •••• $cardLast4',
                 ),
-              const _ReceiptLine(label: 'الإجمالي', value: '398 ر.س'),
+              _ReceiptLine(
+                  label: 'الإجمالي',
+                  value: '${contract.totalFees.toStringAsFixed(2)} ر.س'),
               _ReceiptLine(label: 'رقم الطلب', value: contract.requestNumber),
               const _ReceiptLine(
                   label: 'الحالة', value: 'مدفوع - اكتمل تلقائيًا Demo'),

@@ -14,6 +14,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { requireContractAmount } from '@/lib/contractPricing';
 import {
   assertLogicalMissingRequirement,
   buildMissingReviewDescription,
@@ -113,10 +114,8 @@ export async function updateContractStatus(
   };
   if (status === 'authenticated') patch.completedAt = serverTimestamp();
   if (status === 'awaitingPayment') {
-    patch.totalFees = 398;
-    patch.totalPayable = 398;
-    patch.ejarPlatformFee = 299;
-    patch.serviceFee = 99;
+    patch.totalFees = requireContractAmount(contract);
+    patch.totalPayable = patch.totalFees;
   }
 
   batch.update(contractRef, patch);
@@ -350,6 +349,7 @@ function assertContractMutable(contract: Contract) {
 }
 
 async function ensurePendingPaymentArtifacts(batch: ReturnType<typeof writeBatch>, contract: Contract, uid: string) {
+  const amount = requireContractAmount(contract);
   const [paymentsSnap, invoicesSnap] = await Promise.all([
     getDocs(query(collection(db, 'payments'), where('contractId', '==', contract.id), limit(1))),
     getDocs(query(collection(db, 'invoices'), where('contractId', '==', contract.id), limit(1))),
@@ -360,15 +360,14 @@ async function ensurePendingPaymentArtifacts(batch: ReturnType<typeof writeBatch
       uid,
       userId: uid,
       contractId: contract.id,
-      amount: 398,
+      amount,
       currency: 'SAR',
       method: 'notSelected',
       status: 'pending',
       provider: 'notConfigured',
       providerReference: '',
-      ejarPlatformFee: 299,
-      serviceFee: 99,
-      totalPayable: 398,
+      includesEjarFees: true,
+      totalPayable: amount,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -380,13 +379,12 @@ async function ensurePendingPaymentArtifacts(batch: ReturnType<typeof writeBatch
       userId: uid,
       contractId: contract.id,
       invoiceNumber: invoiceNumberFor(contract),
-      amount: 398,
+      amount,
       currency: 'SAR',
       status: 'pending',
       pdfUrl: '',
       items: [
-        { title: 'رسوم منصة إيجار', amount: 299 },
-        { title: 'عمولة عقود برو', amount: 99 },
+        { title: 'رسوم العقد شاملة رسوم منصة إيجار', amount },
       ],
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -494,7 +492,7 @@ function notificationTypeForStatus(status: ContractStatus) {
 
 function notificationBodyForStatus(status: ContractStatus, note: string) {
   if (note) return note;
-  if (status === 'awaitingPayment') return 'طلبك جاهز للدفع، إجمالي الرسوم 398 ريال.';
+  if (status === 'awaitingPayment') return 'طلبك جاهز للدفع. يمكنك مراجعة إجمالي الرسوم في تفاصيل العقد.';
   if (status === 'processing') return 'طلبك قيد المعالجة لدى الفريق.';
   if (status === 'authenticated') return 'تم إصدار العقد النهائي ويمكنك تحميله من تفاصيل الطلب.';
   return statusLabelForStatus(status);

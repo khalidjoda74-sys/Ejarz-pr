@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { contractAmount } from '@/lib/contractPricing';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -31,7 +32,7 @@ export function ReportsPage() {
   if (loading) return <><PageHeader title="التقارير" subtitle="جاري تحميل تقارير Firebase." /><KpiSkeleton /></>;
   if (error) return <ErrorState message={error} onRetry={refresh} />;
 
-  return <div className="stack"><PageHeader title="التقارير" subtitle="تقارير العقود والإيرادات والنواقص والمستخدمين مع تصدير CSV." actions={<><Button variant="soft" onClick={refresh}>تحديث</Button><Button variant="gold" onClick={() => exportCsv('contracts-report.csv', filteredContracts.map((c) => ({ id: c.id, orderNumber: c.orderNumber, status: c.status, customerName: c.customerName, city: c.city, totalPayable: c.totalPayable ?? c.totalFees ?? 398 })))}>تصدير تقرير العقود</Button></>} />
+  return <div className="stack"><PageHeader title="التقارير" subtitle="تقارير العقود والإيرادات والنواقص والمستخدمين مع تصدير CSV." actions={<><Button variant="soft" onClick={refresh}>تحديث</Button><Button variant="gold" onClick={() => exportCsv('contracts-report.csv', filteredContracts.map((c) => ({ id: c.id, orderNumber: c.orderNumber, status: c.status, customerName: c.customerName, city: c.city, totalPayable: contractAmount(c) })))}>تصدير تقرير العقود</Button></>} />
     <div className="card" style={{ padding: 14 }}><div className="filters-bar" style={{ gridTemplateColumns: '1fr 1fr auto' }}><Field label="من تاريخ"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field><Field label="إلى تاريخ"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field><Button variant="soft" style={{ alignSelf: 'end' }} onClick={() => { setFrom(''); setTo(''); }}>مسح</Button></div></div>
     <div className="kpi-grid"><Kpi title="العقود" value={summary.total} /><Kpi title="المكتملة" value={summary.completed} /><Kpi title="مستخدمون جدد" value={userSummary.total} /><Kpi title="الإيرادات" value={formatCurrency(summary.totalFees)} /></div>
     <div className="grid-2"><Card style={{ padding: 18 }}><h2 className="section-title">العقود حسب الحالة</h2><StatusPie data={summary.byStatus} /></Card><Card style={{ padding: 18 }}><h2 className="section-title">العقود حسب المدينة</h2><SimpleBarChart data={summary.byCity} xKey="city" yKey="count" /></Card></div>

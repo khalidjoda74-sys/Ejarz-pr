@@ -100,7 +100,6 @@ int firstIncompleteDraftStep(ContractDraft draft) {
   }
   if (!_allText(<String>[
         property.floorsCount,
-        property.unitsPerFloor,
         property.totalUnits,
         property.district,
         property.street,

@@ -35,7 +35,7 @@ export function InvoicesPage() {
     { accessorKey: 'createdAt', header: 'التاريخ', cell: ({ row }) => formatDate(row.original.createdAt) },
   ], []);
   return <div className="stack"><PageHeader title="الفواتير" subtitle="فواتير داخلية معلقة وليست فواتير مزود دفع إنتاجي." actions={<><Button variant="soft" onClick={refresh}>تحديث</Button><Button variant="gold" onClick={() => exportCsv('invoices.csv', rows)}>تصدير CSV</Button></>} />
-  <Card style={{ padding: 18 }} goldLine><h2 className="section-title">تنبيه</h2><p className="page-subtitle">الفاتورة هنا توضح رسوم الطلب فقط: 299 ريال رسوم منصة إيجار و99 ريال رسوم الخدمة. في وضع Demo لا تعتبر إيصال خصم فعلي.</p></Card>
+  <Card style={{ padding: 18 }} goldLine><h2 className="section-title">تنبيه</h2><p className="page-subtitle">الفاتورة توضح رسوم العقد المحفوظة حسب نوعه ومدته، شاملة رسوم منصة إيجار ودون مبلغ الإيجار. السكني: 299 ريال للسنة الأولى و125 لكل سنة إضافية؛ التجاري: 399 و400 ريال. تحتفظ العقود السابقة برسومها المسجلة. في وضع Demo لا تعتبر إيصال خصم فعلي.</p></Card>
   <Card style={{ padding: 14 }}>
     <Field label="تصفية الفواتير">
       <Select value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}>

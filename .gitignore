@@ -17,6 +17,8 @@ ios/Flutter/Generated.xcconfig
 ios/Flutter/flutter_export_environment.sh
 macos/Pods/
 firebase-debug.log
+firestore-debug.log
+/aqood-pro-admin-web/pnpm-lock.yaml
 tmp_web_server*.log
 
 # Dependency and generated web caches
@@ -26,3 +28,4 @@ node_modules/
 out/
 dist/
 .firebase/
+/tmp/pricing-rules-check/

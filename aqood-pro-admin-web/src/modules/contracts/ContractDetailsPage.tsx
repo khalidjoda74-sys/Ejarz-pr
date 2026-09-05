@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { contractAmount } from '@/lib/contractPricing';
 import { Link, useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
@@ -86,6 +87,10 @@ const unitKeys = [
 const acKeys = ['acWindow', 'acSplit', 'acCentral'];
 
 const fieldLabels: Record<string, string> = {
+  firstYearFee: 'رسوم السنة الأولى',
+  additionalDurationFee: 'رسوم المدة الإضافية',
+  includesEjarFees: 'شامل رسوم منصة إيجار',
+  pricingVersion: 'نسخة التسعير',
   type: 'نوع العقد',
   role: 'دور مقدم الطلب',
   urgent: 'طلب عاجل',
@@ -599,7 +604,7 @@ function buildContractView(contract: Contract) {
 
   const type = draft.type ?? contract.type ?? contract.contractType;
   const role = draft.role ?? contract.role;
-  const totalPayable = draftFinancial?.totalPayable ?? contract.totalPayable ?? contract.totalFees ?? 398;
+  const totalPayable = contractAmount(contract);
 
   return {
     requestNumber: safeText(contract.requestNumber ?? contract.orderNumber ?? contract.id),
@@ -620,8 +625,11 @@ function buildContractView(contract: Contract) {
       paidAt: contract.paidAt,
       isDemoPayment: contract.isDemoPayment,
       totalFees: contract.totalFees,
-      ejarPlatformFee: contract.ejarPlatformFee ?? 299,
-      serviceFee: contract.serviceFee ?? 99,
+      ejarPlatformFee: contract.ejarPlatformFee,
+      serviceFee: contract.serviceFee,
+      firstYearFee: draftFinancial?.firstYearFee,
+      additionalDurationFee: draftFinancial?.additionalDurationFee,
+      includesEjarFees: draftFinancial?.includesEjarFees,
       totalPayable,
     }),
     lessor: mergeRecords(asRecord(contract.landlord), asRecord(draft.lessor), {
@@ -642,8 +650,8 @@ function buildContractView(contract: Contract) {
     duration: mergeRecords(undefined, asRecord(draft.duration)),
     financial: mergeRecords(asRecord(contract.financial), draftFinancial, {
       totalFees: contract.totalFees,
-      ejarPlatformFee: draftFinancial?.ejarPlatformFee ?? contract.ejarPlatformFee ?? 299,
-      serviceFee: draftFinancial?.serviceFee ?? contract.serviceFee ?? 99,
+      ejarPlatformFee: draftFinancial?.ejarPlatformFee ?? contract.ejarPlatformFee,
+      serviceFee: draftFinancial?.serviceFee ?? contract.serviceFee,
       totalPayable,
     }),
     services: mergeRecords(

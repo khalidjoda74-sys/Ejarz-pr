@@ -1021,13 +1021,13 @@ class ContractDetailsScreen extends StatelessWidget {
         .toList();
     if (_meaningfulDraftText(draft.rentValue)) {
       items.addAll(<_ContractDetailItem>[
-        const _ContractDetailItem(
-          label: 'رسوم منصة إيجار',
-          value: '299.00 ريال',
+        _ContractDetailItem(
+          label: 'رسوم السنة الأولى',
+          value: '${draft.price.firstYear.toStringAsFixed(2)} ريال',
         ),
-        const _ContractDetailItem(
-          label: 'عمولة عقود برو',
-          value: '99.00 ريال',
+        _ContractDetailItem(
+          label: 'رسوم المدة الإضافية',
+          value: '${draft.price.additionalAmount.toStringAsFixed(2)} ريال',
         ),
       ]);
     }
@@ -1400,14 +1400,14 @@ class ContractDetailsScreen extends StatelessWidget {
           title: 'ملخص الرسوم',
           icon: Icons.receipt_long_outlined,
           items: <_ContractDetailItem>[
-            const _ContractDetailItem(
-              label: 'رسوم منصة إيجار',
-              value: '299.00 ريال',
-            ),
-            const _ContractDetailItem(
-              label: 'عمولة عقود برو',
-              value: '99.00 ريال',
-            ),
+            for (final label in [
+              'رسوم السنة الأولى',
+              'رسوم المدة الإضافية',
+              'شمول الأسعار'
+            ])
+              if (contract.contractDetails.containsKey(label))
+                _ContractDetailItem(
+                    label: label, value: contract.contractDetails[label]!),
             _ContractDetailItem(
               label: 'إجمالي الرسوم',
               value: '${contract.totalFees.toStringAsFixed(2)} ريال',

@@ -40,7 +40,7 @@ class HomeScreen extends StatelessWidget {
             BrandHeader(
               onMenu: onMenu,
               onNotifications: onNotifications,
-              showMenu: false,
+              showMenu: true,
               useSplashLogo: true,
             ),
             const SizedBox(height: 16),

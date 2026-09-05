@@ -5,10 +5,12 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/app_controller.dart';
 import '../core/demo_config.dart';
 import '../core/models.dart';
+import '../core/property_management.dart';
 import '../core/theme.dart';
 import '../widgets/common.dart';
 import 'contracts.dart';
 import 'create_contract.dart';
+import 'pricing.dart';
 
 Widget _accountBottomNavigation(BuildContext context) {
   final controller = AppScope.of(context);
@@ -132,8 +134,10 @@ class PropertiesScreen extends StatelessWidget {
 
 class _PropertyEditorScreen extends StatefulWidget {
   final PropertyRecord? existing;
+  final PropertyRecord? parent;
+  final UnitRecord? unit;
 
-  const _PropertyEditorScreen({this.existing});
+  const _PropertyEditorScreen({this.existing, this.parent, this.unit});
 
   @override
   State<_PropertyEditorScreen> createState() => _PropertyEditorScreenState();
@@ -200,12 +204,26 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
   bool _acCentral = false;
   bool _privateParking = false;
   bool _saving = false;
+  String _rentalMode = 'whole';
+  final _batchCount = TextEditingController(text: '1');
+  final List<_UnitIdentity> _batch = [];
+
+  bool get _editingUnit => widget.parent != null;
+  bool get _isBuilding => _propertyType == 'عمارة' || _propertyType == 'برج';
+  bool get _separateBuilding =>
+      !_editingUnit && _isBuilding && _rentalMode == 'units';
+  bool get _multiple =>
+      _editingUnit && widget.unit == null && _batch.length > 1;
+  int get _unitLimit => (widget.parent?.remainingUnits ?? 1).clamp(0, 50);
 
   @override
   void initState() {
     super.initState();
-    final existing = widget.existing;
-    final data = existing?.data;
+    final existing = widget.parent ?? widget.existing;
+    final data = widget.parent == null
+        ? existing?.data
+        : (widget.unit ?? UnitRecord.fromData(PropertyData()))
+            .detailsFor(widget.parent!);
     final firstUnit =
         existing?.units.isNotEmpty == true ? existing!.units.first : null;
     _title = TextEditingController(
@@ -230,7 +248,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       text: _prefer(data?.floorsCount, existing?.floors.toString() ?? '1'),
     );
     _unitsPerFloor = TextEditingController(
-      text: _prefer(data?.unitsPerFloor, '1'),
+      text: data?.unitsPerFloor ?? '',
     );
     _totalUnits = TextEditingController(
         text:
@@ -269,10 +287,20 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
     _acSplit = data?.acSplit ?? true;
     _acCentral = data?.acCentral ?? false;
     _privateParking = data?.privateParking ?? false;
+    _rentalMode = existing?.managesUnits == true ? 'units' : 'whole';
+    if (_editingUnit && widget.unit == null) {
+      _unitNumber.text = _nextUnitNumber(1);
+      _unitName.text = '$_unitType ${_unitNumber.text}';
+      _floor.text = '0';
+    }
   }
 
   @override
   void dispose() {
+    _batchCount.dispose();
+    for (final identity in _batch) {
+      identity.dispose();
+    }
     _scrollController.dispose();
     _title.dispose();
     _city.dispose();
@@ -310,7 +338,11 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
     return Scaffold(
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
-        title: Text(widget.existing == null ? 'إضافة عقار' : 'تعديل العقار'),
+        title: Text(_editingUnit
+            ? (widget.unit == null ? 'إضافة وحدات' : 'تعديل الوحدة')
+            : widget.existing == null
+                ? 'إضافة عقار'
+                : 'تعديل العقار'),
       ),
       body: SafeArea(
         bottom: false,
@@ -334,479 +366,609 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: <Widget>[
-                          Text(
-                            'احفظ بيانات العقار والوحدة لاستخدامها لاحقًا في العقود.',
-                            style: TextStyle(
-                              color: context.ejarzTheme.muted,
-                              fontWeight: FontWeight.w700,
+                          if (!_editingUnit) ...<Widget>[
+                            const SectionTitle(
+                                title: 'نوع العقار',
+                                icon: Icons.apartment_outlined),
+                            const SizedBox(height: 10),
+                            AppDropdownField(
+                              label: 'نوع العقار',
+                              value: _propertyType,
+                              items: const [
+                                'عمارة',
+                                'برج',
+                                'أرض',
+                                'شقة',
+                                'فيلا'
+                              ],
+                              icon: Icons.home_work_outlined,
+                              onChanged: widget.existing?.managesUnits ==
+                                          true &&
+                                      widget.existing!.units.isNotEmpty
+                                  ? null
+                                  : (value) {
+                                      if (widget.existing?.units.isNotEmpty ==
+                                              true &&
+                                          widget.existing!.managesUnits) {
+                                        showAppSnackBar(context,
+                                            'العقار مرتبط بوحدات؛ يمكن تعديل بياناته مع الحفاظ على نوعه.');
+                                        return;
+                                      }
+                                      setState(() {
+                                        _propertyType = value!;
+                                      });
+                                    },
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          const SectionTitle(
-                            title: 'بيانات الملكية',
-                            icon: Icons.verified_outlined,
-                          ),
-                          const SizedBox(height: 10),
-                          FieldGrid(
-                            children: <Widget>[
+                            if (_isBuilding) ...<Widget>[
+                              const SizedBox(height: 10),
                               AppDropdownField(
-                                label: 'نوع الإثبات',
-                                value: _ownershipType,
-                                items: const <String>[
-                                  'صك إلكتروني',
-                                  'تسجيل عيني'
-                                ],
-                                icon: Icons.fact_check_outlined,
-                                required: true,
-                                onChanged: (value) => setState(() =>
-                                    _ownershipType = value ?? _ownershipType),
+                                label: 'طريقة تأجير العمارة',
+                                value: _rentalMode == 'units'
+                                    ? 'وحدات مستقلة'
+                                    : 'عمارة كاملة',
+                                items: const ['عمارة كاملة', 'وحدات مستقلة'],
+                                icon: Icons.account_tree_outlined,
+                                onChanged: widget.existing?.units.isNotEmpty ==
+                                        true
+                                    ? null
+                                    : (value) {
+                                        if (widget.existing?.units.isNotEmpty ==
+                                                true &&
+                                            widget.existing!.managesUnits) {
+                                          showAppSnackBar(context,
+                                              'العمارة مرتبطة بوحدات مستقلة ولا يمكن تحويلها إلى عمارة كاملة.');
+                                          return;
+                                        }
+                                        setState(() => _rentalMode =
+                                            value == 'وحدات مستقلة'
+                                                ? 'units'
+                                                : 'whole');
+                                      },
                               ),
-                              AppTextField(
-                                key: _ownershipNumberKey,
-                                label: 'رقم الوثيقة',
-                                hint: 'أدخل رقم الوثيقة',
-                                controller: _ownershipNumber,
-                                keyboardType: TextInputType.number,
-                                inputFormatters: <TextInputFormatter>[
-                                  FilteringTextInputFormatter.digitsOnly,
-                                  LengthLimitingTextInputFormatter(20),
-                                ],
-                                icon: Icons.description_outlined,
-                                required: true,
-                                validator: _ownershipNumberValidator,
-                              ),
-                              AppTextField(
-                                key: _ownershipDateKey,
-                                label: 'تاريخ الوثيقة',
-                                hint: 'YYYY/MM/DD',
-                                controller: _ownershipDate,
-                                keyboardType: TextInputType.datetime,
-                                icon: Icons.date_range_outlined,
-                                required: true,
-                                validator: _ownershipDateValidator,
-                              ),
+                              const SizedBox(height: 10),
+                              InfoBanner(
+                                  text: _separateBuilding
+                                      ? 'احفظ العمارة وعدد وحداتها، ثم أضف الوحدات ومواصفاتها من تفاصيل العمارة.'
+                                      : 'سيُحفظ العقار كاملًا كوحدة واحدة قابلة للاختيار عند إنشاء العقد.'),
+                              if (widget.existing?.units.isNotEmpty == true)
+                                const Padding(
+                                    padding: EdgeInsets.only(top: 8),
+                                    child: Text(
+                                        'طريقة التأجير ثابتة بعد تسجيل الوحدات للحفاظ على ارتباط بياناتها.')),
                             ],
-                          ),
-                          const SizedBox(height: 14),
-                          const SectionTitle(
-                            title: 'بيانات العقار والعنوان',
-                            icon: Icons.business_outlined,
-                          ),
-                          const SizedBox(height: 10),
-                          AppTextField(
-                            label: 'اسم العقار',
-                            hint: 'مثال: عمارة الياسمين',
-                            controller: _title,
-                            icon: Icons.apartment_outlined,
-                          ),
-                          const SizedBox(height: 10),
-                          FieldGrid(
-                            children: <Widget>[
+                            const SizedBox(height: 16),
+                          ],
+                          if (_editingUnit) ...<Widget>[
+                            AppPageHeader(
+                                title: widget.parent!.title,
+                                subtitle:
+                                    'مسجل ${widget.parent!.units.length} من ${widget.parent!.totalUnits} وحدة • ${widget.parent!.floors} أدوار',
+                                icon: Icons.apartment_outlined),
+                            const SizedBox(height: 12),
+                            if (widget.unit == null) ...<Widget>[
                               AppTextField(
-                                key: _streetKey,
-                                label: 'الشارع',
-                                hint: 'اسم الشارع',
-                                controller: _street,
-                                icon: Icons.signpost_outlined,
-                                required: true,
-                                validator: _requiredValidator,
-                              ),
-                              AppTextField(
-                                key: _buildingNumberKey,
-                                label: 'رقم المبنى',
-                                hint: '4 أرقام',
-                                controller: _buildingNumber,
-                                keyboardType: TextInputType.number,
-                                icon: Icons.numbers_rounded,
-                                required: true,
-                                validator: (value) =>
-                                    _fixedDigitsValidator(value, 4),
-                              ),
-                              AppTextField(
-                                key: _additionalNumberKey,
-                                label: 'الرقم الإضافي',
-                                hint: '4 أرقام',
-                                controller: _additionalNumber,
-                                keyboardType: TextInputType.number,
-                                icon: Icons.add_box_outlined,
-                                required: true,
-                                validator: (value) =>
-                                    _fixedDigitsValidator(value, 4),
-                              ),
-                              AppTextField(
-                                key: _postalCodeKey,
-                                label: 'الرمز البريدي',
-                                hint: '5 أرقام',
-                                controller: _postalCode,
-                                keyboardType: TextInputType.number,
-                                icon: Icons.markunread_mailbox_outlined,
-                                required: true,
-                                validator: (value) =>
-                                    _fixedDigitsValidator(value, 5),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: AppTextField(
-                                  key: _cityKey,
-                                  label: 'المدينة',
-                                  hint: 'الرياض',
-                                  controller: _city,
-                                  icon: Icons.location_city_outlined,
-                                  required: true,
-                                  validator: _requiredValidator,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: AppTextField(
-                                  key: _districtKey,
-                                  label: 'الحي',
-                                  hint: 'العليا',
-                                  controller: _district,
-                                  icon: Icons.location_on_outlined,
-                                  required: true,
-                                  validator: _requiredValidator,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: AppDropdownField(
-                                  label: 'نوع العقار',
-                                  value: _propertyType,
-                                  items: const <String>[
-                                    'عمارة',
-                                    'برج',
-                                    'أرض',
-                                    'شقة',
-                                    'فيلا'
-                                  ],
-                                  icon: Icons.home_work_outlined,
-                                  onChanged: (value) => setState(() =>
-                                      _propertyType = value ?? _propertyType),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: AppDropdownField(
-                                  label: 'الاستخدام',
-                                  value: _usage,
-                                  items: const <String>[
-                                    'سكن عوائل',
-                                    'سكن أفراد',
-                                    'سكن جماعي',
-                                    'تجاري'
-                                  ],
-                                  icon: Icons.category_outlined,
-                                  onChanged: (value) =>
-                                      setState(() => _usage = value ?? _usage),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: AppTextField(
-                                  key: _floorsKey,
-                                  label: 'عدد الأدوار',
-                                  hint: '1',
-                                  controller: _floors,
+                                  label: 'عدد الوحدات المراد إضافتها',
+                                  hint: 'مثال: 5',
+                                  controller: _batchCount,
                                   keyboardType: TextInputType.number,
-                                  icon: Icons.layers_outlined,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly
+                                  ],
                                   required: true,
-                                  validator: (value) => _integerValidator(
-                                    value,
-                                    min: 1,
-                                    max: 200,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: AppTextField(
-                                  key: _totalUnitsKey,
-                                  label: 'إجمالي الوحدات',
-                                  hint: '1',
-                                  controller: _totalUnits,
-                                  keyboardType: TextInputType.number,
-                                  icon: Icons.numbers_outlined,
-                                  required: true,
-                                  validator: (value) => _integerValidator(
-                                    value,
-                                    min: 1,
-                                    max: 9999,
-                                  ),
-                                ),
-                              ),
+                                  icon: Icons.library_add_outlined,
+                                  validator: (v) => _integerValidator(v,
+                                      min: 1, max: _unitLimit),
+                                  onChanged: _updateBatch),
+                              const SizedBox(height: 8),
+                              InfoBanner(
+                                  text:
+                                      'أضف من 1 إلى $_unitLimit وحدة في هذه الدفعة. أدخل المواصفات المشتركة مرة واحدة، ثم راجع رقم ودور وعدادات كل وحدة قبل الحفظ.'),
+                              const SizedBox(height: 14),
                             ],
-                          ),
-                          const SizedBox(height: 10),
-                          AppTextField(
-                            key: _unitsPerFloorKey,
-                            label: 'عدد الوحدات في كل دور',
-                            hint: '1',
-                            controller: _unitsPerFloor,
-                            keyboardType: TextInputType.number,
-                            icon: Icons.grid_view_outlined,
-                            required: true,
-                            validator: (value) => _integerValidator(
-                              value,
-                              min: 1,
-                              max: 200,
+                          ],
+                          if (!_editingUnit) ...<Widget>[
+                            Text(
+                              'احفظ بيانات العقار والوحدة لاستخدامها لاحقًا في العقود.',
+                              style: TextStyle(
+                                color: context.ejarzTheme.muted,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 14),
-                          const SectionTitle(
-                            title: 'بيانات الوحدة',
-                            icon: Icons.home_outlined,
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: AppTextField(
-                                  key: _unitNumberKey,
-                                  label: 'رقم الوحدة',
-                                  hint: '12',
-                                  controller: _unitNumber,
-                                  icon: Icons.tag_outlined,
-                                  required: true,
-                                  validator: _requiredValidator,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: AppDropdownField(
-                                  label: 'نوع الوحدة',
-                                  value: _unitType,
-                                  items: const <String>[
-                                    'شقة',
-                                    'استديو',
-                                    'دور',
-                                    'فيلا',
-                                    'محل',
-                                    'مستودع',
-                                    'مكتب إداري'
-                                  ],
-                                  icon: Icons.meeting_room_outlined,
-                                  onChanged: (value) => setState(
-                                      () => _unitType = value ?? _unitType),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          FieldGrid(
-                            children: <Widget>[
-                              AppTextField(
-                                key: _unitNameKey,
-                                label: 'اسم الوحدة',
-                                hint: 'شقة 12',
-                                controller: _unitName,
-                                icon: Icons.drive_file_rename_outline,
-                                required: true,
-                                validator: _requiredValidator,
-                              ),
-                              AppTextField(
-                                key: _floorKey,
-                                label: 'رقم الدور',
-                                hint: '1',
-                                controller: _floor,
-                                icon: Icons.layers_outlined,
-                                required: true,
-                                validator: _requiredValidator,
-                              ),
-                              AppDropdownField(
-                                label: 'حالة التأثيث',
-                                value: _furnishingStatus,
-                                items: const <String>[
-                                  'غير مؤثثة',
-                                  'مؤثثة بأثاث جديد',
-                                  'مؤثثة بأثاث مستخدم',
-                                ],
-                                icon: Icons.chair_outlined,
-                                onChanged: (value) => setState(() =>
-                                    _furnishingStatus =
-                                        value ?? _furnishingStatus),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          AppTextField(
-                            key: _unitAreaKey,
-                            label: 'مساحة الوحدة (م²)',
-                            hint: '120',
-                            controller: _unitArea,
-                            keyboardType: TextInputType.number,
-                            icon: Icons.square_foot_outlined,
-                            required: true,
-                            validator: _positiveNumberValidator,
-                          ),
-                          const SizedBox(height: 10),
-                          FieldGrid(
-                            children: <Widget>[
-                              AppTextField(
-                                key: _roomsCountKey,
-                                label: 'عدد الغرف',
-                                hint: '3',
-                                controller: _roomsCount,
-                                keyboardType: TextInputType.number,
-                                icon: Icons.bed_outlined,
-                                required: true,
-                                validator: (value) => _integerValidator(
-                                  value,
-                                  min: 1,
-                                  max: 50,
-                                ),
-                              ),
-                              AppTextField(
-                                key: _bathroomsCountKey,
-                                label: 'دورات المياه',
-                                hint: '1',
-                                controller: _bathroomsCount,
-                                keyboardType: TextInputType.number,
-                                icon: Icons.bathtub_outlined,
-                                required: true,
-                                validator: (value) => _integerValidator(
-                                  value,
-                                  min: 1,
-                                  max: 50,
-                                ),
-                              ),
-                              AppTextField(
-                                key: _hallsCountKey,
-                                label: 'الصالات',
-                                hint: '1',
-                                controller: _hallsCount,
-                                keyboardType: TextInputType.number,
-                                icon: Icons.weekend_outlined,
-                                required: true,
-                                validator: (value) => _integerValidator(
-                                  value,
-                                  min: 0,
-                                  max: 50,
-                                ),
-                              ),
-                              AppTextField(
-                                key: _electricityMeterKey,
-                                label: 'رقم عداد الكهرباء',
-                                hint: 'أدخل رقم العداد',
-                                controller: _electricityMeter,
-                                keyboardType: TextInputType.number,
-                                icon: Icons.bolt_outlined,
-                                required: true,
-                                validator: (value) =>
-                                    _integerValidator(value, min: 1),
-                              ),
-                              AppTextField(
-                                key: _waterMeterKey,
-                                label: 'رقم عداد المياه',
-                                hint: 'أدخل رقم العداد',
-                                controller: _waterMeter,
-                                keyboardType: TextInputType.number,
-                                icon: Icons.water_drop_outlined,
-                                required: true,
-                                validator: (value) =>
-                                    _integerValidator(value, min: 1),
-                              ),
-                              AppTextField(
-                                label: 'رقم عداد الغاز',
-                                hint: 'إن وجد',
-                                controller: _gasMeter,
-                                keyboardType: TextInputType.number,
-                                icon: Icons.local_fire_department_outlined,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          const SectionTitle(
-                            title: 'مرافق الوحدة',
-                            icon: Icons.widgets_outlined,
-                          ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: <Widget>[
-                              _featureChip('غرفة خادمة', _maidRoom,
-                                  (value) => setState(() => _maidRoom = value)),
-                              _featureChip('مطبخ', _kitchen,
-                                  (value) => setState(() => _kitchen = value)),
-                              _featureChip('مخزن', _storage,
-                                  (value) => setState(() => _storage = value)),
-                              _featureChip('مجلس', _majlis,
-                                  (value) => setState(() => _majlis = value)),
-                              _featureChip(
-                                  'موقف خاص',
-                                  _privateParking,
-                                  (value) =>
-                                      setState(() => _privateParking = value)),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          const SectionTitle(
-                            title: 'التكييف',
-                            icon: Icons.ac_unit_rounded,
-                          ),
-                          const SizedBox(height: 8),
-                          FormField<bool>(
-                            key: _acKey,
-                            initialValue: _hasAirConditioning,
-                            validator: (_) => _hasAirConditioning
-                                ? null
-                                : 'اختر نوع تكييف واحدًا على الأقل',
-                            builder: (field) => Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            const SizedBox(height: 12),
+                            const SectionTitle(
+                              title: 'بيانات الملكية',
+                              icon: Icons.verified_outlined,
+                            ),
+                            const SizedBox(height: 10),
+                            FieldGrid(
                               children: <Widget>[
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: <Widget>[
-                                    _featureChip('شباك', _acWindow, (value) {
-                                      setState(() => _acWindow = value);
-                                      field.didChange(_hasAirConditioning);
-                                    }),
-                                    _featureChip('سبليت', _acSplit, (value) {
-                                      setState(() => _acSplit = value);
-                                      field.didChange(_hasAirConditioning);
-                                    }),
-                                    _featureChip('مركزي', _acCentral, (value) {
-                                      setState(() => _acCentral = value);
-                                      field.didChange(_hasAirConditioning);
-                                    }),
+                                AppDropdownField(
+                                  label: 'نوع الإثبات',
+                                  value: _ownershipType,
+                                  items: const <String>[
+                                    'صك إلكتروني',
+                                    'تسجيل عيني'
                                   ],
+                                  icon: Icons.fact_check_outlined,
+                                  required: true,
+                                  onChanged: (value) => setState(() =>
+                                      _ownershipType = value ?? _ownershipType),
                                 ),
-                                if (field.hasError) ...<Widget>[
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    field.errorText!,
-                                    style: TextStyle(
-                                      color:
-                                          Theme.of(context).colorScheme.error,
-                                      fontSize: context.sp(11.5),
-                                    ),
-                                  ),
-                                ],
+                                AppTextField(
+                                  key: _ownershipNumberKey,
+                                  label: 'رقم الوثيقة',
+                                  hint: 'أدخل رقم الوثيقة',
+                                  controller: _ownershipNumber,
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: <TextInputFormatter>[
+                                    FilteringTextInputFormatter.digitsOnly,
+                                    LengthLimitingTextInputFormatter(20),
+                                  ],
+                                  icon: Icons.description_outlined,
+                                  required: true,
+                                  validator: _ownershipNumberValidator,
+                                ),
+                                AppTextField(
+                                  key: _ownershipDateKey,
+                                  label: 'تاريخ الوثيقة',
+                                  hint: 'YYYY/MM/DD',
+                                  controller: _ownershipDate,
+                                  keyboardType: TextInputType.datetime,
+                                  icon: Icons.date_range_outlined,
+                                  required: true,
+                                  validator: _ownershipDateValidator,
+                                ),
                               ],
                             ),
-                          ),
-                          const SizedBox(height: 14),
-                          AppTextField(
-                            label: 'ملاحظات على الوحدة',
-                            hint: 'أي تفاصيل إضافية مهمة',
-                            controller: _notes,
-                            icon: Icons.notes_rounded,
-                            maxLines: 3,
-                          ),
+                            const SizedBox(height: 14),
+                            const SectionTitle(
+                              title: 'بيانات العقار والعنوان',
+                              icon: Icons.business_outlined,
+                            ),
+                            const SizedBox(height: 10),
+                            AppTextField(
+                              label: 'اسم العقار',
+                              hint: 'مثال: عمارة الياسمين',
+                              controller: _title,
+                              icon: Icons.apartment_outlined,
+                            ),
+                            const SizedBox(height: 10),
+                            FieldGrid(
+                              children: <Widget>[
+                                AppTextField(
+                                  key: _streetKey,
+                                  label: 'الشارع',
+                                  hint: 'اسم الشارع',
+                                  controller: _street,
+                                  icon: Icons.signpost_outlined,
+                                  required: true,
+                                  validator: _requiredValidator,
+                                ),
+                                AppTextField(
+                                  key: _buildingNumberKey,
+                                  label: 'رقم المبنى',
+                                  hint: '4 أرقام',
+                                  controller: _buildingNumber,
+                                  keyboardType: TextInputType.number,
+                                  icon: Icons.numbers_rounded,
+                                  required: true,
+                                  validator: (value) =>
+                                      _fixedDigitsValidator(value, 4),
+                                ),
+                                AppTextField(
+                                  key: _additionalNumberKey,
+                                  label: 'الرقم الإضافي',
+                                  hint: '4 أرقام',
+                                  controller: _additionalNumber,
+                                  keyboardType: TextInputType.number,
+                                  icon: Icons.add_box_outlined,
+                                  required: true,
+                                  validator: (value) =>
+                                      _fixedDigitsValidator(value, 4),
+                                ),
+                                AppTextField(
+                                  key: _postalCodeKey,
+                                  label: 'الرمز البريدي',
+                                  hint: '5 أرقام',
+                                  controller: _postalCode,
+                                  keyboardType: TextInputType.number,
+                                  icon: Icons.markunread_mailbox_outlined,
+                                  required: true,
+                                  validator: (value) =>
+                                      _fixedDigitsValidator(value, 5),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: AppTextField(
+                                    key: _cityKey,
+                                    label: 'المدينة',
+                                    hint: 'الرياض',
+                                    controller: _city,
+                                    icon: Icons.location_city_outlined,
+                                    required: true,
+                                    validator: _requiredValidator,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: AppTextField(
+                                    key: _districtKey,
+                                    label: 'الحي',
+                                    hint: 'العليا',
+                                    controller: _district,
+                                    icon: Icons.location_on_outlined,
+                                    required: true,
+                                    validator: _requiredValidator,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: AppDropdownField(
+                                    label: 'الاستخدام',
+                                    value: _usage,
+                                    items: const <String>[
+                                      'سكن عوائل',
+                                      'سكن أفراد',
+                                      'سكن جماعي',
+                                      'تجاري'
+                                    ],
+                                    icon: Icons.category_outlined,
+                                    onChanged: (value) => setState(
+                                        () => _usage = value ?? _usage),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: AppTextField(
+                                    key: _floorsKey,
+                                    label: 'عدد الأدوار',
+                                    hint: '1',
+                                    controller: _floors,
+                                    keyboardType: TextInputType.number,
+                                    icon: Icons.layers_outlined,
+                                    required: true,
+                                    validator: (value) => _integerValidator(
+                                      value,
+                                      min: 1,
+                                      max: 200,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                if (_separateBuilding)
+                                  Expanded(
+                                    child: AppTextField(
+                                      key: _totalUnitsKey,
+                                      label: 'إجمالي الوحدات',
+                                      hint: '1',
+                                      controller: _totalUnits,
+                                      keyboardType: TextInputType.number,
+                                      icon: Icons.numbers_outlined,
+                                      required: true,
+                                      validator: (value) => _integerValidator(
+                                          value,
+                                          min: widget.existing?.units.length
+                                                  .clamp(1, 9999) ??
+                                              1,
+                                          max: 9999),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            if (_separateBuilding)
+                              AppTextField(
+                                key: _unitsPerFloorKey,
+                                label: 'عدد الوحدات في الدور (اختياري)',
+                                hint:
+                                    'اتركه فارغًا إذا اختلف العدد بين الأدوار',
+                                controller: _unitsPerFloor,
+                                keyboardType: TextInputType.number,
+                                icon: Icons.grid_view_outlined,
+                                validator: (value) =>
+                                    value?.trim().isEmpty == true
+                                        ? null
+                                        : _integerValidator(
+                                            value,
+                                            min: 1,
+                                            max: 200,
+                                          ),
+                              ),
+                            const SizedBox(height: 8),
+                            const InfoBanner(
+                                text:
+                                    'عدد الأدوار يشمل الدور الأرضي. يبدأ ترقيم أدوار الوحدات من 0 للأرضي.'),
+                          ],
+                          if (!_separateBuilding) ...<Widget>[
+                            const SizedBox(height: 14),
+                            const SectionTitle(
+                              title: 'بيانات الوحدة',
+                              icon: Icons.home_outlined,
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: <Widget>[
+                                if (!_multiple)
+                                  Expanded(
+                                    child: AppTextField(
+                                      key: _unitNumberKey,
+                                      label: 'رقم الوحدة',
+                                      hint: '12',
+                                      controller: _unitNumber,
+                                      icon: Icons.tag_outlined,
+                                      required: true,
+                                      validator: _requiredValidator,
+                                    ),
+                                  ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: AppDropdownField(
+                                    label: 'نوع الوحدة',
+                                    value: _unitType,
+                                    items: <String>[
+                                      if (_isBuilding && !_editingUnit)
+                                        _propertyType,
+                                      'شقة',
+                                      'استديو',
+                                      'دور',
+                                      'فيلا',
+                                      'محل',
+                                      'مستودع',
+                                      'مكتب إداري'
+                                    ],
+                                    icon: Icons.meeting_room_outlined,
+                                    onChanged: (value) => setState(
+                                        () => _unitType = value ?? _unitType),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            FieldGrid(
+                              children: <Widget>[
+                                if (!_multiple)
+                                  AppTextField(
+                                    key: _unitNameKey,
+                                    label: 'اسم الوحدة',
+                                    hint: 'شقة 12',
+                                    controller: _unitName,
+                                    icon: Icons.drive_file_rename_outline,
+                                    required: true,
+                                    validator: _requiredValidator,
+                                  ),
+                                if (!_multiple)
+                                  AppTextField(
+                                    key: _floorKey,
+                                    label: 'رقم الدور',
+                                    hint: '1',
+                                    controller: _floor,
+                                    icon: Icons.layers_outlined,
+                                    required: true,
+                                    validator: _editingUnit
+                                        ? (v) => _integerValidator(v,
+                                            min: 0,
+                                            max: widget.parent!.floors - 1)
+                                        : _requiredValidator,
+                                  ),
+                                AppDropdownField(
+                                  label: 'حالة التأثيث',
+                                  value: _furnishingStatus,
+                                  items: const <String>[
+                                    'غير مؤثثة',
+                                    'مؤثثة بأثاث جديد',
+                                    'مؤثثة بأثاث مستخدم',
+                                  ],
+                                  icon: Icons.chair_outlined,
+                                  onChanged: (value) => setState(() =>
+                                      _furnishingStatus =
+                                          value ?? _furnishingStatus),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            AppTextField(
+                              key: _unitAreaKey,
+                              label: 'مساحة الوحدة (م²)',
+                              hint: '120',
+                              controller: _unitArea,
+                              keyboardType: TextInputType.number,
+                              icon: Icons.square_foot_outlined,
+                              required: true,
+                              validator: _positiveNumberValidator,
+                            ),
+                            const SizedBox(height: 10),
+                            FieldGrid(
+                              children: <Widget>[
+                                AppTextField(
+                                  key: _roomsCountKey,
+                                  label: 'عدد الغرف',
+                                  hint: '3',
+                                  controller: _roomsCount,
+                                  keyboardType: TextInputType.number,
+                                  icon: Icons.bed_outlined,
+                                  required: true,
+                                  validator: (value) => _integerValidator(
+                                    value,
+                                    min: 1,
+                                    max: 50,
+                                  ),
+                                ),
+                                AppTextField(
+                                  key: _bathroomsCountKey,
+                                  label: 'دورات المياه',
+                                  hint: '1',
+                                  controller: _bathroomsCount,
+                                  keyboardType: TextInputType.number,
+                                  icon: Icons.bathtub_outlined,
+                                  required: true,
+                                  validator: (value) => _integerValidator(
+                                    value,
+                                    min: 1,
+                                    max: 50,
+                                  ),
+                                ),
+                                AppTextField(
+                                  key: _hallsCountKey,
+                                  label: 'الصالات',
+                                  hint: '1',
+                                  controller: _hallsCount,
+                                  keyboardType: TextInputType.number,
+                                  icon: Icons.weekend_outlined,
+                                  required: true,
+                                  validator: (value) => _integerValidator(
+                                    value,
+                                    min: 0,
+                                    max: 50,
+                                  ),
+                                ),
+                                if (!_multiple)
+                                  AppTextField(
+                                    key: _electricityMeterKey,
+                                    label: 'رقم عداد الكهرباء',
+                                    hint: 'أدخل رقم العداد',
+                                    controller: _electricityMeter,
+                                    keyboardType: TextInputType.number,
+                                    icon: Icons.bolt_outlined,
+                                    required: !_editingUnit,
+                                    validator: (value) => _editingUnit &&
+                                            (value?.trim().isEmpty ?? true)
+                                        ? null
+                                        : _integerValidator(value, min: 1),
+                                  ),
+                                if (!_multiple)
+                                  AppTextField(
+                                    key: _waterMeterKey,
+                                    label: 'رقم عداد المياه',
+                                    hint: 'أدخل رقم العداد',
+                                    controller: _waterMeter,
+                                    keyboardType: TextInputType.number,
+                                    icon: Icons.water_drop_outlined,
+                                    required: !_editingUnit,
+                                    validator: (value) => _editingUnit &&
+                                            (value?.trim().isEmpty ?? true)
+                                        ? null
+                                        : _integerValidator(value, min: 1),
+                                  ),
+                                if (!_multiple)
+                                  AppTextField(
+                                    label: 'رقم عداد الغاز',
+                                    hint: 'إن وجد',
+                                    controller: _gasMeter,
+                                    keyboardType: TextInputType.number,
+                                    icon: Icons.local_fire_department_outlined,
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            const SectionTitle(
+                              title: 'مرافق الوحدة',
+                              icon: Icons.widgets_outlined,
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: <Widget>[
+                                _featureChip(
+                                    'غرفة خادمة',
+                                    _maidRoom,
+                                    (value) =>
+                                        setState(() => _maidRoom = value)),
+                                _featureChip(
+                                    'مطبخ',
+                                    _kitchen,
+                                    (value) =>
+                                        setState(() => _kitchen = value)),
+                                _featureChip(
+                                    'مخزن',
+                                    _storage,
+                                    (value) =>
+                                        setState(() => _storage = value)),
+                                _featureChip('مجلس', _majlis,
+                                    (value) => setState(() => _majlis = value)),
+                                _featureChip(
+                                    'موقف خاص',
+                                    _privateParking,
+                                    (value) => setState(
+                                        () => _privateParking = value)),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            const SectionTitle(
+                              title: 'التكييف',
+                              icon: Icons.ac_unit_rounded,
+                            ),
+                            const SizedBox(height: 8),
+                            FormField<bool>(
+                              key: _acKey,
+                              initialValue: _hasAirConditioning,
+                              builder: (field) => Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: <Widget>[
+                                      _featureChip('شباك', _acWindow, (value) {
+                                        setState(() => _acWindow = value);
+                                        field.didChange(_hasAirConditioning);
+                                      }),
+                                      _featureChip('سبليت', _acSplit, (value) {
+                                        setState(() => _acSplit = value);
+                                        field.didChange(_hasAirConditioning);
+                                      }),
+                                      _featureChip('مركزي', _acCentral,
+                                          (value) {
+                                        setState(() => _acCentral = value);
+                                        field.didChange(_hasAirConditioning);
+                                      }),
+                                    ],
+                                  ),
+                                  if (field.hasError) ...<Widget>[
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      field.errorText!,
+                                      style: TextStyle(
+                                        color:
+                                            Theme.of(context).colorScheme.error,
+                                        fontSize: context.sp(11.5),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            AppTextField(
+                              label: 'ملاحظات على الوحدة',
+                              hint: 'أي تفاصيل إضافية مهمة',
+                              controller: _notes,
+                              icon: Icons.notes_rounded,
+                              maxLines: 3,
+                            ),
+                            if (_multiple) ...<Widget>[
+                              const SizedBox(height: 18),
+                              const SectionTitle(
+                                  title:
+                                      'مراجعة أرقام الوحدات والأدوار والعدادات',
+                                  icon: Icons.fact_check_outlined),
+                              const SizedBox(height: 10),
+                              for (var i = 0; i < _batch.length; i++)
+                                _identityCard(_batch[i], i),
+                            ],
+                          ],
                         ],
                       ),
                     ),
@@ -838,7 +1000,15 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                     child: SizedBox(
                       width: double.infinity,
                       child: PrimaryButton(
-                        label: _saving ? 'جاري الحفظ...' : 'حفظ العقار',
+                        label: _saving
+                            ? 'جاري الحفظ...'
+                            : _editingUnit
+                                ? (widget.unit != null
+                                    ? 'حفظ الوحدة'
+                                    : _multiple
+                                        ? 'إضافة ${_batch.length} وحدات'
+                                        : 'إضافة الوحدة')
+                                : 'حفظ العقار',
                         icon: Icons.save_outlined,
                         loading: _saving,
                         onPressed: _save,
@@ -888,6 +1058,87 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
     );
   }
 
+  String _nextUnitNumber(int ordinal) {
+    final used = (widget.parent?.units ?? <UnitRecord>[])
+        .map((u) => normalizedUnitNumber(u.number))
+        .toSet();
+    var number = 1;
+    var remaining = ordinal;
+    while (true) {
+      if (!used.contains('$number') && --remaining == 0) return '$number';
+      number++;
+    }
+  }
+
+  void _updateBatch(String value) {
+    final count = int.tryParse(value);
+    if (count == null || count < 1 || count > _unitLimit) return;
+    setState(() {
+      while (_batch.length < count) {
+        final number = _nextUnitNumber(_batch.length + 1);
+        _batch.add(_UnitIdentity(number: number, name: '$_unitType $number'));
+      }
+      while (_batch.length > count) {
+        _batch.removeLast().dispose();
+      }
+    });
+  }
+
+  Widget _identityCard(_UnitIdentity identity, int index) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: AppCard(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+              Text('الوحدة ${index + 1}',
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              FieldGrid(children: [
+                AppTextField(
+                    label: 'رقم الوحدة',
+                    hint: 'رقم فريد داخل العمارة',
+                    controller: identity.number,
+                    required: true,
+                    validator: _requiredValidator,
+                    icon: Icons.tag_outlined),
+                AppTextField(
+                    label: 'اسم الوحدة',
+                    hint: 'اسم واضح للوحدة',
+                    controller: identity.name,
+                    required: true,
+                    validator: _requiredValidator,
+                    icon: Icons.home_outlined),
+                AppTextField(
+                    label: 'رقم الدور',
+                    hint: '0 للأرضي',
+                    controller: identity.floor,
+                    required: true,
+                    keyboardType: TextInputType.number,
+                    icon: Icons.layers_outlined,
+                    validator: (v) => _integerValidator(v,
+                        min: 0, max: widget.parent!.floors - 1)),
+                AppTextField(
+                    label: 'عداد الكهرباء (اختياري)',
+                    hint: 'إن وجد',
+                    controller: identity.electricity,
+                    keyboardType: TextInputType.number,
+                    icon: Icons.bolt_outlined),
+                AppTextField(
+                    label: 'عداد المياه (اختياري)',
+                    hint: 'إن وجد',
+                    controller: identity.water,
+                    keyboardType: TextInputType.number,
+                    icon: Icons.water_drop_outlined),
+                AppTextField(
+                    label: 'عداد الغاز (اختياري)',
+                    hint: 'إن وجد',
+                    controller: identity.gas,
+                    keyboardType: TextInputType.number,
+                    icon: Icons.local_fire_department_outlined),
+              ]),
+            ])),
+      );
+
   Future<void> _save() async {
     final valid = _formKey.currentState?.validate() ?? false;
     if (!valid) {
@@ -902,6 +1153,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
     }
     setState(() => _saving = true);
     final data = PropertyData()
+      ..rentalMode = _rentalMode
       ..ownershipDocumentType = _ownershipType
       ..ownershipDocumentNumber = _ownershipNumber.text.trim()
       ..ownershipDocumentDate = _ownershipDate.text.trim()
@@ -915,8 +1167,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       ..propertyType = _propertyType
       ..propertyUsage = _usage
       ..floorsCount = _floors.text.trim().isEmpty ? '1' : _floors.text.trim()
-      ..unitsPerFloor =
-          _unitsPerFloor.text.trim().isEmpty ? '1' : _unitsPerFloor.text.trim()
+      ..unitsPerFloor = _unitsPerFloor.text.trim()
       ..totalUnits =
           _totalUnits.text.trim().isEmpty ? '1' : _totalUnits.text.trim()
       ..unitNumber = _unitNumber.text.trim()
@@ -940,23 +1191,68 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       ..waterMeter = _waterMeter.text.trim()
       ..gasMeter = _gasMeter.text.trim()
       ..notes = _notes.text.trim();
+    if (_separateBuilding) {
+      data.unitNumber = '';
+      data.unitName = '';
+    } else if (!_editingUnit) {
+      data.totalUnits = '1';
+      data.rentalMode = 'whole';
+      if (_isBuilding) data.unitType = _propertyType;
+    }
     try {
       final controller = AppScope.of(context, listen: false);
+      final parent = widget.parent;
+      List<UnitRecord>? unitEdits;
+      PropertyData propertyData = data;
+      if (parent != null) {
+        final current = controller.properties
+            .firstWhere((p) => p.id == parent.id, orElse: () => parent);
+        propertyData = PropertyData.copyOf(current.data ?? data)
+          ..rentalMode = 'units';
+        final status = widget.unit?.status ?? 'متاحة';
+        unitEdits = _multiple
+            ? _batch.map((identity) {
+                final unit = PropertyData.copyOf(data)
+                  ..unitNumber = identity.number.text.trim()
+                  ..unitName = identity.name.text.trim()
+                  ..floor = identity.floor.text.trim()
+                  ..electricityMeter = identity.electricity.text.trim()
+                  ..waterMeter = identity.water.text.trim()
+                  ..gasMeter = identity.gas.text.trim();
+                return UnitRecord.fromData(unit, status: status);
+              }).toList()
+            : [UnitRecord.fromData(data, status: status)];
+      }
       final saved = await controller.saveProperty(
-        data,
-        existing: widget.existing,
+        propertyData,
+        existing: parent ?? widget.existing,
+        unitEdits: unitEdits,
+        replacingNumber: widget.unit?.number ?? '',
       );
       final savedLocally = controller.isPropertyPendingSync(saved.id);
       if (!mounted) return;
-      Navigator.of(context).pop();
+      if (widget.existing == null && parent == null) {
+        Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
+            builder: (_) => _PropertyDetailsScreen(initialProperty: saved)));
+      } else {
+        Navigator.of(context).pop();
+      }
       showAppSnackBar(
         context,
         savedLocally
             ? 'تم حفظ العقار محليًا وستتم مزامنته عند عودة الاتصال'
-            : 'تم حفظ العقار بنجاح',
+            : parent != null
+                ? 'تم حفظ ${unitEdits!.length} وحدة بنجاح'
+                : 'تم حفظ العقار بنجاح',
       );
-    } catch (_) {
-      if (mounted) showAppSnackBar(context, 'تعذر حفظ العقار الآن');
+    } catch (error) {
+      if (mounted) {
+        showAppSnackBar(
+            context,
+            error is StateError
+                ? error.message.toString()
+                : 'تعذر حفظ العقار الآن');
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1058,7 +1354,8 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       ),
       MapEntry(
         _unitsPerFloorKey,
-        _positiveInt(_unitsPerFloor.text, min: 1, max: 200) == null,
+        _unitsPerFloor.text.trim().isNotEmpty &&
+            _positiveInt(_unitsPerFloor.text, min: 1, max: 200) == null,
       ),
       MapEntry(_unitNumberKey, _unitNumber.text.trim().isEmpty),
       MapEntry(_unitNameKey, _unitName.text.trim().isEmpty),
@@ -1087,7 +1384,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       MapEntry(_acKey, !_hasAirConditioning),
     ];
     for (final field in fields) {
-      if (field.value) return field.key;
+      if (field.value && field.key.currentContext != null) return field.key;
     }
     return null;
   }
@@ -1122,6 +1419,23 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       return null;
     }
     return date;
+  }
+}
+
+class _UnitIdentity {
+  final TextEditingController number;
+  final TextEditingController name;
+  final floor = TextEditingController(text: '0');
+  final electricity = TextEditingController();
+  final water = TextEditingController();
+  final gas = TextEditingController();
+  _UnitIdentity({required String number, required String name})
+      : number = TextEditingController(text: number),
+        name = TextEditingController(text: name);
+  void dispose() {
+    for (final field in [number, name, floor, electricity, water, gas]) {
+      field.dispose();
+    }
   }
 }
 
@@ -1239,6 +1553,60 @@ class _PropertyDetailsScreen extends StatelessWidget {
                 subtitle: '${property.location} • ${property.type}',
                 icon: Icons.apartment_outlined,
               ),
+              if (property.managesUnits) ...<Widget>[
+                const SizedBox(height: 14),
+                AppCard(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                      Text(
+                          'وحدات العمارة: ${property.units.length} من ${property.totalUnits}',
+                          style: const TextStyle(fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(
+                          value: property.totalUnits == 0
+                              ? 0
+                              : property.units.length / property.totalUnits),
+                      const SizedBox(height: 10),
+                      Text(property.remainingUnits > 0
+                          ? 'يمكنك إضافة ${property.remainingUnits} وحدة أخرى، منفردة أو كمجموعة متطابقة.'
+                          : 'اكتملت إضافة جميع الوحدات. يمكنك عرض أو تعديل كل وحدة أدناه.'),
+                      if (property.remainingUnits > 0) ...[
+                        const SizedBox(height: 12),
+                        PrimaryButton(
+                            label: 'إضافة وحدات للعمارة',
+                            icon: Icons.add_home_outlined,
+                            onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                    builder: (_) => _PropertyEditorScreen(
+                                        parent: property)))),
+                      ],
+                    ])),
+                const SizedBox(height: 12),
+                for (final unit in property.units)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: AppCard(
+                        onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                                builder: (_) => _UnitDetailsScreen(
+                                    propertyId: property.id,
+                                    initialUnit: unit))),
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _UnitPreview(unit: unit),
+                              const SizedBox(height: 6),
+                              Text(
+                                  'رقم ${unit.number} • ${unit.area.replaceAll(' م²', '')} م²',
+                                  style: TextStyle(
+                                      color: context.ejarzTheme.muted)),
+                              if (unit.data != null)
+                                Text(
+                                    '${unit.data!.roomsCount} غرف • ${unit.data!.hallsCount} صالات • ${unit.data!.bathroomsCount} دورات مياه'),
+                            ])),
+                  ),
+              ],
               const SizedBox(height: 14),
               const SectionTitle(
                 title: 'بيانات العقار',
@@ -1328,108 +1696,113 @@ class _PropertyDetailsScreen extends StatelessWidget {
                 ),
               ]),
               const SizedBox(height: 14),
-              const SectionTitle(
-                title: 'بيانات الوحدة',
-                icon: Icons.home_outlined,
-              ),
-              const SizedBox(height: 8),
-              _propertyDetailsCard(<Widget>[
-                _PropertyDetailLine(
-                  label: 'رقم الوحدة',
-                  value: details == null ? '-' : _dash(details.unitNumber),
+              if (!property.managesUnits) ...<Widget>[
+                const SectionTitle(
+                  title: 'بيانات الوحدة',
+                  icon: Icons.home_outlined,
                 ),
-                _PropertyDetailLine(
-                  label: 'اسم الوحدة',
-                  value: details == null ? '-' : _dash(details.unitName),
+                const SizedBox(height: 8),
+                _propertyDetailsCard(<Widget>[
+                  _PropertyDetailLine(
+                    label: 'رقم الوحدة',
+                    value: details == null ? '-' : _dash(details.unitNumber),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'اسم الوحدة',
+                    value: details == null ? '-' : _dash(details.unitName),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'نوع الوحدة',
+                    value: details == null ? '-' : _dash(details.unitType),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'الدور',
+                    value: details == null ? '-' : _dash(details.floor),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'المساحة',
+                    value: details == null ? '-' : '${_dash(details.area)} م²',
+                  ),
+                  _PropertyDetailLine(
+                    label: 'حالة التأثيث',
+                    value:
+                        details == null ? '-' : _dash(details.furnishingStatus),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'عدد الغرف',
+                    value: details == null ? '-' : _dash(details.roomsCount),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'دورات المياه',
+                    value:
+                        details == null ? '-' : _dash(details.bathroomsCount),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'الصالات',
+                    value: details == null ? '-' : _dash(details.hallsCount),
+                  ),
+                ]),
+                const SizedBox(height: 14),
+                const SectionTitle(
+                  title: 'المرافق والعدادات',
+                  icon: Icons.tune_outlined,
                 ),
-                _PropertyDetailLine(
-                  label: 'نوع الوحدة',
-                  value: details == null ? '-' : _dash(details.unitType),
-                ),
-                _PropertyDetailLine(
-                  label: 'الدور',
-                  value: details == null ? '-' : _dash(details.floor),
-                ),
-                _PropertyDetailLine(
-                  label: 'المساحة',
-                  value: details == null ? '-' : '${_dash(details.area)} م²',
-                ),
-                _PropertyDetailLine(
-                  label: 'حالة التأثيث',
-                  value:
-                      details == null ? '-' : _dash(details.furnishingStatus),
-                ),
-                _PropertyDetailLine(
-                  label: 'عدد الغرف',
-                  value: details == null ? '-' : _dash(details.roomsCount),
-                ),
-                _PropertyDetailLine(
-                  label: 'دورات المياه',
-                  value: details == null ? '-' : _dash(details.bathroomsCount),
-                ),
-                _PropertyDetailLine(
-                  label: 'الصالات',
-                  value: details == null ? '-' : _dash(details.hallsCount),
-                ),
-              ]),
-              const SizedBox(height: 14),
-              const SectionTitle(
-                title: 'المرافق والعدادات',
-                icon: Icons.tune_outlined,
-              ),
-              const SizedBox(height: 8),
-              _propertyDetailsCard(<Widget>[
-                _PropertyDetailLine(
-                  label: 'المطبخ',
-                  value: details == null ? '-' : _yesNo(details.kitchen),
-                ),
-                _PropertyDetailLine(
-                  label: 'غرفة خادمة',
-                  value: details == null ? '-' : _yesNo(details.maidRoom),
-                ),
-                _PropertyDetailLine(
-                  label: 'مخزن',
-                  value: details == null ? '-' : _yesNo(details.storage),
-                ),
-                _PropertyDetailLine(
-                  label: 'مجلس',
-                  value: details == null ? '-' : _yesNo(details.majlis),
-                ),
-                _PropertyDetailLine(
-                  label: 'موقف خاص',
-                  value: details == null ? '-' : _yesNo(details.privateParking),
-                ),
-                _PropertyDetailLine(
-                  label: 'تكييف شباك',
-                  value: details == null ? '-' : _yesNo(details.acWindow),
-                ),
-                _PropertyDetailLine(
-                  label: 'تكييف سبليت',
-                  value: details == null ? '-' : _yesNo(details.acSplit),
-                ),
-                _PropertyDetailLine(
-                  label: 'تكييف مركزي',
-                  value: details == null ? '-' : _yesNo(details.acCentral),
-                ),
-                _PropertyDetailLine(
-                  label: 'عداد الكهرباء',
-                  value:
-                      details == null ? '-' : _dash(details.electricityMeter),
-                ),
-                _PropertyDetailLine(
-                  label: 'عداد المياه',
-                  value: details == null ? '-' : _dash(details.waterMeter),
-                ),
-                _PropertyDetailLine(
-                  label: 'عداد الغاز',
-                  value: details == null ? '-' : _dash(details.gasMeter),
-                ),
-                _PropertyDetailLine(
-                  label: 'الملاحظات',
-                  value: details == null ? '-' : _dash(details.notes),
-                ),
-              ]),
-              if (property.units.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 8),
+                _propertyDetailsCard(<Widget>[
+                  _PropertyDetailLine(
+                    label: 'المطبخ',
+                    value: details == null ? '-' : _yesNo(details.kitchen),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'غرفة خادمة',
+                    value: details == null ? '-' : _yesNo(details.maidRoom),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'مخزن',
+                    value: details == null ? '-' : _yesNo(details.storage),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'مجلس',
+                    value: details == null ? '-' : _yesNo(details.majlis),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'موقف خاص',
+                    value:
+                        details == null ? '-' : _yesNo(details.privateParking),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'تكييف شباك',
+                    value: details == null ? '-' : _yesNo(details.acWindow),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'تكييف سبليت',
+                    value: details == null ? '-' : _yesNo(details.acSplit),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'تكييف مركزي',
+                    value: details == null ? '-' : _yesNo(details.acCentral),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'عداد الكهرباء',
+                    value:
+                        details == null ? '-' : _dash(details.electricityMeter),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'عداد المياه',
+                    value: details == null ? '-' : _dash(details.waterMeter),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'عداد الغاز',
+                    value: details == null ? '-' : _dash(details.gasMeter),
+                  ),
+                  _PropertyDetailLine(
+                    label: 'الملاحظات',
+                    value: details == null ? '-' : _dash(details.notes),
+                  ),
+                ]),
+              ],
+              if (!property.managesUnits &&
+                  property.units.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 14),
                 const SectionTitle(title: 'الوحدات المرتبطة'),
                 const SizedBox(height: 8),
@@ -1467,6 +1840,101 @@ class _PropertyDetailsScreen extends StatelessWidget {
   }
 
   String _yesNo(bool value) => value ? 'نعم' : 'لا';
+}
+
+class _UnitDetailsScreen extends StatelessWidget {
+  final String propertyId;
+  final UnitRecord initialUnit;
+  const _UnitDetailsScreen(
+      {required this.propertyId, required this.initialUnit});
+
+  @override
+  Widget build(BuildContext context) {
+    final property =
+        AppScope.of(context).properties.firstWhere((p) => p.id == propertyId);
+    final unit = property.units.firstWhere(
+        (u) => u.number == initialUnit.number,
+        orElse: () => initialUnit);
+    final data = unit.detailsFor(property);
+    final features = <String, bool>{
+      'مطبخ': data.kitchen,
+      'مجلس': data.majlis,
+      'غرفة خادمة': data.maidRoom,
+      'مخزن': data.storage,
+      'موقف خاص': data.privateParking,
+      'تكييف شباك': data.acWindow,
+      'تكييف سبليت': data.acSplit,
+      'تكييف مركزي': data.acCentral,
+    };
+    final values = <String, String>{
+      'العمارة': property.title,
+      'العنوان': data.displayAddress,
+      'رقم الوحدة': unit.number,
+      'اسم الوحدة': unit.name,
+      'نوع الوحدة': unit.type,
+      'رقم الدور': unit.floor,
+      'المساحة': '${data.area} م²',
+      'عدد الغرف': data.roomsCount,
+      'الصالات': data.hallsCount,
+      'دورات المياه': data.bathroomsCount,
+      'التأثيث': data.furnishingStatus,
+      for (final feature in features.entries)
+        feature.key: feature.value ? 'نعم' : 'لا',
+      'عداد الكهرباء': data.electricityMeter,
+      'عداد المياه': data.waterMeter,
+      'عداد الغاز': data.gasMeter,
+      'الملاحظات': data.notes,
+    };
+    return Scaffold(
+      appBar: AppBar(title: Text('تفاصيل ${unit.name}')),
+      body: SafeArea(
+          child: ResponsiveContent(
+              maxWidth: 700,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AppPageHeader(
+                      title: unit.name,
+                      subtitle: property.title,
+                      icon: Icons.home_work_outlined),
+                  const SizedBox(height: 14),
+                  AppCard(
+                      child: Column(children: [
+                    for (final entry in values.entries)
+                      _PropertyDetailLine(
+                          label: entry.key,
+                          value: entry.value.trim().isEmpty
+                              ? 'غير مضاف'
+                              : entry.value)
+                  ])),
+                  const SizedBox(height: 16),
+                  SecondaryButton(
+                      label: 'تعديل بيانات الوحدة',
+                      icon: Icons.edit_outlined,
+                      onPressed: () => Navigator.of(context).pushReplacement(
+                          MaterialPageRoute<void>(
+                              builder: (_) => _PropertyEditorScreen(
+                                  parent: property, unit: unit)))),
+                  if (unit.isAvailable) ...[
+                    const SizedBox(height: 10),
+                    PrimaryButton(
+                        label: 'إنشاء عقد لهذه الوحدة',
+                        icon: Icons.note_add_outlined,
+                        onPressed: () {
+                          final draft = createContractDraftForType(
+                              property.usage.contains('تجاري')
+                                  ? ContractType.commercial
+                                  : ContractType.residential)
+                            ..property = data;
+                          Navigator.of(context).push(MaterialPageRoute<void>(
+                              builder: (_) => CreateContractScreen(
+                                  initialDraft: draft, initialStep: 0)));
+                        }),
+                  ],
+                ],
+              ))),
+    );
+  }
 }
 
 class _PropertyMeta extends StatelessWidget {
@@ -1559,7 +2027,7 @@ class _UnitPreview extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Text(
-            unit.status,
+            unit.isAvailable ? 'متاحة' : unit.status,
             style: TextStyle(
               color: unit.status.contains('متاح')
                   ? AppColors.success
@@ -2367,6 +2835,14 @@ class ProfileScreen extends StatelessWidget {
                       ),
                     ),
                   ),
+                  const Divider(),
+                  _ProfileRow(
+                      icon: Icons.receipt_long_outlined,
+                      title: 'أسعار العقود',
+                      subtitle: 'السكني والتجاري • شاملة رسوم إيجار',
+                      onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                              builder: (_) => const PricingScreen()))),
                   const Divider(),
                   _ProfileRow(
                     icon: Icons.notifications_none_rounded,

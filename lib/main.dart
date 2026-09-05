@@ -15,6 +15,7 @@ import 'screens/auth.dart';
 import 'screens/contracts.dart';
 import 'screens/create_contract.dart';
 import 'screens/home.dart';
+import 'screens/pricing.dart';
 import 'screens/wallet_profile.dart';
 import 'widgets/common.dart';
 
@@ -388,11 +389,51 @@ class _MainShell extends StatelessWidget {
         }
       },
       child: Scaffold(
+        drawer: Drawer(
+            child: SafeArea(
+                child: ListView(padding: const EdgeInsets.all(12), children: [
+          const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('عقود برو',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800))),
+          ListTile(
+              leading: const Icon(Icons.receipt_long_outlined),
+              title: const Text('أسعار العقود'),
+              subtitle: const Text('شاملة رسوم منصة إيجار'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => const PricingScreen()));
+              }),
+          ListTile(
+              leading: const Icon(Icons.apartment_outlined),
+              title: const Text('عقاراتي'),
+              onTap: () {
+                Navigator.of(context).pop();
+                controller.setNavigationIndex(2);
+              }),
+          ListTile(
+              leading: const Icon(Icons.support_agent_outlined),
+              title: const Text('الدعم الفني'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => const SupportScreen()));
+              }),
+          ListTile(
+              leading: const Icon(Icons.policy_outlined),
+              title: const Text('الشروط والسياسات'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => const LegalScreen()));
+              }),
+        ]))),
         body: Builder(
           builder: (shellContext) {
             final pages = <Widget>[
               HomeScreen(
-                onMenu: () {},
+                onMenu: () => Scaffold.of(shellContext).openDrawer(),
                 onNotifications: () => _openNotifications(shellContext),
                 onCreate: () => _openCreateContract(shellContext),
                 onContracts: () => controller.setNavigationIndex(1),

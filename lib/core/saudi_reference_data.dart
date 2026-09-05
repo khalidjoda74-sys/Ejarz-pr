@@ -42,8 +42,11 @@ class SaudiReferenceCatalog {
         _districtsByCity = districtsByCity;
 
   static Future<SaudiReferenceCatalog>? _cachedCatalog;
+  static SaudiReferenceCatalog? _loadedCatalog;
 
   static Future<SaudiReferenceCatalog> load() {
+    final loaded = _loadedCatalog;
+    if (loaded != null) return SynchronousFuture(loaded);
     return _cachedCatalog ??= _loadFromAssets();
   }
 
@@ -96,7 +99,7 @@ class SaudiReferenceCatalog {
       }
     }
 
-    return SaudiReferenceCatalog._(
+    return _loadedCatalog = SaudiReferenceCatalog._(
       cities: List<SaudiCity>.unmodifiable(cities),
       districts: List<SaudiDistrict>.unmodifiable(districts),
       citiesById: citiesById,

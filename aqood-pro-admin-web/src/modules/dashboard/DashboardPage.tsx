@@ -52,8 +52,8 @@ export function DashboardPage() {
       <Kpi title="النواقص" value={summary.missingData} hint="بانتظار العميل" tone="red" />
       <Kpi title="مكتملة" value={summary.completed} hint="authenticated" tone="green" />
       <Kpi title="إجمالي الرسوم" value={formatCurrency(summary.totalFees)} hint="حسب العقود المكتملة/المعتمدة" />
-      <Kpi title="رسوم منصة إيجار" value={formatCurrency(summary.ejarPlatformFees)} hint="299 ريال لكل عقد" tone="gold" />
-      <Kpi title="عمولة عقود برو" value={formatCurrency(summary.serviceFees)} hint="99 ريال لكل عقد" tone="gold" />
+      <Kpi title="رسوم العقود السكنية" value={formatCurrency(summary.residentialFees)} hint="الإجمالي المسجل للعقود السكنية" tone="gold" />
+      <Kpi title="رسوم العقود التجارية" value={formatCurrency(summary.commercialFees)} hint="الإجمالي المسجل للعقود التجارية" tone="gold" />
     </div>
 
     <div className="grid-2">

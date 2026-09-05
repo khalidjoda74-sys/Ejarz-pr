@@ -768,7 +768,7 @@ exports.notifyContractUpdated = onDocumentUpdated(
     } else if (status === "awaitingPayment") {
       message = {
         title: "طلبك جاهز للدفع",
-        body: `الطلب رقم ${requestNumber} جاهز للدفع. المبلغ المستحق ${money(after.totalPayable || after.totalFees || 398)} ر.س.`,
+        body: `الطلب رقم ${requestNumber} جاهز للدفع. المبلغ المستحق ${money(after.totalFees || after.totalPayable || 0)} ر.س.`,
         type: "paymentRequired",
         priority: "high",
       };

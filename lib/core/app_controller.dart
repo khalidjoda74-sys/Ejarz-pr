@@ -11,6 +11,8 @@ import 'demo_config.dart';
 import 'firebase_repository.dart';
 import 'legal_links.dart';
 import 'models.dart';
+import 'contract_pricing.dart';
+import 'property_management.dart';
 import 'notification_service.dart';
 
 class _PendingContractSubmission {
@@ -33,11 +35,17 @@ class _PendingPropertySave {
   final String localId;
   final PropertyData data;
   final String propertyId;
+  final List<UnitRecord>? unitEdits;
+  final List<UnitRecord>? expectedUnits;
+  final String replacingNumber;
 
   const _PendingPropertySave({
     required this.localId,
     required this.data,
     required this.propertyId,
+    this.unitEdits,
+    this.expectedUnits,
+    this.replacingNumber = '',
   });
 }
 
@@ -495,6 +503,10 @@ class AppController extends ChangeNotifier {
           uid: user.uid,
           data: pending.data,
           propertyId: pending.propertyId,
+          unitEdits: pending.unitEdits,
+          initialUnits: pending.unitEdits,
+          expectedUnits: pending.expectedUnits,
+          replacingNumber: pending.replacingNumber,
         );
         _pendingPropertySaves.remove(pending);
         final index =
@@ -670,11 +682,11 @@ class AppController extends ChangeNotifier {
         tenantName: 'سالم الدوسري',
         date: '2026/07/04',
         status: ContractStatus.awaitingPayment,
-        totalFees: 398,
+        totalFees: 299,
         timeline: _timelineFor(ContractStatus.awaitingPayment),
         paymentStatus: 'pending',
         customerVisibleNote:
-            'طلبك جاهز للدفع. إجمالي الرسوم 398 ريال: رسوم منصة إيجار 299 ريال وعمولة عقود برو 99 ريال.',
+            'طلبك جاهز للدفع. إجمالي الرسوم 299 ريال، شاملة رسوم منصة إيجار.',
       ),
       ContractRecord(
         id: 'EJ-DEMO-1008',
@@ -688,7 +700,7 @@ class AppController extends ChangeNotifier {
         tenantName: 'مؤسسة الإبداع',
         date: '2026/07/03',
         status: ContractStatus.missingData,
-        totalFees: 398,
+        totalFees: 799,
         timeline: _timelineFor(ContractStatus.missingData),
         customerVisibleNote:
             'توجد ملاحظات مراجعة على بعض البيانات والمستندات. يرجى الاطلاع عليها وإرسال التصحيح المطلوب.',
@@ -725,7 +737,7 @@ class AppController extends ChangeNotifier {
         tenantName: 'خالد الشهري',
         date: '2026/07/02',
         status: ContractStatus.processing,
-        totalFees: 398,
+        totalFees: 299,
         timeline: _timelineFor(ContractStatus.processing),
         paymentStatus: 'paid',
         customerVisibleNote: 'تم استلام الدفع، وطلبك الآن قيد المعالجة.',
@@ -742,7 +754,7 @@ class AppController extends ChangeNotifier {
         tenantName: 'مؤسسة الخليج للتجزئة',
         date: '2026/06/30',
         status: ContractStatus.processing,
-        totalFees: 398,
+        totalFees: 799,
         timeline: _timelineFor(ContractStatus.processing),
         paymentStatus: 'paid',
         customerVisibleNote: 'طلبك قيد المعالجة لدى الفريق.',
@@ -759,7 +771,7 @@ class AppController extends ChangeNotifier {
         tenantName: 'عبدالعزيز المطيري',
         date: '2026/06/29',
         status: ContractStatus.processing,
-        totalFees: 398,
+        totalFees: 299,
         timeline: _timelineFor(ContractStatus.processing),
         paymentStatus: 'paid',
         customerVisibleNote: 'طلبك قيد المعالجة لدى الفريق.',
@@ -776,7 +788,7 @@ class AppController extends ChangeNotifier {
         tenantName: 'شركة الإمداد السريع',
         date: '2026/06/27',
         status: ContractStatus.processing,
-        totalFees: 398,
+        totalFees: 799,
         timeline: _timelineFor(ContractStatus.processing),
         customerVisibleNote: 'طلبك قيد المعالجة لدى الفريق.',
       ),
@@ -792,7 +804,7 @@ class AppController extends ChangeNotifier {
         tenantName: 'ناصر القحطاني',
         date: '2026/06/24',
         status: ContractStatus.authenticated,
-        totalFees: 398,
+        totalFees: 299,
         timeline: _timelineFor(ContractStatus.authenticated),
         finalPdfUrl: kDemoContractPdfUrl,
         finalPdfFileName: kDemoContractPdfFileName,
@@ -841,7 +853,7 @@ class AppController extends ChangeNotifier {
         tenantName: 'مؤسسة الخليج',
         date: '2026/06/20',
         status: ContractStatus.rejected,
-        totalFees: 398,
+        totalFees: 799,
         timeline: _timelineFor(ContractStatus.rejected),
         rejectionReason:
             'تعذر التحقق من تطابق بيانات وثيقة الملكية مع بيانات المؤجر.',
@@ -1038,7 +1050,7 @@ class AppController extends ChangeNotifier {
         actionPayload: const <String, dynamic>{'contractId': 'EJ-DEMO-1009'},
         title: 'طلبك جاهز للدفع',
         body:
-            'تمت مراجعة عقد شقة الياسمين. ادفع إجمالي الرسوم 398 ريال للمتابعة.',
+            'تمت مراجعة عقد شقة الياسمين. ادفع إجمالي الرسوم 299 ريال للمتابعة.',
         time: 'منذ 8 دقائق',
         icon: Icons.payments_outlined,
         color: const Color(0xFF9D6C00),
@@ -1113,21 +1125,14 @@ class AppController extends ChangeNotifier {
         title: 'رسوم عقد شقة الروضة',
         reference: 'PAY-DEMO-1003',
         date: '2026/06/24',
-        amount: 398,
-        contractId: 'EJ-DEMO-1003',
-      ),
-      WalletTransaction(
-        title: 'عمولة عقود برو',
-        reference: 'PAY-DEMO-1003-SVC',
-        date: '2026/06/24',
-        amount: 99,
+        amount: 299,
         contractId: 'EJ-DEMO-1003',
       ),
       WalletTransaction(
         title: 'استرداد طلب تجريبي مغلق',
         reference: 'REF-DEMO-1001',
         date: '2026/06/20',
-        amount: 398,
+        amount: 299,
         incoming: true,
         contractId: 'EJ-DEMO-1001',
       ),
@@ -1135,7 +1140,14 @@ class AppController extends ChangeNotifier {
   }
 
   static ContractRecord _withDemoDetails(ContractRecord contract) {
+    final price = ContractPrice.calculate(
+        commercial: contract.type == ContractType.commercial,
+        years: contract.type == ContractType.commercial ? 2 : 1);
     return contract.copyWith(
+      totalFees: contract.status == ContractStatus.draft ? 0 : price.total,
+      customerVisibleNote: contract.status == ContractStatus.awaitingPayment
+          ? 'طلبك جاهز للدفع. إجمالي الرسوم ${price.total.toStringAsFixed(0)} ريال، شاملة رسوم منصة إيجار.'
+          : contract.customerVisibleNote,
       contractDetails: _demoContractDetails(contract),
       partyDetails: _demoPartyDetails(contract),
       propertyDetails: _demoPropertyDetails(contract),
@@ -1158,6 +1170,8 @@ class AppController extends ChangeNotifier {
 
   static Map<String, String> _demoContractDetails(ContractRecord contract) {
     final commercial = contract.type == ContractType.commercial;
+    final price = ContractPrice.calculate(
+        commercial: commercial, years: commercial ? 2 : 1);
     return <String, String>{
       'مدة العقد': commercial ? '24 شهرًا' : '12 شهرًا',
       'تاريخ بداية العقد': commercial ? '2026/08/01' : '2026/07/15',
@@ -1166,8 +1180,10 @@ class AppController extends ChangeNotifier {
       'دورة السداد': commercial ? 'نصف سنوي' : 'ربع سنوي',
       'عدد الدفعات': commercial ? '4 دفعات' : '4 دفعات',
       'قناة السداد': 'سداد / إيجار',
-      'رسوم منصة إيجار': '299 ريال',
-      'عمولة عقود برو': '99 ريال',
+      'رسوم السنة الأولى': '${price.firstYear.toStringAsFixed(0)} ريال',
+      'رسوم المدة الإضافية':
+          '${price.additionalAmount.toStringAsFixed(0)} ريال',
+      'شمول الأسعار': ContractPrice.inclusionNote,
       'الضمان': commercial ? '10,000 ريال' : '4,000 ريال',
       'الشروط الإضافية': commercial
           ? 'يتحمل المستأجر رسوم التشغيل الداخلي والصيانة الاستهلاكية.'
@@ -1353,8 +1369,7 @@ class AppController extends ChangeNotifier {
   int get availableUnits => properties.fold<int>(
         0,
         (total, property) =>
-            total +
-            property.units.where((unit) => unit.status.contains('متاح')).length,
+            total + property.units.where((unit) => unit.isAvailable).length,
       );
 
   void completeSplash() {
@@ -1703,20 +1718,47 @@ class AppController extends ChangeNotifier {
   Future<PropertyRecord> saveProperty(
     PropertyData data, {
     PropertyRecord? existing,
+    List<UnitRecord>? unitEdits,
+    String replacingNumber = '',
   }) async {
+    if (existing != null) {
+      existing = properties.firstWhere((p) => p.id == existing!.id,
+          orElse: () => existing!);
+    }
+    validatePropertyStructure(existing, data);
+    final units = data.rentalMode == 'units'
+        ? mergePropertyUnits(
+            current: existing?.units ?? const [],
+            additions: unitEdits ?? const [],
+            capacity: int.tryParse(data.totalUnits) ?? 1,
+            replacingNumber: replacingNumber,
+          )
+        : <UnitRecord>[
+            UnitRecord.fromData(data,
+                status: existing?.units.firstOrNull?.status ?? 'متاحة')
+          ];
     final user = FirebaseBootstrap.initialized
         ? FirebaseAuth.instance.currentUser
         : null;
     final repository = _repository;
     final existingId = existing?.id ?? '';
+    final priorPending = _pendingPropertySaves
+        .where((item) => item.localId == existingId)
+        .firstOrNull;
     if (repository != null && user != null) {
       try {
         final saved = await repository.saveProperty(
           uid: user.uid,
           data: data,
           propertyId: existingId.startsWith('PROP-') ? '' : existingId,
+          unitEdits: unitEdits,
+          replacingNumber: replacingNumber,
+          initialUnits: units,
+          expectedUnits: priorPending?.expectedUnits,
         );
-        final index = properties.indexWhere((item) => item.id == saved.id);
+        _pendingPropertySaves.removeWhere((item) => item.localId == existingId);
+        final index = properties
+            .indexWhere((item) => item.id == saved.id || item.id == existingId);
         if (index == -1) {
           properties.insert(0, saved);
         } else {
@@ -1729,6 +1771,7 @@ class AppController extends ChangeNotifier {
         notifyListeners();
         return saved;
       } catch (error) {
+        if (error is StateError || !_isConnectivityFailure(error)) rethrow;
         _handleServerOperationFailure(
           error,
           'تعذر حفظ العقار على الخادم. تم حفظه محليًا وسيتم رفعه لاحقًا.',
@@ -1736,9 +1779,10 @@ class AppController extends ChangeNotifier {
       }
     }
 
-    final local = _propertyRecordFromDraftData(
+    final local = managedPropertyRecord(
       data,
       existing?.id ?? 'PROP-${DateTime.now().millisecondsSinceEpoch}',
+      units,
     );
     final index = properties.indexWhere((item) => item.id == local.id);
     if (index == -1) {
@@ -1747,12 +1791,18 @@ class AppController extends ChangeNotifier {
       properties[index] = local;
     }
     if (!kEjarzLocalDemoMode) {
+      final previousPending = _pendingPropertySaves
+          .where((item) => item.localId == local.id)
+          .firstOrNull;
       _pendingPropertySaves.removeWhere((item) => item.localId == local.id);
       _pendingPropertySaves.add(
         _PendingPropertySave(
           localId: local.id,
           data: _clonePropertyData(data),
           propertyId: existingId.startsWith('PROP-') ? '' : existingId,
+          unitEdits: units,
+          expectedUnits: previousPending?.expectedUnits ?? existing?.units,
+          replacingNumber: '',
         ),
       );
       if (offlineMode) {
@@ -1761,35 +1811,6 @@ class AppController extends ChangeNotifier {
     }
     notifyListeners();
     return local;
-  }
-
-  PropertyRecord _propertyRecordFromDraftData(PropertyData data, String id) {
-    return PropertyRecord(
-      id: id,
-      title: data.buildingName.trim().isEmpty
-          ? data.propertyType
-          : data.buildingName.trim(),
-      city: data.city,
-      district:
-          data.district.trim().isEmpty ? 'غير محدد' : data.district.trim(),
-      type: data.propertyType,
-      usage: data.propertyUsage,
-      floors: int.tryParse(data.floorsCount) ?? 1,
-      totalUnits: int.tryParse(data.totalUnits) ?? 1,
-      units: <UnitRecord>[
-        UnitRecord(
-          number: data.unitNumber.trim().isEmpty ? '-' : data.unitNumber.trim(),
-          name: data.unitName.trim().isEmpty
-              ? data.unitType
-              : data.unitName.trim(),
-          type: data.unitType,
-          floor: data.floor.trim().isEmpty ? '-' : data.floor.trim(),
-          area: data.area.trim().isEmpty ? '-' : '${data.area} م²',
-          status: 'متاحة',
-        ),
-      ],
-      data: _clonePropertyData(data),
-    );
   }
 
   ContractDraft _cloneDraft(ContractDraft source) {
@@ -1899,6 +1920,8 @@ class AppController extends ChangeNotifier {
 
   PropertyData _clonePropertyData(PropertyData source) {
     return PropertyData(
+      rentalMode: source.rentalMode,
+      savedPropertyId: source.savedPropertyId,
       propertySource: source.propertySource,
       ownershipDocumentNumber: source.ownershipDocumentNumber,
       ownershipDocumentType: source.ownershipDocumentType,
@@ -2072,7 +2095,7 @@ class AppController extends ChangeNotifier {
     ];
     contracts[index] = contracts[index].copyWith(
       status: ContractStatus.authenticated,
-      totalFees: 398,
+      totalFees: contract.totalFees,
       timeline: updatedTimeline,
       customerVisibleNote:
           'تمت محاكاة الدفع ومعالجة الطلب تلقائيًا لأغراض العرض، وأصبح نموذج العقد التجريبي جاهزًا للمعاينة.',
@@ -2111,7 +2134,7 @@ class AppController extends ChangeNotifier {
         title: 'رسوم ${contract.title}',
         reference: result.providerReference,
         date: date,
-        amount: 398,
+        amount: contract.totalFees,
         contractId: contract.id,
       ),
     );
@@ -2293,6 +2316,7 @@ class AppController extends ChangeNotifier {
           totalUnits: int.tryParse(draft.property.totalUnits) ?? 1,
           units: <UnitRecord>[
             UnitRecord(
+              data: PropertyData.copyOf(draft.property),
               number: draft.property.unitNumber.trim().isEmpty
                   ? '-'
                   : draft.property.unitNumber.trim(),
@@ -2529,6 +2553,7 @@ class AppController extends ChangeNotifier {
           totalUnits: int.tryParse(draft.property.totalUnits) ?? 1,
           units: <UnitRecord>[
             UnitRecord(
+              data: PropertyData.copyOf(draft.property),
               number: draft.property.unitNumber,
               name: draft.property.unitName,
               type: draft.property.unitType,

@@ -1,4 +1,5 @@
 import { ColumnDef } from '@tanstack/react-table';
+import { contractAmount } from '@/lib/contractPricing';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -53,7 +54,7 @@ export function ContractsPage() {
     { accessorKey: 'status', header: 'الحالة', cell: ({ row }) => <StatusBadge status={row.original.status} /> },
     { accessorKey: 'contractType', header: 'نوع العقد', cell: ({ row }) => contractTypeText(row.original) },
     { accessorKey: 'city', header: 'المدينة', cell: ({ row }) => safeText(contractCity(row.original)) },
-    { accessorKey: 'totalPayable', header: 'المبلغ', cell: ({ row }) => formatCurrency(row.original.totalPayable ?? row.original.totalFees ?? 398) },
+    { accessorKey: 'totalPayable', header: 'المبلغ', cell: ({ row }) => formatCurrency(contractAmount(row.original)) },
     { accessorKey: 'createdAt', header: 'التاريخ', cell: ({ row }) => formatDate(row.original.createdAt) },
     { id: 'actions', header: 'فتح', cell: ({ row }) => <Link to={`/contracts/${row.original.id}`}><Button variant="soft">تفاصيل</Button></Link> },
   ], []);
@@ -66,7 +67,7 @@ export function ContractsPage() {
       customerPhone: contract.customerPhone,
       status: statusLabel(contract.status),
       city: contractCity(contract),
-      totalPayable: contract.totalPayable ?? contract.totalFees ?? 398,
+      totalPayable: contractAmount(contract),
       createdAt: formatDate(contract.createdAt),
     })));
   }
@@ -90,7 +91,7 @@ export function ContractsPage() {
       columns={columns}
       mobileTitle={(row) => requestNo(row)}
       mobileSubtitle={(row) => `${safeText(row.customerName)} · ${safeText(row.customerPhone, '')}`}
-      mobileMeta={(row) => <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><StatusBadge status={row.status} /><Badge tone="gold">{formatCurrency(row.totalPayable ?? row.totalFees ?? 398)}</Badge><Badge tone="gray">{formatDate(row.createdAt)}</Badge></div>}
+      mobileMeta={(row) => <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><StatusBadge status={row.status} /><Badge tone="gold">{formatCurrency(contractAmount(row))}</Badge><Badge tone="gray">{formatDate(row.createdAt)}</Badge></div>}
       mobileActions={(row) => <Link to={`/contracts/${row.id}`}><Button variant="soft">فتح</Button></Link>}
     />}
   </div>;

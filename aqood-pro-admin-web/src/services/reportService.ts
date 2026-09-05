@@ -1,14 +1,15 @@
 import { Contract, CONTRACT_STATUSES } from '@/types/contract';
 import { AppUser } from '@/types/user';
 import { formatShortDate, inRange, isToday } from '@/lib/dates';
-import { safeNumber } from '@/lib/formatters';
+import { contractAmount } from '@/lib/contractPricing';
 
 export function summarizeContracts(contracts: Contract[]) {
   const byStatus = CONTRACT_STATUSES.map((status) => ({ status, count: contracts.filter((contract) => contract.status === status).length }));
   const completed = contracts.filter((contract) => contract.status === 'authenticated');
   const today = contracts.filter((contract) => isToday(contract.createdAt));
   const revenueBase = contracts.filter((contract) => ['processing', 'missingData', 'authenticated'].includes(contract.status));
-  const totalFees = revenueBase.reduce((sum, contract) => sum + safeNumber(contract.totalPayable ?? contract.totalFees ?? 398), 0);
+  const totalFees = revenueBase.reduce((sum, contract) => sum + contractAmount(contract), 0);
+  const commercialFees = revenueBase.filter((contract) => ['commercial', 'تجاري'].includes(String(contract.draftData?.type ?? contract.type ?? contract.contractType))).reduce((sum, contract) => sum + contractAmount(contract), 0);
   return {
     total: contracts.length,
     today: today.length,
@@ -16,8 +17,8 @@ export function summarizeContracts(contracts: Contract[]) {
     missingData: contracts.filter((contract) => contract.status === 'missingData').length,
     completed: completed.length,
     totalFees,
-    ejarPlatformFees: revenueBase.length * 299,
-    serviceFees: revenueBase.length * 99,
+    commercialFees,
+    residentialFees: totalFees - commercialFees,
     byStatus,
     byCity: Object.entries(contracts.reduce<Record<string, number>>((acc, contract) => {
       const city = contract.city || (contract.property as Record<string, unknown> | undefined)?.city || 'غير محدد';

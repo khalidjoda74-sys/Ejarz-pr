@@ -38,10 +38,8 @@ service cloud.firestore {
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.isDemo == true &&
         request.resource.data.provider == 'demo' &&
-        request.resource.data.amount == 398 &&
+        matchesContractAmount() &&
         request.resource.data.currency == 'SAR' &&
-        request.resource.data.ejarPlatformFee == 299 &&
-        request.resource.data.serviceFee == 99 &&
         request.resource.data.status in ['paid', 'failed'] &&
         request.resource.data.keys().hasAll([
           'uid',
@@ -64,7 +62,7 @@ service cloud.firestore {
         request.resource.data.uid == request.auth.uid &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.isDemo == true &&
-        request.resource.data.amount == 398 &&
+        matchesContractAmount() &&
         request.resource.data.currency == 'SAR' &&
         request.resource.data.status == 'paid' &&
         request.resource.data.keys().hasAll([
@@ -88,6 +86,8 @@ service cloud.firestore {
         resource.data.status == 'awaitingPayment' &&
         request.resource.data.status == 'authenticated' &&
         request.resource.data.paymentStatus == 'paid' &&
+        request.resource.data.totalFees == resource.data.totalFees &&
+        request.resource.data.totalPayable == resource.data.totalFees &&
         request.resource.data.isDemoPayment == true &&
         request.resource.data.finalPdfUrl == 'https://ejarz-pro-20260624.web.app/demo/ejarz-demo-contract.pdf' &&
         request.resource.data.finalPdfFileName == 'ejarz-demo-contract.pdf' &&
@@ -170,7 +170,7 @@ service cloud.firestore {
       return ownsContractUpdate() &&
         resource.data.status == 'draft' &&
         request.resource.data.status == 'awaitingPayment' &&
-        request.resource.data.totalFees == 398 &&
+        validContractPrice(request.resource.data) &&
         request.resource.data.paymentStatus == 'pending' &&
         request.resource.data.finalPdfUrl == resource.data.finalPdfUrl &&
         request.resource.data.missingRequirements == resource.data.missingRequirements &&
@@ -212,8 +212,33 @@ service cloud.firestore {
     function isCustomerContractCreate() {
       return signedIn() &&
         request.resource.data.uid == request.auth.uid &&
+        (request.resource.data.status == 'draft' || validContractPrice(request.resource.data)) &&
         (request.resource.data.status in ['draft', 'awaitingPayment'] ||
           isDemoContractCreate());
+    }
+
+    function matchesContractAmount() {
+      let contract = getAfter(/databases/$(database)/documents/contracts/$(request.resource.data.contractId)).data;
+      return contract.uid == request.auth.uid &&
+        contract.totalFees > 0 && request.resource.data.amount == contract.totalFees;
+    }
+
+    function validContractPrice(data) {
+      let financial = data.draftData.financial;
+      let term = data.draftData.duration;
+      let years = int(term.years);
+      let months = int(term.months);
+      let days = int(term.days);
+      let extra = years + months / 12.0 + days / 365.0 - 1;
+      let expected = (data.type == 'commercial' ? 399 : 299) +
+        (extra > 0 ? extra * (data.type == 'commercial' ? 400 : 125) : 0);
+      return financial.get('pricingVersion', 1) == 1
+        ? data.totalFees == 398
+        : financial.pricingVersion == 2 && data.type in ['residential', 'commercial'] &&
+          financial.totalPayable == data.totalFees &&
+          years >= 0 && years <= 50 && months >= 0 && months <= 11 && days >= 0 && days <= 30 &&
+          (years + months + days > 0) &&
+          data.totalFees >= expected - 0.0051 && data.totalFees <= expected + 0.0051;
     }
 
     function isAdminRejectedTransition() {
@@ -265,6 +290,10 @@ service cloud.firestore {
             !request.resource.data.diff(resource.data).affectedKeys()
               .hasAny([
                 'status',
+                'totalFees',
+                'totalPayable',
+                'paymentStatus',
+                'draftData',
                 'adminAssignedTo',
                 'adminInternalNotes',
                 'customerVisibleNote',

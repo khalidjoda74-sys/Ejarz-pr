@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../core/app_controller.dart';
 import '../core/contract_validators.dart';
+import '../core/contract_pricing.dart';
 import '../core/draft_resume_policy.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
@@ -154,6 +155,20 @@ DateTime? _parseAppDate(String value) {
 
 const String _newPropertySource = 'إضافة عقار جديد';
 
+String _contractEndDate(ContractDraft draft) {
+  final start = _parseAppDate(draft.startDate);
+  if (start == null) return '';
+  final years = int.tryParse(draft.durationYears) ?? 0;
+  final months = int.tryParse(draft.durationMonths) ?? 0;
+  final days = int.tryParse(draft.durationDays) ?? 0;
+  final monthIndex = start.month + months;
+  final year = start.year + years + (monthIndex - 1) ~/ 12;
+  final month = (monthIndex - 1) % 12 + 1;
+  final day = start.day.clamp(1, DateTime(year, month + 1, 0).day);
+  final end = DateTime(year, month, day).add(Duration(days: days - 1));
+  return '${end.year}/${end.month.toString().padLeft(2, '0')}/${end.day.toString().padLeft(2, '0')}';
+}
+
 class _SavedPropertyOption {
   final String label;
   final PropertyRecord property;
@@ -203,7 +218,7 @@ String _savedPropertyLabel(PropertyRecord property) {
   final district = _cleanPropertyText(data?.district ?? property.district);
   return <String>[
     title.isEmpty ? property.type : title,
-    if (unitNumber.isNotEmpty) 'وحدة $unitNumber',
+    if (!property.managesUnits && unitNumber.isNotEmpty) 'وحدة $unitNumber',
     if (district.isNotEmpty) district,
   ].join(' - ');
 }
@@ -224,6 +239,8 @@ PropertyData _propertyDataFromRecord(
   final data = property.data;
   if (data != null) {
     return PropertyData(
+      savedPropertyId: property.id,
+      rentalMode: data.rentalMode,
       propertySource: sourceLabel,
       ownershipDocumentNumber: data.ownershipDocumentNumber,
       ownershipDocumentType: data.ownershipDocumentType,
@@ -240,8 +257,8 @@ PropertyData _propertyDataFromRecord(
       additionalNumber: data.additionalNumber,
       postalCode: data.postalCode,
       buildingName: data.buildingName,
-      unitNumber: data.unitNumber,
-      unitName: data.unitName,
+      unitNumber: property.managesUnits ? '' : data.unitNumber,
+      unitName: property.managesUnits ? '' : data.unitName,
       unitType: data.unitType,
       floor: data.floor,
       area: data.area,
@@ -266,6 +283,8 @@ PropertyData _propertyDataFromRecord(
   final unit = property.units.isEmpty ? null : property.units.first;
   final unitType = _cleanPropertyText(unit?.type ?? '');
   return PropertyData(
+    savedPropertyId: property.id,
+    rentalMode: property.data?.rentalMode ?? '',
     propertySource: sourceLabel,
     propertyUsage: property.usage,
     propertyType: property.type,
@@ -524,8 +543,9 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
         'تاريخ وثيقة الملكية غير مستقبلي',
       if (_requiredPositiveInt(property.floorsCount, min: 1, max: 200) != null)
         'عدد الأدوار',
-      if (_requiredPositiveInt(property.unitsPerFloor, min: 1, max: 200) !=
-          null)
+      if (property.unitsPerFloor.trim().isNotEmpty &&
+          _requiredPositiveInt(property.unitsPerFloor, min: 1, max: 200) !=
+              null)
         'عدد الوحدات في كل دور',
       if (_requiredPositiveInt(property.totalUnits, min: 1, max: 9999) != null)
         'إجمالي عدد الوحدات',
@@ -561,12 +581,22 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   }
 
   bool _validatePropertyStep() {
+    final saved = AppScope.of(context, listen: false)
+        .properties
+        .where((p) => p.id == _draft.property.savedPropertyId)
+        .firstOrNull;
+    if (saved?.managesUnits == true &&
+        !saved!.units.any((u) => u.number == _draft.property.unitNumber)) {
+      showAppSnackBar(context, 'اختر وحدة مسجلة داخل العمارة أولًا.');
+      return false;
+    }
     final missing = _missingPropertyFields();
     if (missing.isEmpty) {
       final floors = int.tryParse(_draft.property.floorsCount) ?? 0;
       final unitsPerFloor = int.tryParse(_draft.property.unitsPerFloor) ?? 0;
       final totalUnits = int.tryParse(_draft.property.totalUnits) ?? 0;
-      if (floors > 0 &&
+      if (_draft.property.rentalMode != 'whole' &&
+          floors > 0 &&
           unitsPerFloor > 0 &&
           totalUnits > 0 &&
           totalUnits < floors * unitsPerFloor) {
@@ -597,6 +627,10 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
       if (_isBlank(_draft.endDate)) 'تاريخ نهاية العقد',
       if (startDate != null && endDate != null && endDate.isBefore(startDate))
         'تاريخ نهاية العقد بعد تاريخ البداية',
+      if (startDate != null &&
+          endDate != null &&
+          _draft.endDate != _contractEndDate(_draft))
+        'تاريخ نهاية العقد مطابق للمدة المحددة',
       if (years <= 0 && months <= 0 && days <= 0) 'مدة العقد',
       if (months < 0 || months > 11) 'عدد الأشهر من 0 إلى 11',
       if (days < 0 || days > 30) 'عدد الأيام من 0 إلى 30',
@@ -1144,6 +1178,14 @@ class _ContractTypeCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 7),
+              Text(
+                  '${ContractPrice.calculate(commercial: type == ContractType.commercial).firstYear.toStringAsFixed(0)} ريال للسنة الأولى',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: context.sp(11))),
+              const SizedBox(height: 7),
               Container(width: 28, height: 2, color: AppColors.secondary),
             ],
           ),
@@ -1274,8 +1316,12 @@ class _PropertyStep extends StatelessWidget {
     final selectedSource = property.propertySource.trim().isEmpty
         ? _newPropertySource
         : property.propertySource;
+    final savedProperty = controller.properties
+        .where((p) => p.id == property.savedPropertyId)
+        .firstOrNull;
     return Column(
-      key: ValueKey<String>('property-step-$selectedSource'),
+      key: ValueKey<String>(
+          'property-step-$selectedSource-${property.unitNumber}'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         const AppPageHeader(
@@ -1317,6 +1363,35 @@ class _PropertyStep extends StatelessWidget {
                 onChanged();
               },
             ),
+            if (savedProperty?.managesUnits == true)
+              AppDropdownField(
+                label: 'الوحدة داخل العمارة',
+                value: property.unitNumber.isEmpty
+                    ? 'اختر الوحدة'
+                    : '${property.unitNumber} • ${property.unitName}',
+                items: [
+                  'اختر الوحدة',
+                  for (final unit in savedProperty!.units)
+                    if (unit.isAvailable || unit.number == property.unitNumber)
+                      '${unit.number} • ${unit.name}'
+                ],
+                required: true,
+                icon: Icons.meeting_room_outlined,
+                onChanged: (value) {
+                  final unit = savedProperty.units
+                      .where((u) => '${u.number} • ${u.name}' == value)
+                      .firstOrNull;
+                  if (unit == null) return;
+                  draft.property = unit.detailsFor(savedProperty)
+                    ..propertySource = selectedSource;
+                  onChanged();
+                },
+              ),
+            if (savedProperty?.managesUnits == true &&
+                savedProperty!.units.isEmpty)
+              const InfoBanner(
+                  text:
+                      'لم تُضف وحدات لهذه العمارة بعد. أضف الوحدات من «عقاراتي» ثم اختر الوحدة المطلوبة.'),
             AppDropdownField(
               label: 'استخدام العقار',
               value: property.propertyUsage,
@@ -1373,10 +1448,11 @@ class _PropertyStep extends StatelessWidget {
                 FilteringTextInputFormatter.digitsOnly,
                 LengthLimitingTextInputFormatter(3),
               ],
-              required: true,
+              required: false,
               onChanged: (value) => property.unitsPerFloor = value,
-              validator: (value) =>
-                  _requiredPositiveInt(value, min: 1, max: 200),
+              validator: (value) => value?.trim().isEmpty == true
+                  ? null
+                  : _requiredPositiveInt(value, min: 1, max: 200),
             ),
             AppTextField(
               label: 'إجمالي عدد الوحدات',
@@ -2444,14 +2520,14 @@ class _FinancialStep extends StatelessWidget {
                 onChanged();
               },
             ),
-            DateField(
+            AppTextField(
               label: 'تاريخ نهاية العقد',
-              value: draft.endDate,
+              hint: 'يُحسب تلقائيًا من البداية والمدة',
+              key: ValueKey('contract-end-${draft.endDate}'),
+              initialValue: draft.endDate,
+              readOnly: true,
               required: true,
-              onChanged: (value) {
-                draft.endDate = value;
-                onChanged();
-              },
+              icon: Icons.event_available_outlined,
             ),
             AppTextField(
               label: 'عدد السنوات',
@@ -2944,13 +3020,21 @@ class _FinancialSummaryCard extends StatelessWidget {
               label: 'رسوم العقد',
               icon: Icons.support_agent_outlined,
               value: null),
-          _AmountRow(label: 'رسوم منصة إيجار', value: draft.officialFee),
-          _AmountRow(label: 'عمولة عقود برو', value: draft.serviceFee),
+          _AmountRow(
+              label: 'السنة الأولى • ${draft.type.label}',
+              value: draft.price.firstYear),
+          _AmountRow(
+              label: 'المدة الإضافية', value: draft.price.additionalAmount),
+          const SizedBox(height: 8),
+          const Text(ContractPrice.inclusionNote),
           const Divider(height: 22),
           _AmountRow(
               label: 'الإجمالي المستحق الآن',
               value: draft.totalPayable,
               strong: true),
+          const SizedBox(height: 8),
+          const Text(ContractPrice.durationNote,
+              style: TextStyle(fontSize: 12)),
         ],
       ),
     );
@@ -3326,6 +3410,13 @@ class _ReviewStep extends StatelessWidget {
                 label: 'الإجمالي المستحق الآن',
                 value: _money(draft.totalPayable),
                 strong: true),
+            _ReviewLine(
+                label: 'رسوم السنة الأولى',
+                value: _money(draft.price.firstYear)),
+            _ReviewLine(
+                label: 'رسوم المدة الإضافية',
+                value: _money(draft.price.additionalAmount)),
+            const Text(ContractPrice.inclusionNote),
           ],
         ),
         const SizedBox(height: 14),
