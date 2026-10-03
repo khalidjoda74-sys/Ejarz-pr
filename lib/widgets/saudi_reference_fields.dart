@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/saudi_reference_data.dart';
 import '../core/theme.dart';
 import 'common.dart';
+import 'assistant_field_scope.dart';
 
 class SaudiLocationFields extends StatefulWidget {
   final String city;
@@ -245,78 +246,82 @@ class _LookupFormField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FormField<String>(
-      key: ValueKey<String>('$label::$value::$loading'),
-      initialValue: value,
-      validator:
-          required && value.trim().isEmpty ? (_) => 'هذا الحقل مطلوب' : null,
-      builder: (field) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          RichText(
-            text: TextSpan(
-              style: TextStyle(
-                color: context.ejarzTheme.text,
-                fontSize: context.sp(12.3),
-                fontWeight: FontWeight.w700,
-              ),
-              children: <InlineSpan>[
-                TextSpan(text: label),
-                if (required)
-                  const TextSpan(
-                    text: ' *',
-                    style: TextStyle(color: AppColors.red),
+    return AssistantFieldDecoration(
+        label: label,
+        child: FormField<String>(
+          key: ValueKey<String>('$label::$value::$loading'),
+          initialValue: value,
+          validator: required && value.trim().isEmpty
+              ? (_) => 'هذا الحقل مطلوب'
+              : null,
+          builder: (field) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              RichText(
+                text: TextSpan(
+                  style: TextStyle(
+                    fontFamily: AppTheme.fontFamily,
+                    color: context.ejarzTheme.text,
+                    fontSize: context.sp(12.3),
+                    fontWeight: FontWeight.w700,
                   ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 5),
-          InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(14),
-            child: InputDecorator(
-              isEmpty: value.trim().isEmpty,
-              decoration: InputDecoration(
-                errorText: field.errorText,
-                suffixIcon: loading
-                    ? const Padding(
-                        padding: EdgeInsets.all(14),
-                        child: SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      )
-                    : Icon(icon, size: 19),
-              ),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      value.trim().isEmpty ? hint : value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: value.trim().isEmpty
-                            ? context.ejarzTheme.muted
-                            : context.ejarzTheme.text,
-                        fontWeight: FontWeight.w700,
+                  children: <InlineSpan>[
+                    TextSpan(text: label),
+                    if (required)
+                      const TextSpan(
+                        text: ' *',
+                        style: TextStyle(color: AppColors.red),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: onTap == null
-                        ? context.ejarzTheme.border
-                        : context.ejarzTheme.muted,
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+              const SizedBox(height: 5),
+              InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(14),
+                child: InputDecorator(
+                  isEmpty: value.trim().isEmpty,
+                  decoration: InputDecoration(
+                    errorText: field.errorText,
+                    suffixIcon: loading
+                        ? const Padding(
+                            padding: EdgeInsets.all(14),
+                            child: SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : Icon(icon, size: 19),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          value.trim().isEmpty ? hint : value,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: value.trim().isEmpty
+                                ? context.ejarzTheme.muted
+                                : context.ejarzTheme.text,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: onTap == null
+                            ? context.ejarzTheme.border
+                            : context.ejarzTheme.muted,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-    );
+        ));
   }
 }
 

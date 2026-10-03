@@ -15,8 +15,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 class AppNotificationService {
-  static final GlobalKey<NavigatorState> navigatorKey =
-      GlobalKey<NavigatorState>();
+  static GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
@@ -36,6 +35,10 @@ class AppNotificationService {
 
   static void deferNotificationTap(Map<String, dynamic> data) {
     _pendingNotificationTap = Map<String, dynamic>.from(data);
+  }
+
+  static void clearPendingNotificationTap() {
+    _pendingNotificationTap = null;
   }
 
   static void flushPendingNotificationTap() {
@@ -62,12 +65,13 @@ class AppNotificationService {
 
   static Future<void> _initialize() async {
     if (_initialized) return;
+    if (kIsWeb && !await FirebaseMessaging.instance.isSupported()) return;
 
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
     if (!kIsWeb) {
       const initialization = InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        android: AndroidInitializationSettings('@drawable/ic_stat_aqdak'),
         iOS: DarwinInitializationSettings(),
       );
       await _localNotifications.initialize(
@@ -141,7 +145,20 @@ class AppNotificationService {
 
   static Future<String?> currentToken() async {
     try {
-      return await FirebaseMessaging.instance.getToken();
+      const vapidKey = String.fromEnvironment('FIREBASE_WEB_VAPID_KEY');
+      if (kIsWeb) {
+        if (!await FirebaseMessaging.instance.isSupported()) return null;
+        final settings =
+            await FirebaseMessaging.instance.getNotificationSettings();
+        // getToken can implicitly ask for browser permission. Only proceed
+        // after the user has already granted it through Settings.
+        if (settings.authorizationStatus != AuthorizationStatus.authorized) {
+          return null;
+        }
+      }
+      return await FirebaseMessaging.instance.getToken(
+        vapidKey: kIsWeb && vapidKey.isNotEmpty ? vapidKey : null,
+      );
     } catch (_) {
       return null;
     }
@@ -172,7 +189,7 @@ class AppNotificationService {
           _androidChannel.id,
           _androidChannel.name,
           channelDescription: _androidChannel.description,
-          icon: '@mipmap/ic_launcher',
+          icon: '@drawable/ic_stat_aqdak',
           importance: Importance.high,
           priority: Priority.high,
         ),

@@ -1,4 +1,4 @@
-package sa.aqoodpro.app
+package sa.aqdak.app
 
 import io.flutter.embedding.android.FlutterActivity
 

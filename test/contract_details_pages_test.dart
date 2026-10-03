@@ -1,12 +1,32 @@
-import 'package:aqood_pro/core/app_controller.dart';
-import 'package:aqood_pro/core/models.dart';
-import 'package:aqood_pro/core/theme.dart';
-import 'package:aqood_pro/screens/contracts.dart';
+import 'package:aqdak/core/app_controller.dart';
+import 'package:aqdak/core/models.dart';
+import 'package:aqdak/core/theme.dart';
+import 'package:aqdak/screens/contracts.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('final contract shows Ejar number beneath download action',
+      (tester) async {
+    final contract = _richContract().copyWith(
+      status: ContractStatus.authenticated,
+      finalPdfUrl: 'https://example.test/contract.pdf',
+      ejarContractNumber: 'EJAR-2026-12345',
+    );
+    await _pumpContract(tester, const Size(390, 844), contract);
+    expect(find.text('تحميل العقد'), findsOneWidget);
+    expect(find.text('رقم عقد منصة إيجار'), findsOneWidget);
+    expect(find.text('EJAR-2026-12345'), findsOneWidget);
+
+    await _pumpContract(
+      tester,
+      const Size(390, 844),
+      contract.copyWith(ejarContractNumber: ' '),
+    );
+    expect(find.text('رقم عقد منصة إيجار'), findsNothing);
+  });
+
   testWidgets('all contract detail entries open full-screen pages',
       (tester) async {
     await _pumpContract(tester, const Size(390, 844), _richContract());
@@ -83,7 +103,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('empty attachment data keeps fallback files and download action',
+  testWidgets('empty attachment data does not offer a demo document in production',
       (tester) async {
     await _pumpContract(
       tester,
@@ -102,7 +122,10 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.download_rounded).first);
     await tester.pump();
-    expect(find.text('بدأ تنزيل lessor_id.pdf'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('مرفق تجريبي'), findsNothing);
+    expect(find.text('فتح النموذج'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('draft shows resume action and professional empty states',
@@ -249,7 +272,7 @@ void main() {
     expect(find.byIcon(Icons.download_rounded), findsNothing);
   });
 
-  testWidgets('contract support opens the form and demo submission is blocked',
+  testWidgets('contract support opens the form and unauthenticated submission fails',
       (tester) async {
     final contract = _richContract();
     final controller = await _pumpContract(
@@ -278,10 +301,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('الدعم الفني غير متاح في النسخة التجريبية'),
+      find.text('تعذر إرسال طلب الدعم الآن'),
       findsOneWidget,
     );
-    expect(find.text('حسنًا، فهمت'), findsOneWidget);
     expect(controller.supportTickets, isEmpty);
     expect(tester.takeException(), isNull);
   });

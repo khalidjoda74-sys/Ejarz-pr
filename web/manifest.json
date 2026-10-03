@@ -1,12 +1,14 @@
 {
-    "name": "عقود برو",
-    "short_name": "عقود برو",
+    "name": "عقدك",
+    "short_name": "عقدك",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#08795D",
     "theme_color": "#08795D",
     "description": "تطبيق لإدارة وتجهيز ومتابعة عقود الإيجار العقارية.",
-    "orientation": "portrait-primary",
+    "orientation": "any",
+    "lang": "ar",
+    "dir": "rtl",
     "prefer_related_applications": false,
     "icons": [
         {

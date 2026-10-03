@@ -1,9 +1,9 @@
 {
-  "appName": "عقود برو",
+  "appName": "عقدك",
   "lastUpdated": "2026-07-22",
-  "privacyPolicyUrl": "https://ejarz-pro-20260624.web.app/legal/privacy",
-  "termsOfUseUrl": "https://ejarz-pro-20260624.web.app/legal/terms",
-  "refundPolicyUrl": "https://ejarz-pro-20260624.web.app/legal/refund",
-  "accountDeletionUrl": "https://ejarz-pro-20260624.web.app/legal/account-deletion",
-  "supportEmail": "Info@aqoodpro.sa"
+  "privacyPolicyUrl": "https://app.aqdak.sa/legal/privacy",
+  "termsOfUseUrl": "https://app.aqdak.sa/legal/terms",
+  "refundPolicyUrl": "https://app.aqdak.sa/legal/refund",
+  "accountDeletionUrl": "https://app.aqdak.sa/legal/account-deletion",
+  "supportEmail": "Info@aqdak.sa"
 }

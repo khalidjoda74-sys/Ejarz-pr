@@ -1,7 +1,7 @@
-import 'package:aqood_pro/core/app_controller.dart';
-import 'package:aqood_pro/core/firebase_repository.dart';
-import 'package:aqood_pro/core/models.dart';
-import 'package:aqood_pro/core/property_management.dart';
+import 'package:aqdak/core/app_controller.dart';
+import 'package:aqdak/core/firebase_repository.dart';
+import 'package:aqdak/core/models.dart';
+import 'package:aqdak/core/property_management.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 PropertyData buildingData() => PropertyData(

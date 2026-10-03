@@ -3,12 +3,22 @@ import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'contract_pricing.dart';
+import 'runtime_config.dart';
 
 import 'missing_requirement_policy.dart';
 import 'models.dart';
 import 'property_management.dart';
 
 class FirebaseRepository {
+  void _assertAccount(String uid) {
+    if (FirebaseAuth.instance.currentUser?.uid != uid) {
+      throw StateError('تغير الحساب، أعد المحاولة');
+    }
+  }
+
   static const int _demoPropertyDataVersion = 2;
 
   FirebaseRepository({
@@ -24,57 +34,6 @@ class FirebaseRepository {
     await firestore.collection('users').doc(uid).get(
           const GetOptions(source: Source.server),
         );
-  }
-
-  Stream<bool> watchUserOnlineState(String uid) {
-    return firestore
-        .collection('users')
-        .doc(uid)
-        .snapshots(includeMetadataChanges: true)
-        .map((snapshot) => !snapshot.metadata.isFromCache)
-        .distinct();
-  }
-
-  Stream<List<ContractRecord>> watchUserContracts(String uid) {
-    return firestore
-        .collection('contracts')
-        .where('uid', isEqualTo: uid)
-        .orderBy('updatedAt', descending: true)
-        .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => contractFromDoc(doc)).toList());
-  }
-
-  Stream<List<PropertyRecord>> watchUserProperties(String uid) {
-    return firestore
-        .collection('properties')
-        .where('uid', isEqualTo: uid)
-        .orderBy('updatedAt', descending: true)
-        .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => propertyFromDoc(doc)).toList());
-  }
-
-  Stream<List<NotificationItem>> watchUserNotifications(String uid) {
-    return firestore
-        .collection('notifications')
-        .where('uid', isEqualTo: uid)
-        .orderBy('createdAt', descending: true)
-        .limit(80)
-        .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => notificationFromDoc(doc)).toList());
-  }
-
-  Stream<List<SupportTicketRecord>> watchUserSupportTickets(String uid) {
-    return firestore
-        .collection('supportTickets')
-        .where('uid', isEqualTo: uid)
-        .orderBy('updatedAt', descending: true)
-        .limit(50)
-        .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => supportTicketFromDoc(doc)).toList());
   }
 
   Future<void> ensureUserProfile({
@@ -205,26 +164,39 @@ class FirebaseRepository {
   }
 
   Future<void> markAllNotificationsRead(String uid) async {
-    final snapshot = await firestore
+    final query = firestore
         .collection('notifications')
         .where('uid', isEqualTo: uid)
         .where('read', isEqualTo: false)
-        .limit(100)
-        .get();
-    final batch = firestore.batch();
-    for (final doc in snapshot.docs) {
-      batch.update(doc.reference, <String, Object?>{
-        'read': true,
-        'readAt': FieldValue.serverTimestamp(),
-      });
+        .orderBy(FieldPath.documentId);
+    QueryDocumentSnapshot<Map<String, dynamic>>? cursor;
+    while (true) {
+      final page = cursor == null ? query : query.startAfterDocument(cursor);
+      final snapshot = await page.limit(100).get();
+      if (snapshot.docs.isEmpty) return;
+      final batch = firestore.batch();
+      for (final doc in snapshot.docs) {
+        batch.update(doc.reference, <String, Object?>{
+          'read': true,
+          'readAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+      if (snapshot.docs.length < 100) return;
+      cursor = snapshot.docs.last;
     }
-    await batch.commit();
   }
 
   Future<ContractRecord?> fetchContract(String contractId) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return null;
     final snapshot =
         await firestore.collection('contracts').doc(contractId).get();
-    if (!snapshot.exists) return null;
+    if (!snapshot.exists ||
+        snapshot.data()?['uid'] != uid ||
+        FirebaseAuth.instance.currentUser?.uid != uid) {
+      return null;
+    }
     return contractFromDoc(snapshot);
   }
 
@@ -255,6 +227,9 @@ class FirebaseRepository {
       'message': message.trim(),
       'status': 'open',
       'priority': priority,
+      'isDemo': (await firestore.collection('users').doc(uid).get())
+              .data()?['isDemoUser'] ==
+          true,
       'replies': <Map<String, Object?>>[],
       'customerName': customerName,
       'customerPhone': customerPhone,
@@ -271,6 +246,7 @@ class FirebaseRepository {
     required MissingRequirement requirement,
     required String message,
     String fileName = '',
+    String fileUrl = '',
   }) async {
     final ref = firestore
         .collection('contracts')
@@ -286,6 +262,7 @@ class FirebaseRepository {
       'missingRequirementTitle': requirement.title,
       'message': message.trim(),
       'fileName': fileName.trim(),
+      'fileUrl': fileUrl,
       'status': 'pendingAdminReview',
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -305,56 +282,46 @@ class FirebaseRepository {
     final ref = propertyId.trim().isEmpty
         ? firestore.collection('properties').doc()
         : firestore.collection('properties').doc(propertyId.trim());
-    late PropertyRecord saved;
-    await firestore.runTransaction((transaction) async {
-      // A new document has no owner yet, so security rules cannot permit a read.
-      final snapshot =
-          propertyId.trim().isEmpty ? null : await transaction.get(ref);
-      final previous = snapshot == null || !snapshot.exists
-          ? null
-          : propertyFromDoc(snapshot);
-      validatePropertyStructure(previous, data);
-      if (expectedUnits != null &&
-          previous != null &&
-          jsonEncode(previous.units.map(unitRecordToMap).toList()) !=
-              jsonEncode(expectedUnits.map(unitRecordToMap).toList())) {
-        throw StateError(
-            'تم تعديل وحدات العمارة من جهاز آخر. حدّث البيانات قبل الحفظ.');
-      }
-      final units = data.rentalMode == 'units'
-          ? expectedUnits != null || previous == null
-              ? (initialUnits ?? unitEdits ?? const <UnitRecord>[])
-              : mergePropertyUnits(
-                  current: previous.units,
-                  additions: unitEdits ?? const [],
-                  capacity: int.tryParse(data.totalUnits) ?? 1,
-                  replacingNumber: replacingNumber,
-                )
-          : <UnitRecord>[
-              UnitRecord.fromData(data,
-                  status: previous?.units.firstOrNull?.status ?? 'متاحة')
-            ];
-      saved = managedPropertyRecord(
-        PropertyData.copyOf(data)
-          ..savedPropertyId = ref.id
-          ..propertySource = 'عقار محفوظ',
-        ref.id,
-        units,
-      );
-      final payload = propertyDocumentData(
-        propertyId: ref.id,
-        uid: uid,
-        contractId: '',
-        data: data,
-        units: units,
-      );
-      if (snapshot?.exists == true) {
-        payload.remove('createdAt');
-        payload.remove('sourceContractId');
-      }
-      transaction.set(ref, payload, SetOptions(merge: true));
+    final snapshot = propertyId.trim().isEmpty
+        ? null
+        : await ref.get(const GetOptions(source: Source.server));
+    final previous =
+        snapshot == null || !snapshot.exists ? null : propertyFromDoc(snapshot);
+    validatePropertyStructure(previous, data);
+    if (expectedUnits != null &&
+        previous != null &&
+        jsonEncode(previous.units.map(unitRecordToMap).toList()) !=
+            jsonEncode(expectedUnits.map(unitRecordToMap).toList())) {
+      throw StateError('تغيرت وحدات العقار. حدّث البيانات قبل الحفظ.');
+    }
+    final units = data.rentalMode == 'units'
+        ? (expectedUnits != null || previous == null
+            ? (initialUnits ?? unitEdits ?? const <UnitRecord>[])
+            : mergePropertyUnits(
+                current: previous.units,
+                additions: unitEdits ?? const [],
+                capacity: int.tryParse(data.totalUnits) ?? 1,
+                replacingNumber: replacingNumber))
+        : <UnitRecord>[
+            UnitRecord.fromData(data,
+                status: previous?.units.firstOrNull?.status ?? 'متاحة')
+          ];
+    final payload = propertyDocumentData(
+        propertyId: ref.id, uid: uid, contractId: '', data: data, units: units)
+      ..remove('createdAt')
+      ..remove('updatedAt');
+    _assertAccount(uid);
+    await FirebaseFunctions.instanceFor(region: 'us-central1')
+        .httpsCallable('saveCustomerProperty')
+        .call({
+      'id': ref.id,
+      'expectedUid': uid,
+      'values': payload,
+      'expectedUpdatedAt':
+          (snapshot?.data()?['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch
     });
-    return saved;
+    return propertyFromDoc(
+        await ref.get(const GetOptions(source: Source.server)));
   }
 
   Future<void> ensureDemoUserData({
@@ -370,6 +337,8 @@ class FirebaseRepository {
       email: customerEmail,
       isDemo: true,
     );
+    final profile = await firestore.doc('users/$uid').get();
+    if ((profile.data()?['demoSeedVersion'] as num? ?? 0) >= 3) return;
     final existing = await firestore
         .collection('contracts')
         .where('uid', isEqualTo: uid)
@@ -384,6 +353,9 @@ class FirebaseRepository {
         customerPhone: customerPhone,
         customerEmail: customerEmail,
       );
+      await firestore
+          .doc('users/$uid')
+          .set({'demoSeedVersion': 3}, SetOptions(merge: true));
       return;
     }
 
@@ -616,6 +588,9 @@ class FirebaseRepository {
       }
     }
     await batch.commit();
+    await firestore
+        .doc('users/$uid')
+        .set({'demoSeedVersion': 3}, SetOptions(merge: true));
   }
 
   Future<void> _ensureRejectedDemoContract({
@@ -627,13 +602,11 @@ class FirebaseRepository {
     final existing = await firestore
         .collection('contracts')
         .where('uid', isEqualTo: uid)
+        .where('isDemo', isEqualTo: true)
+        .where('status', isEqualTo: ContractStatus.rejected.name)
+        .limit(1)
         .get();
-    final hasRejectedDemo = existing.docs.any((doc) {
-      final data = doc.data();
-      return data['isDemo'] == true &&
-          data['status'] == ContractStatus.rejected.name;
-    });
-    if (hasRejectedDemo) return;
+    if (existing.docs.isNotEmpty) return;
 
     const reason =
         'تعذر التحقق من تطابق بيانات وثيقة الملكية مع بيانات المؤجر.';
@@ -717,114 +690,120 @@ class FirebaseRepository {
   }
 
   Future<void> _upgradeExistingDemoProperties(String uid) async {
-    final snapshot = await firestore
-        .collection('properties')
-        .where('uid', isEqualTo: uid)
-        .get();
-    final batch = firestore.batch();
-    var hasUpdates = false;
+    QueryDocumentSnapshot<Map<String, dynamic>>? cursor;
     var demoIndex = 0;
+    while (true) {
+      var query = firestore
+          .collection('properties')
+          .where('uid', isEqualTo: uid)
+          .orderBy(FieldPath.documentId);
+      if (cursor != null) query = query.startAfterDocument(cursor);
+      final snapshot = await query.limit(200).get();
+      final batch = firestore.batch();
+      var hasUpdates = false;
+      for (final doc in snapshot.docs) {
+        final raw = doc.data();
+        if (raw['isDemo'] != true) continue;
+        final currentVersion = (raw['demoDataVersion'] as num?)?.toInt() ?? 0;
+        if (currentVersion >= _demoPropertyDataVersion) continue;
 
-    for (final doc in snapshot.docs) {
-      final raw = doc.data();
-      if (raw['isDemo'] != true) continue;
-      final currentVersion = (raw['demoDataVersion'] as num?)?.toInt() ?? 0;
-      if (currentVersion >= _demoPropertyDataVersion) continue;
+        final source = propertyFromDoc(doc).data!;
+        final suffix = (demoIndex + 1).toString().padLeft(2, '0');
+        final unitNumber = _demoText(source.unitNumber, '${demoIndex + 1}');
+        final unitType = _demoText(source.unitType, 'شقة');
+        final completed = PropertyData(
+          propertySource: 'عقار محفوظ',
+          ownershipDocumentNumber: _demoText(
+            source.ownershipDocumentNumber,
+            '3101234567$suffix',
+          ),
+          ownershipDocumentType: _demoText(
+            source.ownershipDocumentType,
+            'صك إلكتروني',
+          ),
+          ownershipDocumentDate: _demoText(
+            source.ownershipDocumentDate,
+            '2026/06/20',
+          ),
+          propertyUsage: _demoText(source.propertyUsage, 'سكن عوائل'),
+          propertyType: _demoText(source.propertyType, 'عمارة'),
+          floorsCount: _demoPositiveInteger(source.floorsCount, '1'),
+          unitsPerFloor: _demoPositiveInteger(source.unitsPerFloor, '1'),
+          totalUnits: _demoPositiveInteger(source.totalUnits, '1'),
+          city: _demoText(source.city, 'الرياض'),
+          district: _demoText(source.district, 'حي النموذج'),
+          street: _demoText(source.street, 'طريق الملك فهد'),
+          buildingNumber: _demoFixedDigits(
+            source.buildingNumber,
+            4,
+            '78$suffix',
+          ),
+          additionalNumber: _demoFixedDigits(
+            source.additionalNumber,
+            4,
+            '45$suffix',
+          ),
+          postalCode: _demoFixedDigits(
+            source.postalCode,
+            5,
+            '133$suffix',
+          ),
+          buildingName: _demoText(source.buildingName, 'عقار تجريبي'),
+          unitNumber: unitNumber,
+          unitName: _demoText(source.unitName, '$unitType $unitNumber'),
+          unitType: unitType,
+          floor: _demoText(source.floor, '1'),
+          area: _demoPositiveNumber(source.area, '120'),
+          roomsCount: _demoPositiveInteger(source.roomsCount, '3'),
+          bathroomsCount: _demoPositiveInteger(source.bathroomsCount, '2'),
+          hallsCount: _demoNonNegativeInteger(source.hallsCount, '1'),
+          maidRoom: source.maidRoom,
+          kitchen: source.kitchen,
+          storage: source.storage,
+          majlis: source.majlis,
+          furnishingStatus: _demoText(
+            source.furnishingStatus,
+            'غير مؤثثة',
+          ),
+          acWindow: source.acWindow,
+          acSplit: source.acSplit || (!source.acWindow && !source.acCentral),
+          acCentral: source.acCentral,
+          privateParking: source.privateParking,
+          electricityMeter: _demoPositiveInteger(
+            source.electricityMeter,
+            '7002001$suffix',
+          ),
+          waterMeter: _demoPositiveInteger(
+            source.waterMeter,
+            '7102001$suffix',
+          ),
+          gasMeter: _demoPositiveInteger(
+            source.gasMeter,
+            '7202001$suffix',
+          ),
+          notes: _demoText(
+            source.notes,
+            'بيانات عقار مكتملة للعرض في النسخة التجريبية.',
+          ),
+        );
+        final payload = propertyDocumentData(
+          propertyId: doc.id,
+          uid: uid,
+          contractId: _textFromAny(raw['sourceContractId']),
+          data: completed,
+        )
+          ..remove('createdAt')
+          ..['isDemo'] = true
+          ..['demoDataVersion'] = _demoPropertyDataVersion;
+        batch.set(doc.reference, payload, SetOptions(merge: true));
+        hasUpdates = true;
+        demoIndex++;
+      }
 
-      final source = propertyFromDoc(doc).data!;
-      final suffix = (demoIndex + 1).toString().padLeft(2, '0');
-      final unitNumber = _demoText(source.unitNumber, '${demoIndex + 1}');
-      final unitType = _demoText(source.unitType, 'شقة');
-      final completed = PropertyData(
-        propertySource: 'عقار محفوظ',
-        ownershipDocumentNumber: _demoText(
-          source.ownershipDocumentNumber,
-          '3101234567$suffix',
-        ),
-        ownershipDocumentType: _demoText(
-          source.ownershipDocumentType,
-          'صك إلكتروني',
-        ),
-        ownershipDocumentDate: _demoText(
-          source.ownershipDocumentDate,
-          '2026/06/20',
-        ),
-        propertyUsage: _demoText(source.propertyUsage, 'سكن عوائل'),
-        propertyType: _demoText(source.propertyType, 'عمارة'),
-        floorsCount: _demoPositiveInteger(source.floorsCount, '1'),
-        unitsPerFloor: _demoPositiveInteger(source.unitsPerFloor, '1'),
-        totalUnits: _demoPositiveInteger(source.totalUnits, '1'),
-        city: _demoText(source.city, 'الرياض'),
-        district: _demoText(source.district, 'حي النموذج'),
-        street: _demoText(source.street, 'طريق الملك فهد'),
-        buildingNumber: _demoFixedDigits(
-          source.buildingNumber,
-          4,
-          '78$suffix',
-        ),
-        additionalNumber: _demoFixedDigits(
-          source.additionalNumber,
-          4,
-          '45$suffix',
-        ),
-        postalCode: _demoFixedDigits(
-          source.postalCode,
-          5,
-          '133$suffix',
-        ),
-        buildingName: _demoText(source.buildingName, 'عقار تجريبي'),
-        unitNumber: unitNumber,
-        unitName: _demoText(source.unitName, '$unitType $unitNumber'),
-        unitType: unitType,
-        floor: _demoText(source.floor, '1'),
-        area: _demoPositiveNumber(source.area, '120'),
-        roomsCount: _demoPositiveInteger(source.roomsCount, '3'),
-        bathroomsCount: _demoPositiveInteger(source.bathroomsCount, '2'),
-        hallsCount: _demoNonNegativeInteger(source.hallsCount, '1'),
-        maidRoom: source.maidRoom,
-        kitchen: source.kitchen,
-        storage: source.storage,
-        majlis: source.majlis,
-        furnishingStatus: _demoText(
-          source.furnishingStatus,
-          'غير مؤثثة',
-        ),
-        acWindow: source.acWindow,
-        acSplit: source.acSplit || (!source.acWindow && !source.acCentral),
-        acCentral: source.acCentral,
-        privateParking: source.privateParking,
-        electricityMeter: _demoPositiveInteger(
-          source.electricityMeter,
-          '7002001$suffix',
-        ),
-        waterMeter: _demoPositiveInteger(
-          source.waterMeter,
-          '7102001$suffix',
-        ),
-        gasMeter: _demoPositiveInteger(
-          source.gasMeter,
-          '7202001$suffix',
-        ),
-        notes: _demoText(
-          source.notes,
-          'بيانات عقار مكتملة للعرض في النسخة التجريبية.',
-        ),
-      );
-      final payload = propertyDocumentData(
-        propertyId: doc.id,
-        uid: uid,
-        contractId: _textFromAny(raw['sourceContractId']),
-        data: completed,
-      )
-        ..remove('createdAt')
-        ..['isDemo'] = true
-        ..['demoDataVersion'] = _demoPropertyDataVersion;
-      batch.set(doc.reference, payload, SetOptions(merge: true));
-      hasUpdates = true;
-      demoIndex++;
+      if (hasUpdates) await batch.commit();
+      if (snapshot.docs.length < 200) break;
+      cursor = snapshot.docs.last;
     }
-
-    if (hasUpdates) await batch.commit();
   }
 
   static String _demoText(String value, String fallback) {
@@ -1073,6 +1052,50 @@ class FirebaseRepository {
     String existingDraftId = '',
     DraftProgress progress = const DraftProgress(),
   }) async {
+    _assertAccount(uid);
+    if (status == ContractStatus.awaitingPayment) {
+      final contractId = existingDraftId.trim().isNotEmpty
+          ? existingDraftId.trim()
+          : draft.submissionId.isNotEmpty
+              ? draft.submissionId
+              : firestore.collection('contracts').doc().id;
+      draft.submissionId = contractId;
+      final property = propertyDocumentData(
+          propertyId: '',
+          uid: uid,
+          contractId: contractId,
+          data: draft.property)
+        ..remove('createdAt')
+        ..remove('updatedAt');
+      await FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('submitCustomerContract')
+          .call({
+        'contractId': contractId,
+        'expectedUid': uid,
+        'draft': draftToMap(draft),
+        'expectedAmount': draft.totalPayable,
+        'progress': draftProgressToMap(progress),
+        if (draft.property.propertySource.trim() == 'إضافة عقار جديد')
+          'property': property,
+        'presentation': {
+          'title': draft.title,
+          'propertySummary': draft.property.displayAddress,
+          'propertyTitle': draft.property.buildingName,
+          'city': draft.property.city,
+          'district': draft.property.district,
+          'lessorSummary': draft.lessor.displayName,
+          'tenantSummary': draft.tenant.displayName,
+          'contractDetails': contractDetailsFromDraft(draft),
+          'partyDetails': partyDetailsFromDraft(draft),
+          'propertyDetails': propertyDetailsFromDraft(draft),
+          'attachmentFiles': attachmentFilesFromDraft(draft)
+        },
+      });
+      return contractFromDoc(await firestore
+          .collection('contracts')
+          .doc(contractId)
+          .get(const GetOptions(source: Source.server)));
+    }
     if (existingDraftId.trim().isNotEmpty) {
       return _updateExistingDraft(
         contractId: existingDraftId.trim(),
@@ -1478,7 +1501,10 @@ class FirebaseRepository {
   ContractRecord contractFromDoc(
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) {
-    final data = doc.data() ?? <String, dynamic>{};
+    return contractFromMap(doc.id, doc.data() ?? <String, dynamic>{});
+  }
+
+  ContractRecord contractFromMap(String id, Map<String, dynamic> data) {
     final type = _contractType((data['type'] as String?) ?? '');
     final status = _contractStatus((data['status'] as String?) ?? '');
     final customerVisibleNote = _readableText(data['customerVisibleNote'], '');
@@ -1500,8 +1526,8 @@ class FirebaseRepository {
     final defaultTitle =
         type == ContractType.commercial ? 'طلب عقد تجاري' : 'طلب عقد سكني';
     return ContractRecord(
-      id: doc.id,
-      requestNumber: (data['requestNumber'] as String?) ?? doc.id,
+      id: id,
+      requestNumber: (data['requestNumber'] as String?) ?? id,
       uid: (data['uid'] as String?) ?? '',
       type: type,
       role: _userRole((data['role'] as String?) ?? ''),
@@ -1519,6 +1545,7 @@ class FirebaseRepository {
       rejectedBy: _readableText(data['rejectedBy'], ''),
       finalPdfUrl: (data['finalPdfUrl'] as String?) ?? '',
       finalPdfFileName: _readableText(data['finalPdfFileName'], ''),
+      ejarContractNumber: _readableText(data['ejarContractNumber'], ''),
       missingRequirements:
           ((data['missingRequirements'] as List?) ?? const <Object?>[])
               .whereType<Map>()
@@ -1827,6 +1854,9 @@ class FirebaseRepository {
 
   static Map<String, Object?> draftToMap(ContractDraft draft) {
     return <String, Object?>{
+      'assistantFields': draft.assistantFields,
+      'submissionId': draft.submissionId,
+      'renewal': draft.renewal,
       'type': draft.type.name,
       'role': roleFromDraft(draft).name,
       'property': propertyDataToMap(draft.property),
@@ -1861,7 +1891,10 @@ class FirebaseRepository {
         'firstYearFee': draft.price.firstYear,
         'additionalDurationFee': draft.price.additionalAmount,
         'includesEjarFees': true,
-        'pricingVersion': 2,
+        'pricingVersion': 3,
+        'configRevision': AppRuntime.revision,
+        'additionalYearRate': draft.price.additionalYearRate,
+        'frozen': draft.frozenTotal != null,
         'totalPayable': draft.totalPayable,
       },
       'services': <String, Object?>{
@@ -1901,7 +1934,15 @@ class FirebaseRepository {
   static ContractDraft? draftFromMap(Object? value) {
     final root = _dynamicMap(value);
     if (root.isEmpty) return null;
-    final draft = ContractDraft();
+    final draft = ContractDraft()
+      ..submissionId = _mapString(root, 'submissionId')
+      ..renewal = _mapBool(root, 'renewal', false);
+    final assistantMetadata = _dynamicMap(root['assistantFields']);
+    draft.assistantFields = {
+      for (final entry in assistantMetadata.entries)
+        if (entry.value is Map)
+          entry.key: Map<String, Object?>.from(entry.value as Map),
+    };
     draft.type = ContractType.values.firstWhere(
       (item) => item.name == _mapString(root, 'type'),
       orElse: () => draft.type,
@@ -1966,8 +2007,8 @@ class FirebaseRepository {
       notes: _mapString(property, 'notes'),
     );
 
-    draft.lessor = _partyFromMap(root['lessor']);
-    draft.tenant = _partyFromMap(root['tenant']);
+    draft.lessor = partyFromMap(root['lessor']);
+    draft.tenant = partyFromMap(root['tenant']);
     draft.representative = _representativeFromMap(root['representative']);
 
     final duration = _dynamicMap(root['duration']);
@@ -1979,6 +2020,16 @@ class FirebaseRepository {
       ..durationDays = _mapString(duration, 'days', draft.durationDays);
 
     final financial = _dynamicMap(root['financial']);
+    if (financial['frozen'] == true) {
+      draft.frozenTotal = (financial['totalPayable'] as num?)?.toDouble();
+      final first = (financial['firstYearFee'] as num?)?.toDouble() ?? 0;
+      final rate = (financial['additionalYearRate'] as num?)?.toDouble() ?? 0;
+      draft.frozenPrice = ContractPrice(
+          firstYear: first,
+          additionalYearRate: rate,
+          additionalYears:
+              rate > 0 ? ((draft.frozenTotal ?? first) - first) / rate : 0);
+    }
     draft
       ..rentValue = _mapString(financial, 'rentValue')
       ..rentPeriod = _mapString(financial, 'rentPeriod', draft.rentPeriod)
@@ -2066,6 +2117,7 @@ class FirebaseRepository {
           uploaded: _mapBool(item, 'uploaded', fallback.uploaded),
           fileName: _mapString(item, 'fileName'),
           sizeLabel: _mapString(item, 'sizeLabel'),
+          downloadUrl: _mapString(item, 'downloadUrl'),
         );
       }).toList();
     }
@@ -2095,7 +2147,7 @@ class FirebaseRepository {
     );
   }
 
-  static PartyData _partyFromMap(Object? value) {
+  static PartyData partyFromMap(Object? value) {
     final data = _dynamicMap(value);
     final defaults = PartyData();
     return PartyData(
@@ -2208,7 +2260,7 @@ class FirebaseRepository {
       'شمول الأسعار': 'الأسعار شاملة رسوم منصة إيجار',
       'إجمالي الرسوم': '${draft.totalPayable.toStringAsFixed(2)} ريال',
       'دافع رسوم منصة إيجار': _valueOrDash(draft.officialFeePayer),
-      'دافع عمولة عقود برو': _valueOrDash(draft.serviceFeePayer),
+      'دافع عمولة عقدك': _valueOrDash(draft.serviceFeePayer),
       'الكهرباء': _serviceLabel(draft.electricity),
       'المياه': _serviceLabel(draft.water),
       'الغاز': _serviceLabel(draft.gas),
@@ -2326,9 +2378,11 @@ class FirebaseRepository {
     return <String, String>{
       for (final attachment in draft.attachments)
         attachment.title: attachment.uploaded
-            ? (attachment.fileName.trim().isEmpty
-                ? 'مرفق'
-                : attachment.fileName.trim())
+            ? (attachment.downloadUrl.isNotEmpty
+                ? attachment.downloadUrl
+                : attachment.fileName.trim().isEmpty
+                    ? 'مرفق'
+                    : attachment.fileName.trim())
             : (attachment.required ? 'مطلوب' : 'اختياري'),
     };
   }
@@ -2600,6 +2654,7 @@ class FirebaseRepository {
       'uploaded': data.uploaded,
       'fileName': data.fileName,
       'sizeLabel': data.sizeLabel,
+      'downloadUrl': data.downloadUrl,
     };
   }
 

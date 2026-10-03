@@ -3,13 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter/services.dart';
 
-import 'admin/admin_dashboard.dart';
 import 'core/app_controller.dart';
+import 'core/phone_session.dart';
 import 'core/demo_config.dart';
 import 'core/firebase_bootstrap.dart';
 import 'core/notification_service.dart';
 import 'core/theme.dart';
+import 'core/runtime_config.dart';
+import 'core/app_telemetry.dart';
 import 'firebase_options.dart';
 import 'screens/auth.dart';
 import 'screens/contracts.dart';
@@ -18,26 +21,35 @@ import 'screens/home.dart';
 import 'screens/pricing.dart';
 import 'screens/wallet_profile.dart';
 import 'widgets/common.dart';
+import 'widgets/account_confirmation_dialog.dart';
+import 'widgets/workspace.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final isAdminRoute = kIsWeb && Uri.base.path.startsWith('/admin');
+  // /admin is served exclusively by the React workspace through Hosting.
 
   // Render the first Flutter frame immediately. Firebase, APNs, or a platform
   // plugin must never be allowed to hold the iOS launch screen indefinitely.
-  unawaited(_initializePlatformServices(isAdminRoute: isAdminRoute));
+  unawaited(_initializePlatformServices());
 
-  if (isAdminRoute) {
-    runApp(const AdminDashboardApp());
-    return;
+  runApp(const AqdakApp());
+  if (kIsWeb && Uri.base.queryParameters['notifications'] == '1') {
+    AppNotificationService.deferNotificationTap({
+      'actionType': Uri.base.queryParameters.containsKey('contractId')
+          ? 'contractDetails'
+          : 'notifications',
+      if (Uri.base.queryParameters['contractId'] case final String id)
+        'contractId': id,
+      if (Uri.base.queryParameters['notificationId'] case final String id)
+        'notificationId': id,
+    });
   }
-  runApp(const AqoodProApp());
 }
 
-Future<void> _initializePlatformServices({required bool isAdminRoute}) async {
-  if (kEjarzLocalDemoMode && !isAdminRoute) {
+Future<void> _initializePlatformServices() async {
+  if (kEjarzLocalDemoMode) {
     debugPrint(
-        'Aqood Pro local demo mode is enabled; Firebase startup is skipped.');
+        'Aqdak local demo mode is enabled; Firebase startup is skipped.');
     return;
   } else if (kIsWeb) {
     try {
@@ -73,11 +85,12 @@ Future<void> _initializePlatformServices({required bool isAdminRoute}) async {
   }
 }
 
-class AqoodProApp extends StatefulWidget {
-  const AqoodProApp({super.key});
+class AqdakApp extends StatefulWidget {
+  final AppController? controller;
+  const AqdakApp({super.key, this.controller});
 
   @override
-  State<AqoodProApp> createState() => _AqoodProAppState();
+  State<AqdakApp> createState() => _AqdakAppState();
 }
 
 class _NoOverscrollBehavior extends MaterialScrollBehavior {
@@ -104,24 +117,27 @@ class _NoOverscrollBehavior extends MaterialScrollBehavior {
   }
 }
 
-class _AqoodProAppState extends State<AqoodProApp> {
+class _AqdakAppState extends State<AqdakApp> {
   late final AppController _controller;
+  var _workspaceRoutes = WorkspaceRouteObserver();
+  int _navigationEpoch = -1;
 
   @override
   void initState() {
     super.initState();
-    _controller = AppController();
+    _controller = widget.controller ?? AppController();
     AppNotificationService.onNotificationTap = _handleNotificationTap;
   }
 
   @override
   void dispose() {
     AppNotificationService.onNotificationTap = null;
-    _controller.dispose();
+    if (widget.controller == null) _controller.dispose();
     super.dispose();
   }
 
   Future<void> _handleNotificationTap(Map<String, dynamic> data) async {
+    final generation = _controller.accountGeneration;
     final context = AppNotificationService.navigatorKey.currentContext;
     final navigator = AppNotificationService.navigatorKey.currentState;
     if (context == null || navigator == null || !_controller.loggedIn) {
@@ -133,6 +149,11 @@ class _AqoodProAppState extends State<AqoodProApp> {
       unawaited(_controller.markNotificationReadById(notificationId));
     }
     final actionType = data['actionType']?.toString();
+    if (actionType == 'notifications') {
+      navigator.push(
+          MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()));
+      return;
+    }
     final contractId = data['contractId']?.toString() ??
         (data['actionPayload'] is Map
             ? (data['actionPayload'] as Map)['contractId']?.toString()
@@ -144,6 +165,7 @@ class _AqoodProAppState extends State<AqoodProApp> {
               : null);
       navigator.push(
         MaterialPageRoute<void>(
+          settings: const RouteSettings(name: 'support'),
           builder: (_) => SupportScreen(initialTicketId: ticketId),
         ),
       );
@@ -165,9 +187,14 @@ class _AqoodProAppState extends State<AqoodProApp> {
     if (actionType != 'contractDetails' && contractId == null) return;
     if (contractId == null || contractId.isEmpty) return;
     final contract = await _controller.contractById(contractId);
-    if (contract == null || !context.mounted) return;
+    if (contract == null ||
+        !context.mounted ||
+        !_controller.isCurrentAccount(generation)) {
+      return;
+    }
     navigator.push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'contract_details'),
         builder: (_) => ContractDetailsScreen(contract: contract),
       ),
     );
@@ -180,15 +207,22 @@ class _AqoodProAppState extends State<AqoodProApp> {
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
+          if (_navigationEpoch != _controller.sessionEpoch) {
+            _navigationEpoch = _controller.sessionEpoch;
+            AppNotificationService.navigatorKey = GlobalKey<NavigatorState>();
+            _workspaceRoutes = WorkspaceRouteObserver();
+          }
           if (_controller.loggedIn) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               AppNotificationService.flushPendingNotificationTap();
             });
           }
           return MaterialApp(
+            key: ValueKey(_controller.sessionEpoch),
             debugShowCheckedModeBanner: false,
             navigatorKey: AppNotificationService.navigatorKey,
-            title: 'عقود برو',
+            navigatorObservers: [_workspaceRoutes, AppTelemetry()],
+            title: 'عقدك',
             locale: const Locale('ar'),
             supportedLocales: const <Locale>[
               Locale('ar'),
@@ -206,7 +240,34 @@ class _AqoodProAppState extends State<AqoodProApp> {
             builder: (context, child) {
               final app = Directionality(
                 textDirection: TextDirection.rtl,
-                child: child ?? const SizedBox.shrink(),
+                child: AppWorkspace(
+                  enabled: _controller.loggedIn &&
+                      _controller.onboardingCompleted &&
+                      _controller.splashCompleted &&
+                      !_controller.accountBlocked &&
+                      !_controller.maintenanceBlocksApp,
+                  selectedIndex: _controller.mainNavigationIndex,
+                  userName: _controller.userName,
+                  unreadNotifications: _controller.unreadNotifications,
+                  onSelect: (index) async {
+                    if (await _workspaceRoutes.returnToRoot() && mounted) {
+                      _controller.setNavigationIndex(index);
+                    }
+                  },
+                  onCreate: () =>
+                      _openWorkspacePage(const CreateContractScreen()),
+                  onPricing: () => _openWorkspacePage(const PricingScreen()),
+                  onSupport: () => _openWorkspacePage(const SupportScreen()),
+                  onLegal: () => _openWorkspacePage(const LegalScreen()),
+                  onNotifications: () =>
+                      _openWorkspacePage(const NotificationsScreen()),
+                  onSettings: () => _openWorkspacePage(const SettingsScreen()),
+                  child: _controller.maintenanceBlocksApp
+                      ? const _MaintenanceScreen()
+                      : _controller.accountBlocked
+                          ? const _BlockedAccountScreen()
+                          : child ?? const SizedBox.shrink(),
+                ),
               );
               return app;
             },
@@ -214,6 +275,12 @@ class _AqoodProAppState extends State<AqoodProApp> {
           );
         },
       ),
+    );
+  }
+
+  void _openWorkspacePage(Widget page) {
+    AppNotificationService.navigatorKey.currentState?.push(
+      MaterialPageRoute<void>(builder: (_) => page),
     );
   }
 }
@@ -227,8 +294,23 @@ class _AppGate extends StatelessWidget {
     if (!controller.splashCompleted) {
       return const SplashScreen();
     }
+    if (controller.phoneSignInInProgress) {
+      return const LoginScreen();
+    }
+    if (!controller.preferencesLoaded ||
+        (!controller.loggedIn &&
+            controller.accountPhase == AccountPhase.loading)) {
+      return const SessionStatusScreen();
+    }
     if (controller.maintenanceBlocksApp) {
       return const _MaintenanceScreen();
+    }
+    if (controller.accountPhase == AccountPhase.profileRequired) {
+      return const CompleteProfileScreen();
+    }
+    if (controller.accountPhase == AccountPhase.error ||
+        controller.accountPhase == AccountPhase.blocked) {
+      return const SessionStatusScreen();
     }
     if (!controller.onboardingCompleted) {
       return const OnboardingScreen();
@@ -279,7 +361,8 @@ class _MaintenanceScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'نعمل الآن على تحديث الخدمة وتحسين التجربة. سيعود التطبيق للعمل تلقائيًا عند انتهاء الصيانة.',
+                AppRuntime.text('maintenanceMessage',
+                    'نعمل الآن على تحديث الخدمة وتحسين التجربة. سيعود التطبيق للعمل تلقائيًا عند انتهاء الصيانة.'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: context.ejarzTheme.muted,
@@ -358,12 +441,37 @@ class _BlockedAccountScreen extends StatelessWidget {
   }
 }
 
-class _MainShell extends StatelessWidget {
+class _MainShell extends StatefulWidget {
   const _MainShell();
+
+  @override
+  State<_MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends State<_MainShell> {
+  bool _exitDialogOpen = false;
+
+  Future<void> _confirmExit() async {
+    if (_exitDialogOpen) return;
+    _exitDialogOpen = true;
+    try {
+      final confirmed = await showAccountConfirmation(
+        context,
+        title: 'إغلاق التطبيق',
+        message: 'هل تريد إغلاق عقدك الآن؟ يمكنك العودة إلى حسابك في أي وقت.',
+        confirmLabel: 'إغلاق التطبيق',
+        icon: Icons.exit_to_app_rounded,
+      );
+      if (confirmed && mounted) await SystemNavigator.pop();
+    } finally {
+      _exitDialogOpen = false;
+    }
+  }
 
   void _openCreateContract(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'create_contract'),
         builder: (_) => const CreateContractScreen(),
       ),
     );
@@ -372,6 +480,7 @@ class _MainShell extends StatelessWidget {
   void _openNotifications(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'notifications'),
         builder: (_) => const NotificationsScreen(),
       ),
     );
@@ -382,10 +491,13 @@ class _MainShell extends StatelessWidget {
     final controller = AppScope.of(context);
 
     return PopScope(
-      canPop: controller.mainNavigationIndex == 0,
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && controller.mainNavigationIndex != 0) {
+        if (didPop) return;
+        if (controller.mainNavigationIndex != 0) {
           controller.setNavigationIndex(0);
+        } else {
+          _confirmExit();
         }
       },
       child: Scaffold(
@@ -393,9 +505,7 @@ class _MainShell extends StatelessWidget {
             child: SafeArea(
                 child: ListView(padding: const EdgeInsets.all(12), children: [
           const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('عقود برو',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800))),
+              padding: EdgeInsets.all(16), child: BrandLogo(markSize: 42)),
           ListTile(
               leading: const Icon(Icons.receipt_long_outlined),
               title: const Text('أسعار العقود'),
@@ -403,6 +513,7 @@ class _MainShell extends StatelessWidget {
               onTap: () {
                 Navigator.of(context).pop();
                 Navigator.of(context).push(MaterialPageRoute<void>(
+                    settings: const RouteSettings(name: 'pricing'),
                     builder: (_) => const PricingScreen()));
               }),
           ListTile(
@@ -418,6 +529,7 @@ class _MainShell extends StatelessWidget {
               onTap: () {
                 Navigator.of(context).pop();
                 Navigator.of(context).push(MaterialPageRoute<void>(
+                    settings: const RouteSettings(name: 'support'),
                     builder: (_) => const SupportScreen()));
               }),
           ListTile(
@@ -426,6 +538,7 @@ class _MainShell extends StatelessWidget {
               onTap: () {
                 Navigator.of(context).pop();
                 Navigator.of(context).push(MaterialPageRoute<void>(
+                    settings: const RouteSettings(name: 'legal'),
                     builder: (_) => const LegalScreen()));
               }),
         ]))),
@@ -433,7 +546,6 @@ class _MainShell extends StatelessWidget {
           builder: (shellContext) {
             final pages = <Widget>[
               HomeScreen(
-                onMenu: () => Scaffold.of(shellContext).openDrawer(),
                 onNotifications: () => _openNotifications(shellContext),
                 onCreate: () => _openCreateContract(shellContext),
                 onContracts: () => controller.setNavigationIndex(1),
@@ -465,13 +577,15 @@ class _MainShell extends StatelessWidget {
           children: <Widget>[
             if (controller.offlineMode ||
                 controller.hasPendingSync ||
+                controller.syncConflictMessage.isNotEmpty ||
                 controller.syncingPendingChanges)
               _OfflineSyncBanner(controller: controller),
-            _EjarzBottomNavigation(
-              currentIndex: controller.mainNavigationIndex,
-              onSelect: controller.setNavigationIndex,
-              onCreate: () => _openCreateContract(context),
-            ),
+            if (!WorkspaceNavigationScope.active(context))
+              _EjarzBottomNavigation(
+                currentIndex: controller.mainNavigationIndex,
+                onSelect: controller.setNavigationIndex,
+                onCreate: () => _openCreateContract(context),
+              ),
           ],
         ),
       ),
@@ -489,13 +603,15 @@ class _OfflineSyncBanner extends StatelessWidget {
     final pending = controller.pendingSyncCount;
     final offline = controller.offlineMode;
     final color = offline ? AppColors.orange : AppColors.primary;
-    final text = offline
-        ? pending > 0
-            ? 'غير متصل - $pending عنصر بانتظار المزامنة'
-            : 'غير متصل - البيانات من آخر تحديث'
-        : controller.syncingPendingChanges
-            ? 'جاري مزامنة التغييرات...'
-            : '$pending عنصر جاهز للمزامنة';
+    final text = controller.syncConflictMessage.isNotEmpty
+        ? controller.syncConflictMessage
+        : offline
+            ? pending > 0
+                ? 'غير متصل - $pending عنصر بانتظار المزامنة'
+                : 'غير متصل - البيانات من آخر تحديث'
+            : controller.syncingPendingChanges
+                ? 'جاري مزامنة التغييرات...'
+                : '$pending عنصر جاهز للمزامنة';
     return Material(
       color: color.withValues(alpha: 0.10),
       child: SafeArea(
@@ -523,7 +639,13 @@ class _OfflineSyncBanner extends StatelessWidget {
                   ),
                 ),
               ),
-              if (!offline && pending > 0)
+              if (controller.syncConflictMessage.isNotEmpty)
+                TextButton(
+                    onPressed: controller.acknowledgeSyncConflict,
+                    child: const Text('مراجعة المسودات')),
+              if (!offline &&
+                  pending > 0 &&
+                  controller.syncConflictMessage.isEmpty)
                 TextButton(
                   onPressed: controller.syncingPendingChanges
                       ? null

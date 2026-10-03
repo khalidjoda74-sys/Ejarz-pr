@@ -1,6 +1,6 @@
 workflows:
   ios-testflight-demo:
-    name: iOS TestFlight Demo
+    name: iOS TestFlight
     instance_type: mac_mini_m2
     max_build_duration: 60
 
@@ -10,10 +10,10 @@ workflows:
     environment:
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: sa.aqoodpro.app
+        bundle_identifier: sa.aqdak.app
       vars:
-        BUNDLE_ID: sa.aqoodpro.app
-        APP_VERSION: 1.0.0
+        BUNDLE_ID: sa.aqdak.app
+        APP_VERSION: 1.0.1
       flutter: stable
       xcode: latest
       cocoapods: default
@@ -56,7 +56,7 @@ workflows:
             --build-name="$APP_VERSION" \
             --build-number="$PROJECT_BUILD_NUMBER" \
             --export-options-plist=/Users/builder/export_options.plist \
-            --dart-define=EJARZ_DEMO_MODE=true \
+            --dart-define=EJARZ_DEMO_MODE=false \
             --dart-define=EJARZ_LOCAL_DEMO_MODE=false
 
     artifacts:

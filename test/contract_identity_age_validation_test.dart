@@ -1,4 +1,4 @@
-import 'package:aqood_pro/core/contract_validators.dart';
+import 'package:aqdak/core/contract_validators.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

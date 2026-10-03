@@ -1,7 +1,7 @@
-import 'package:aqood_pro/core/draft_resume_policy.dart';
-import 'package:aqood_pro/core/app_controller.dart';
-import 'package:aqood_pro/core/firebase_repository.dart';
-import 'package:aqood_pro/core/models.dart';
+import 'package:aqdak/core/draft_resume_policy.dart';
+import 'package:aqdak/core/app_controller.dart';
+import 'package:aqdak/core/firebase_repository.dart';
+import 'package:aqdak/core/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

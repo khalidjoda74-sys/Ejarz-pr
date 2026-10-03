@@ -1,3 +1,4 @@
+import 'runtime_config.dart';
 /// All amounts are package prices in SAR, inclusive of Ejar platform fees.
 class ContractPrice {
   final double firstYear;
@@ -18,8 +19,8 @@ class ContractPrice {
       {required bool commercial, int years = 1, int months = 0, int days = 0}) {
     final duration = years + months / 12 + days / 365;
     return ContractPrice(
-      firstYear: commercial ? 399 : 299,
-      additionalYearRate: commercial ? 400 : 125,
+      firstYear: commercial ? AppRuntime.price('commercialFirstYear',399) : AppRuntime.price('residentialFirstYear',299),
+      additionalYearRate: commercial ? AppRuntime.price('commercialAdditionalYear',400) : AppRuntime.price('residentialAdditionalYear',125),
       additionalYears: (duration - 1).clamp(0, double.infinity),
     );
   }

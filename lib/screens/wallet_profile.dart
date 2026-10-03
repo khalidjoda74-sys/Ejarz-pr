@@ -1,16 +1,27 @@
 import 'package:flutter/material.dart';
+import '../widgets/load_more_records.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_controller.dart';
+import '../core/phone_session.dart';
+import 'phone_auth_screens.dart';
 import '../core/demo_config.dart';
 import '../core/models.dart';
 import '../core/property_management.dart';
 import '../core/theme.dart';
 import '../widgets/common.dart';
+import '../widgets/account_confirmation_dialog.dart';
+import '../widgets/workspace.dart';
+import 'about_aqdak.dart';
 import 'contracts.dart';
 import 'create_contract.dart';
 import 'pricing.dart';
+import 'account_records.dart';
+export 'account_records.dart' show SavedPartiesScreen;
+import '../core/runtime_config.dart';
+import '../widgets/service_unavailable.dart';
 
 Widget _accountBottomNavigation(BuildContext context) {
   final controller = AppScope.of(context);
@@ -26,6 +37,7 @@ Widget _accountBottomNavigation(BuildContext context) {
       navigator.popUntil((route) => route.isFirst);
       navigator.push(
         MaterialPageRoute<void>(
+          settings: const RouteSettings(name: 'create_contract'),
           builder: (_) => const CreateContractScreen(),
         ),
       );
@@ -46,9 +58,10 @@ class PropertiesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
+    if (!AppRuntime.service('properties')) return const ServiceUnavailable();
     return SafeArea(
       child: ResponsiveContent(
-        maxWidth: 760,
+        maxWidth: 1180,
         padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -77,7 +90,7 @@ class PropertiesScreen extends StatelessWidget {
                 Expanded(
                   child: StatCard(
                     title: 'العقارات',
-                    value: '${controller.properties.length}',
+                    value: '${controller.totalProperties}',
                     subtitle: 'عقار محفوظ',
                     icon: Icons.apartment_outlined,
                     color: AppColors.primary,
@@ -87,8 +100,7 @@ class PropertiesScreen extends StatelessWidget {
                 Expanded(
                   child: StatCard(
                     title: 'الوحدات',
-                    value:
-                        '${controller.properties.fold<int>(0, (total, item) => total + item.units.length)}',
+                    value: '${controller.totalUnits}',
                     subtitle: 'وحدة',
                     icon: Icons.home_work_outlined,
                     color: AppColors.blue,
@@ -112,11 +124,20 @@ class PropertiesScreen extends StatelessWidget {
               action: '${controller.properties.length} عقار',
             ),
             const SizedBox(height: 10),
-            for (var i = 0; i < controller.properties.length; i++) ...<Widget>[
-              _ManagedPropertyCard(property: controller.properties[i]),
-              if (i < controller.properties.length - 1)
-                const SizedBox(height: 10),
-            ],
+            if (controller.properties.isEmpty)
+              EmptyState(
+                icon: Icons.apartment_outlined,
+                title: 'لا توجد عقارات بعد',
+                subtitle: 'أضف عقارك الأول لتنظيم وحداته وربطه بعقودك.',
+                actionLabel: 'إضافة عقار',
+                onAction: () => _showAddProperty(context),
+              )
+            else
+              AdaptiveCardGrid(children: [
+                for (var i = 0; i < controller.properties.length; i++)
+                  _ManagedPropertyCard(property: controller.properties[i]),
+              ]),
+            const LoadMoreRecords('properties'),
           ],
         ),
       ),
@@ -1927,6 +1948,8 @@ class _UnitDetailsScreen extends StatelessWidget {
                                   : ContractType.residential)
                             ..property = data;
                           Navigator.of(context).push(MaterialPageRoute<void>(
+                              settings:
+                                  const RouteSettings(name: 'create_contract'),
                               builder: (_) => CreateContractScreen(
                                   initialDraft: draft, initialStep: 0)));
                         }),
@@ -2053,6 +2076,7 @@ class WalletStandaloneScreen extends StatelessWidget {
         onMenu: () => Navigator.of(context).pop(),
         onNotifications: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
+            settings: const RouteSettings(name: 'notifications'),
             builder: (_) => const NotificationsScreen(),
           ),
         ),
@@ -2064,586 +2088,10 @@ class WalletStandaloneScreen extends StatelessWidget {
 class WalletScreen extends StatelessWidget {
   final VoidCallback onMenu;
   final VoidCallback onNotifications;
-
-  const WalletScreen({
-    super.key,
-    required this.onMenu,
-    required this.onNotifications,
-  });
-
+  const WalletScreen(
+      {super.key, required this.onMenu, required this.onNotifications});
   @override
-  Widget build(BuildContext context) {
-    final controller = AppScope.of(context);
-    final totalSpent = controller.transactions
-        .where((item) => !item.incoming)
-        .fold<double>(0, (sum, item) => sum + item.amount);
-
-    return SafeArea(
-      child: ResponsiveContent(
-        maxWidth: 760,
-        padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            BrandHeader(
-              onMenu: onMenu,
-              onNotifications: onNotifications,
-              showMenu: true,
-              menuIcon: Icons.arrow_forward_rounded,
-              placeMenuAtStart: true,
-              showNotification: false,
-              showLogo: false,
-            ),
-            const SizedBox(height: 14),
-            const AppPageHeader(
-              title: 'المحفظة والمدفوعات',
-              subtitle: 'راجع المدفوعات والفواتير وطرق الدفع المحفوظة.',
-              icon: Icons.account_balance_wallet_outlined,
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topRight,
-                  end: Alignment.bottomLeft,
-                  colors: <Color>[Color(0xFF0B8062), Color(0xFF005E49)],
-                ),
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.24),
-                    blurRadius: 26,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: const Icon(
-                          Icons.account_balance_wallet_outlined,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        'إجمالي المدفوعات',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.82),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    '${totalSpent.toStringAsFixed(2)} ر.س',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: context.sp(27),
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${controller.transactions.length} عمليات مسجلة',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.72),
-                      fontSize: context.sp(12),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: _WalletAction(
-                          icon: Icons.receipt_long_outlined,
-                          label: 'الفواتير',
-                          onTap: () => showAppSnackBar(
-                            context,
-                            'تم تجهيز قائمة الفواتير.',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _WalletAction(
-                          icon: Icons.credit_card_outlined,
-                          label: 'طرق الدفع',
-                          onTap: () => showModalBottomSheet<void>(
-                            context: context,
-                            showDragHandle: true,
-                            builder: (_) => const _PaymentMethodsSheet(),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            const SectionTitle(
-              title: 'طريقة الدفع الرئيسية',
-              icon: Icons.credit_card_rounded,
-            ),
-            const SizedBox(height: 10),
-            AppCard(
-              padding: const EdgeInsets.all(15),
-              child: Row(
-                children: <Widget>[
-                  Container(
-                    width: 54,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryLight,
-                      borderRadius: BorderRadius.circular(11),
-                    ),
-                    child: const Icon(
-                      Icons.credit_card_rounded,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        const Text(
-                          'بطاقة مدى',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '•••• •••• •••• 8432',
-                          style: TextStyle(
-                            color: context.ejarzTheme.muted,
-                            fontSize: context.sp(12),
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 9,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryLight,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text(
-                      'افتراضية',
-                      style: TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 10.5,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            SectionTitle(
-              title: 'آخر العمليات',
-              icon: Icons.history_rounded,
-              action: 'عرض الطلبات',
-              onAction: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const _PaidContractsScreen(),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            for (var i = 0;
-                i < controller.transactions.length;
-                i++) ...<Widget>[
-              _TransactionTile(
-                transaction: controller.transactions[i],
-                contract: _contractForTransaction(
-                  controller,
-                  controller.transactions[i],
-                ),
-              ),
-              if (i != controller.transactions.length - 1)
-                const SizedBox(height: 10),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _WalletAction extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _WalletAction({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.14),
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Icon(icon, color: Colors.white, size: 20),
-              const SizedBox(width: 7),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TransactionTile extends StatelessWidget {
-  final WalletTransaction transaction;
-  final ContractRecord? contract;
-
-  const _TransactionTile({required this.transaction, this.contract});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = transaction.incoming ? AppColors.success : AppColors.text;
-    return AppCard(
-      padding: const EdgeInsets.all(14),
-      onTap: contract == null
-          ? null
-          : () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => ContractDetailsScreen(contract: contract!),
-                ),
-              ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 45,
-            height: 45,
-            decoration: BoxDecoration(
-              color: transaction.incoming
-                  ? AppColors.primaryLight
-                  : context.ejarzTheme.background,
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: Icon(
-              transaction.incoming
-                  ? Icons.south_west_rounded
-                  : Icons.north_east_rounded,
-              color: transaction.incoming
-                  ? AppColors.success
-                  : context.ejarzTheme.muted,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  transaction.title,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${transaction.reference} • ${transaction.date}',
-                  style: TextStyle(
-                    color: context.ejarzTheme.muted,
-                    fontSize: context.sp(11),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            '${transaction.incoming ? '+' : '-'}${transaction.amount.toStringAsFixed(2)} ر.س',
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w900,
-              fontSize: context.sp(13.5),
-            ),
-          ),
-          if (contract != null) ...<Widget>[
-            const SizedBox(width: 8),
-            Icon(
-              Icons.chevron_left_rounded,
-              color: context.ejarzTheme.muted,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-ContractRecord? _contractForTransaction(
-  AppController controller,
-  WalletTransaction transaction,
-) {
-  final transactionContractId = _safeTransactionContractId(transaction);
-  for (final contract in controller.contracts) {
-    if (transactionContractId.isNotEmpty &&
-        contract.id == transactionContractId) {
-      return contract;
-    }
-    if (contract.paymentId.isNotEmpty &&
-        transaction.reference.startsWith(contract.paymentId)) {
-      return contract;
-    }
-    if (transaction.reference
-        .contains(contract.id.replaceFirst('EJ-DEMO-', ''))) {
-      return contract;
-    }
-  }
-  return null;
-}
-
-String _safeTransactionContractId(WalletTransaction transaction) {
-  try {
-    return transaction.contractId;
-  } catch (_) {
-    return '';
-  }
-}
-
-class _PaidContractsScreen extends StatelessWidget {
-  const _PaidContractsScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = AppScope.of(context);
-    final paidContracts = controller.contracts
-        .where(
-          (contract) =>
-              contract.paymentStatus == 'paid' ||
-              contract.paymentId.isNotEmpty ||
-              contract.isDemoPayment,
-        )
-        .toList();
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('طلبات تم الدفع لها')),
-      bottomNavigationBar: _accountBottomNavigation(context),
-      body: SafeArea(
-        child: ResponsiveContent(
-          maxWidth: 760,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              const AppPageHeader(
-                title: 'طلبات تم الدفع لها',
-                subtitle: 'العقود المرتبطة بعمليات الدفع المسجلة في المحفظة.',
-                icon: Icons.receipt_long_outlined,
-              ),
-              const SizedBox(height: 12),
-              if (paidContracts.isEmpty)
-                const EmptyState(
-                  icon: Icons.receipt_long_outlined,
-                  title: 'لا توجد طلبات مدفوعة',
-                  subtitle: 'ستظهر هنا العقود التي اكتمل دفع رسومها.',
-                )
-              else
-                for (var i = 0; i < paidContracts.length; i++) ...<Widget>[
-                  _PaidContractTile(contract: paidContracts[i]),
-                  if (i != paidContracts.length - 1) const SizedBox(height: 10),
-                ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PaidContractTile extends StatelessWidget {
-  final ContractRecord contract;
-
-  const _PaidContractTile({required this.contract});
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      padding: const EdgeInsets.all(14),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => ContractDetailsScreen(contract: contract),
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 45,
-            height: 45,
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight,
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(
-              Icons.description_outlined,
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  contract.title,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${contract.requestNumber} • ${contract.date}',
-                  style: TextStyle(
-                    color: context.ejarzTheme.muted,
-                    fontSize: context.sp(11.5),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            '${contract.totalFees.toStringAsFixed(2)} ر.س',
-            style: TextStyle(
-              color: AppColors.primary,
-              fontWeight: FontWeight.w900,
-              fontSize: context.sp(13),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Icon(Icons.chevron_left_rounded, color: context.ejarzTheme.muted),
-        ],
-      ),
-    );
-  }
-}
-
-class _PaymentMethodsSheet extends StatelessWidget {
-  const _PaymentMethodsSheet();
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 6, 18, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text(
-              'طرق الدفع',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 15),
-            const _SimpleMethod(
-              icon: Icons.credit_card_rounded,
-              title: 'بطاقة مدى •••• 8432',
-              subtitle: 'الطريقة الافتراضية',
-              selected: true,
-            ),
-            const SizedBox(height: 10),
-            const _SimpleMethod(
-              icon: Icons.phone_iphone_rounded,
-              title: 'Apple Pay',
-              subtitle: 'جاهز للاستخدام',
-            ),
-            const SizedBox(height: 16),
-            SecondaryButton(
-              label: 'إضافة بطاقة جديدة',
-              icon: Icons.add_card_rounded,
-              onPressed: () => showAppSnackBar(
-                context,
-                'الدفع الإلكتروني غير مفعل في هذه النسخة التجريبية. سيتم تفعيل طرق الدفع بعد ربط مزود دفع حقيقي.',
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SimpleMethod extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool selected;
-
-  const _SimpleMethod({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    this.selected = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      padding: const EdgeInsets.all(13),
-      shadows: const <BoxShadow>[],
-      border: Border.all(
-        color: selected ? AppColors.primary : context.ejarzTheme.border,
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, color: AppColors.primary),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(title,
-                    style: const TextStyle(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: context.ejarzTheme.muted,
-                    fontSize: context.sp(11.5),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (selected)
-            const Icon(Icons.check_circle_rounded, color: AppColors.primary),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const AccountWallet();
 }
 
 class ProfileScreen extends StatelessWidget {
@@ -2820,6 +2268,7 @@ class ProfileScreen extends StatelessWidget {
                     subtitle: 'بيانات المؤجرين والمستأجرين',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
+                        settings: const RouteSettings(name: 'saved_parties'),
                         builder: (_) => const SavedPartiesScreen(),
                       ),
                     ),
@@ -2842,6 +2291,7 @@ class ProfileScreen extends StatelessWidget {
                       subtitle: 'السكني والتجاري • شاملة رسوم إيجار',
                       onTap: () => Navigator.of(context).push(
                           MaterialPageRoute<void>(
+                              settings: const RouteSettings(name: 'pricing'),
                               builder: (_) => const PricingScreen()))),
                   const Divider(),
                   _ProfileRow(
@@ -2851,6 +2301,7 @@ class ProfileScreen extends StatelessWidget {
                         '${controller.unreadNotifications} إشعارات غير مقروءة',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
+                        settings: const RouteSettings(name: 'notifications'),
                         builder: (_) => const NotificationsScreen(),
                       ),
                     ),
@@ -2862,6 +2313,7 @@ class ProfileScreen extends StatelessWidget {
                     subtitle: 'الأمان والتنبيهات ومظهر التطبيق',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
+                        settings: const RouteSettings(name: 'settings'),
                         builder: (_) => const SettingsScreen(),
                       ),
                     ),
@@ -2880,6 +2332,7 @@ class ProfileScreen extends StatelessWidget {
                     subtitle: 'تواصل معنا أو راجع الأسئلة الشائعة',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
+                        settings: const RouteSettings(name: 'support'),
                         builder: (_) => const SupportScreen(),
                       ),
                     ),
@@ -2891,6 +2344,7 @@ class ProfileScreen extends StatelessWidget {
                     subtitle: 'الشروط والأحكام وسياسة الخصوصية',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
+                        settings: const RouteSettings(name: 'legal'),
                         builder: (_) => const LegalScreen(),
                       ),
                     ),
@@ -2898,13 +2352,13 @@ class ProfileScreen extends StatelessWidget {
                   const Divider(),
                   _ProfileRow(
                     icon: Icons.info_outline_rounded,
-                    title: 'عن عقود برو',
-                    subtitle: 'الإصدار 1.0.0',
-                    onTap: () => showAboutDialog(
-                      context: context,
-                      applicationName: 'عقود برو',
-                      applicationVersion: '1.0.0',
-                      applicationLegalese: 'جميع الحقوق محفوظة',
+                    title: 'عن عقدك',
+                    subtitle: 'تعرف على خدمات التطبيق',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        settings: const RouteSettings(name: 'about_aqdak'),
+                        builder: (_) => const AboutAqdakScreen(),
+                      ),
                     ),
                   ),
                 ],
@@ -2928,27 +2382,16 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  void _confirmLogout(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('تسجيل الخروج'),
-        content: const Text('هل تريد تسجيل الخروج من حسابك؟'),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              AppScope.of(context, listen: false).logout();
-            },
-            child: const Text('تسجيل الخروج'),
-          ),
-        ],
-      ),
+  Future<void> _confirmLogout(BuildContext context) async {
+    final controller = AppScope.of(context, listen: false);
+    final confirmed = await showAccountConfirmation(
+      context,
+      title: 'تسجيل الخروج',
+      message: 'هل تريد تسجيل الخروج من حسابك؟ يمكنك الدخول مجددًا برقم جوالك.',
+      confirmLabel: 'تسجيل الخروج',
+      icon: Icons.logout_rounded,
     );
+    if (confirmed && context.mounted) await controller.logout();
   }
 }
 
@@ -3021,25 +2464,43 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late String _name;
   late String _phone;
   late String _email;
+  bool _saving = false;
+  bool _profileInitialized = false;
+  String _saveError = '';
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_profileInitialized) return;
+    _profileInitialized = true;
     final controller = AppScope.of(context);
     _name = controller.userName;
     _phone = controller.userPhone;
     _email = controller.userEmail;
   }
 
-  void _save() {
-    if (!_formKey.currentState!.validate()) return;
+  Future<void> _save() async {
+    if (_saving || !_formKey.currentState!.validate()) return;
     final controller = AppScope.of(context, listen: false);
-    controller.updateProfile(
-      name: _name,
-      phone: controller.userPhone,
-      email: _email,
-    );
-    Navigator.of(context).pop();
+    setState(() {
+      _saving = true;
+      _saveError = '';
+    });
+    try {
+      await controller.updateProfile(
+        name: _name,
+        phone: controller.userPhone,
+        email: _email,
+      );
+      if (mounted) Navigator.of(context).pop();
+    } catch (_) {
+      if (mounted) {
+        setState(() =>
+            _saveError = 'تعذر حفظ البيانات. تحقق من الاتصال وحاول مجددًا.');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -3061,8 +2522,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   icon: Icons.person_outline_rounded,
                   required: true,
                   onChanged: (value) => _name = value,
-                  validator: (value) => value == null || value.trim().isEmpty
-                      ? 'أدخل الاسم'
+                  validator: (value) => value == null ||
+                          value.trim().length < 3 ||
+                          value.trim().length > 100
+                      ? 'أدخل اسمًا من 3 إلى 100 حرف'
                       : null,
                 ),
                 const SizedBox(height: 15),
@@ -3085,21 +2548,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
                 const SizedBox(height: 15),
                 AppTextField(
-                  label: 'البريد الإلكتروني',
+                  label: 'البريد الإلكتروني (اختياري)',
                   hint: 'name@example.com',
                   initialValue: _email,
                   icon: Icons.email_outlined,
-                  required: true,
                   onChanged: (value) => _email = value,
-                  validator: (value) => value == null || !value.contains('@')
-                      ? 'أدخل بريدًا صحيحًا'
-                      : null,
+                  validator: optionalEmailError,
                 ),
                 const SizedBox(height: 16),
+                AuthError(_saveError),
                 PrimaryButton(
                   label: 'حفظ التعديلات',
                   icon: Icons.save_outlined,
-                  onPressed: _save,
+                  loading: _saving,
+                  onPressed: _saving ? null : _save,
                 ),
               ],
             ),
@@ -3133,10 +2595,12 @@ class NotificationsScreen extends StatelessWidget {
           child: Column(
             children: <Widget>[
               if (controller.notifications.isEmpty)
-                const EmptyState(
+                EmptyState(
                   icon: Icons.notifications_none_rounded,
-                  title: 'لا توجد إشعارات',
-                  subtitle: 'ستظهر هنا تحديثات العقود والمدفوعات والنواقص.',
+                  title: AppRuntime.text(
+                      'notificationsEmptyTitle', 'لا توجد إشعارات'),
+                  subtitle: AppRuntime.text('notificationsEmptySubtitle',
+                      'ستظهر هنا تحديثات العقود والمدفوعات والنواقص.'),
                 )
               else
                 for (var i = 0;
@@ -3146,6 +2610,7 @@ class NotificationsScreen extends StatelessWidget {
                   if (i != controller.notifications.length - 1)
                     const SizedBox(height: 10),
                 ],
+              const LoadMoreRecords('notifications'),
             ],
           ),
         ),
@@ -3182,6 +2647,7 @@ class _NotificationTile extends StatelessWidget {
         if (item.actionType == 'supportTicket') {
           Navigator.of(context).push(
             MaterialPageRoute<void>(
+              settings: const RouteSettings(name: 'support'),
               builder: (_) => const SupportScreen(),
             ),
           );
@@ -3199,6 +2665,7 @@ class _NotificationTile extends StatelessWidget {
         }
         Navigator.of(context).push(
           MaterialPageRoute<void>(
+            settings: const RouteSettings(name: 'contract_details'),
             builder: (_) => ContractDetailsScreen(contract: contract),
           ),
         );
@@ -3289,44 +2756,30 @@ class SettingsScreen extends StatelessWidget {
             children: <Widget>[
               const SectionTitle(title: 'الأمان'),
               const SizedBox(height: 10),
-              ToggleCard(
-                title: 'الدخول بالبصمة',
-                subtitle: 'استخدم بصمة الجهاز لتسجيل الدخول بسرعة',
-                value: controller.biometricEnabled,
-                icon: Icons.fingerprint_rounded,
-                onChanged: controller.toggleBiometric,
-              ),
-              const SizedBox(height: 10),
-              AppCard(
-                onTap: () => showAppSnackBar(
-                  context,
-                  'سيتم إرسال رمز تحقق لتغيير كلمة المرور.',
-                ),
-                padding: const EdgeInsets.all(14),
-                child: const Row(
-                  children: <Widget>[
-                    Icon(Icons.lock_reset_rounded, color: AppColors.primary),
-                    SizedBox(width: 11),
-                    Expanded(
-                      child: Text(
-                        'تغيير كلمة المرور',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                    Icon(Icons.arrow_back_ios_new_rounded, size: 15),
-                  ],
-                ),
+              const InfoBanner(
+                text:
+                    'تسجيل الدخول برقم الجوال ورمز التحقق. للحفاظ على خصوصيتك، سجّل الخروج عند استخدام جهاز مشترك.',
+                icon: Icons.shield_outlined,
               ),
               const SizedBox(height: 14),
               const SectionTitle(title: 'التنبيهات'),
               const SizedBox(height: 10),
-              ToggleCard(
-                title: 'إشعارات التطبيق',
-                subtitle: 'حالات العقود والتنبيهات المهمة',
-                value: controller.pushNotificationsEnabled,
-                icon: Icons.notifications_active_outlined,
-                onChanged: controller.togglePushNotifications,
-              ),
+              if (kIsWeb) ...[
+                const InfoBanner(
+                  text:
+                      'تنبيهات العقود موجودة دائمًا داخل التطبيق. يمكنك أيضًا السماح بإشعارات المتصفح على الأجهزة المدعومة.',
+                  icon: Icons.notifications_none_rounded,
+                ),
+                const SizedBox(height: 10),
+                _BrowserNotificationsButton(),
+              ] else
+                ToggleCard(
+                  title: 'إشعارات التطبيق',
+                  subtitle: 'حالات العقود والتنبيهات المهمة',
+                  value: controller.pushNotificationsEnabled,
+                  icon: Icons.notifications_active_outlined,
+                  onChanged: controller.togglePushNotifications,
+                ),
               const SizedBox(height: 14),
               const SectionTitle(title: 'المظهر'),
               const SizedBox(height: 10),
@@ -3343,6 +2796,39 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class _BrowserNotificationsButton extends StatefulWidget {
+  @override
+  State<_BrowserNotificationsButton> createState() =>
+      _BrowserNotificationsButtonState();
+}
+
+class _BrowserNotificationsButtonState
+    extends State<_BrowserNotificationsButton> {
+  bool busy = false;
+  @override
+  Widget build(BuildContext context) => OutlinedButton.icon(
+        icon: const Icon(Icons.notifications_active_outlined),
+        label: Text(busy ? 'جارٍ التفعيل…' : 'تفعيل إشعارات هذا المتصفح'),
+        onPressed: busy
+            ? null
+            : () async {
+                setState(() => busy = true);
+                try {
+                  final message = await AppScope.of(context, listen: false)
+                      .enableBrowserNotifications();
+                  if (context.mounted) showAppSnackBar(context, message);
+                } catch (_) {
+                  if (context.mounted) {
+                    showAppSnackBar(
+                        context, 'تعذر حفظ إعداد الإشعارات. حاول مرة أخرى.');
+                  }
+                } finally {
+                  if (mounted) setState(() => busy = false);
+                }
+              },
+      );
 }
 
 class SupportScreen extends StatefulWidget {
@@ -3388,17 +2874,18 @@ class _SupportScreenState extends State<SupportScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
+    if (!AppRuntime.service('support')) return const ServiceUnavailable();
     final initialTicketId = widget.initialTicketId;
     if (!_openedInitialTicket && initialTicketId != null) {
-      final matches = controller.supportTickets
-          .where((ticket) => ticket.id == initialTicketId)
-          .toList();
-      if (matches.isNotEmpty) {
-        _openedInitialTicket = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _showTicketDetails(context, matches.first);
-        });
-      }
+      _openedInitialTicket = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).push(MaterialPageRoute(
+            settings: const RouteSettings(name: 'support'),
+            builder: (_) => SupportConversation(ticketId: initialTicketId),
+          ));
+        }
+      });
     }
     return Scaffold(
       appBar: AppBar(title: const Text('الدعم الفني')),
@@ -3447,7 +2934,8 @@ class _SupportScreenState extends State<SupportScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'متوسط وقت الرد أقل من 10 دقائق.',
+                            AppRuntime.text('supportInfo',
+                                'أرسل استفسارك وسيتابع فريق الدعم طلبك.'),
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.78),
                               fontSize: 12,
@@ -3471,14 +2959,14 @@ class _SupportScreenState extends State<SupportScreen> {
                   icon: Icons.support_agent_rounded,
                 )
               else
-                for (final ticket
-                    in controller.supportTickets.take(3)) ...<Widget>[
+                for (final ticket in controller.supportTickets) ...<Widget>[
                   _SupportTicketCard(
                     ticket: ticket,
                     onTap: () => _showTicketDetails(context, ticket),
                   ),
                   const SizedBox(height: 8),
                 ],
+              const LoadMoreRecords('supportTickets'),
               const SizedBox(height: 14),
               const SectionTitle(title: 'تواصل معنا'),
               const SizedBox(height: 10),
@@ -3488,10 +2976,8 @@ class _SupportScreenState extends State<SupportScreen> {
                     child: _SupportMethod(
                       icon: Icons.chat_bubble_outline_rounded,
                       title: 'محادثة',
-                      onTap: () => showAppSnackBar(
-                        context,
-                        'تم بدء محادثة دعم جديدة.',
-                      ),
+                      onTap: () =>
+                          openSupportContact(context, 'supportWhatsapp'),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -3499,10 +2985,7 @@ class _SupportScreenState extends State<SupportScreen> {
                     child: _SupportMethod(
                       icon: Icons.call_outlined,
                       title: 'اتصال',
-                      onTap: () => showAppSnackBar(
-                        context,
-                        'سيتم إظهار رقم الدعم بعد ربط بيانات الشركة.',
-                      ),
+                      onTap: () => openSupportContact(context, 'supportPhone'),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -3510,10 +2993,7 @@ class _SupportScreenState extends State<SupportScreen> {
                     child: _SupportMethod(
                       icon: Icons.email_outlined,
                       title: 'بريد',
-                      onTap: () => showAppSnackBar(
-                        context,
-                        'تم نسخ بريد الدعم.',
-                      ),
+                      onTap: () => openSupportContact(context, 'supportEmail'),
                     ),
                   ),
                 ],
@@ -3564,7 +3044,7 @@ class _SupportScreenState extends State<SupportScreen> {
                     showAppSnackBar(context, 'اكتب رسالتك أولًا');
                     return;
                   }
-                  if (kEjarzDemoMode) {
+                  if (kEjarzLocalDemoMode) {
                     await _showDemoSupportNotice(context);
                     return;
                   }
@@ -3595,21 +3075,28 @@ class _SupportScreenState extends State<SupportScreen> {
               const SizedBox(height: 14),
               const SectionTitle(title: 'الأسئلة الشائعة'),
               const SizedBox(height: 10),
-              const _FaqTile(
-                question: 'كم يستغرق إصدار العقد؟',
-                answer:
-                    'يعتمد الوقت على اكتمال البيانات والمرفقات، ويظهر تقدم الطلب داخل التطبيق في كل مرحلة.',
-              ),
-              const _FaqTile(
-                question: 'ماذا يحدث إذا كانت البيانات ناقصة؟',
-                answer:
-                    'يتحول الطلب إلى حالة ناقص بيانات، وستصلك ملاحظة واضحة بالحقول أو المستندات المطلوب استكمالها.',
-              ),
-              const _FaqTile(
-                question: 'متى أستطيع تحميل العقد؟',
-                answer:
-                    'بعد توثيق العقد من الأطراف نرفع النسخة النهائية داخل صفحة تفاصيل العقد.',
-              ),
+              if (AppRuntime.entries('faq').isNotEmpty) ...[
+                for (final faq in AppRuntime.entries('faq'))
+                  _FaqTile(
+                      question: '${faq['question']}',
+                      answer: '${faq['answer']}'),
+              ] else ...[
+                const _FaqTile(
+                  question: 'كم يستغرق إصدار العقد؟',
+                  answer:
+                      'يعتمد الوقت على اكتمال البيانات والمرفقات، ويظهر تقدم الطلب داخل التطبيق في كل مرحلة.',
+                ),
+                const _FaqTile(
+                  question: 'ماذا يحدث إذا كانت البيانات ناقصة؟',
+                  answer:
+                      'يتحول الطلب إلى حالة ناقص بيانات، وستصلك ملاحظة واضحة بالحقول أو المستندات المطلوب استكمالها.',
+                ),
+                const _FaqTile(
+                  question: 'متى أستطيع تحميل العقد؟',
+                  answer:
+                      'بعد توثيق العقد من الأطراف نرفع النسخة النهائية داخل صفحة تفاصيل العقد.',
+                ),
+              ],
             ],
           ),
         ),
@@ -3668,61 +3155,9 @@ class _SupportScreenState extends State<SupportScreen> {
   }
 
   void _showTicketDetails(BuildContext context, SupportTicketRecord ticket) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: ResponsiveContent(
-          maxWidth: 620,
-          padding: const EdgeInsets.fromLTRB(16, 6, 16, 18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              AppPageHeader(
-                title: ticket.subject,
-                subtitle: ticket.statusLabel,
-                icon: Icons.support_agent_rounded,
-              ),
-              const SizedBox(height: 10),
-              if (ticket.message.trim().isNotEmpty)
-                InfoBanner(
-                  text: ticket.message,
-                  icon: Icons.chat_bubble_outline_rounded,
-                ),
-              const SizedBox(height: 12),
-              const SectionTitle(title: 'ردود الدعم'),
-              const SizedBox(height: 8),
-              if (ticket.replies.isEmpty)
-                Text(
-                  'لا توجد ردود بعد.',
-                  style: TextStyle(color: context.ejarzTheme.muted),
-                )
-              else
-                for (final reply in ticket.replies) ...<Widget>[
-                  AppCard(
-                    shadows: const <BoxShadow>[],
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          reply.createdByName,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(reply.message),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-            ],
-          ),
-        ),
-      ),
-    );
+    Navigator.of(context).push(MaterialPageRoute(
+        settings: const RouteSettings(name: 'support'),
+        builder: (_) => SupportConversation(ticketId: ticket.id)));
   }
 }
 
@@ -3871,6 +3306,12 @@ class _LegalScreenState extends State<LegalScreen> {
     );
     if (confirmed != true || !context.mounted) return;
 
+    if (!kEjarzLocalDemoMode) {
+      final verified = await Navigator.of(context).push<bool>(MaterialPageRoute(
+          builder: (_) => const LoginScreen(reauthenticate: true)));
+      if (verified != true || !context.mounted) return;
+    }
+
     final controller = AppScope.of(context, listen: false);
     setState(() => _deletingAccount = true);
     try {
@@ -3896,6 +3337,7 @@ class _LegalScreenState extends State<LegalScreen> {
           ],
         ),
       );
+      if (!context.mounted) return;
       await controller.completeDeletedAccountSignOut();
     } catch (error) {
       if (!context.mounted) return;
@@ -3923,7 +3365,7 @@ class _LegalScreenState extends State<LegalScreen> {
               const _LegalSection(
                 title: 'الشروط والأحكام',
                 body:
-                    'يعمل تطبيق عقود برو كوسيط لتجهيز ومراجعة بيانات طلب عقد الإيجار، ثم استخدام البيانات والمرفقات التي يزودنا بها العميل لإدخال الطلب في منصة إيجار ومتابعته حتى استخراج العقد. تظهر عمولة عقود برو والرسوم الرسمية بوضوح قبل تأكيد الطلب أو الدفع.',
+                    'يعمل تطبيق عقدك كوسيط لتجهيز ومراجعة بيانات طلب عقد الإيجار، ثم استخدام البيانات والمرفقات التي يزودنا بها العميل لإدخال الطلب في منصة إيجار ومتابعته حتى استخراج العقد. تظهر عمولة عقدك والرسوم الرسمية بوضوح قبل تأكيد الطلب أو الدفع.',
               ),
               const SizedBox(height: 8),
               _LegalLinkTile(
@@ -3982,7 +3424,7 @@ class _LegalScreenState extends State<LegalScreen> {
               const SizedBox(height: 14),
               const InfoBanner(
                 text:
-                    'للاستفسارات المتعلقة بالشروط أو الخصوصية تواصل معنا عبر البريد: Info@aqoodpro.sa',
+                    'للاستفسارات المتعلقة بالشروط أو الخصوصية تواصل معنا عبر البريد: Info@aqdak.sa',
                 icon: Icons.email_outlined,
               ),
             ],
@@ -4216,6 +3658,7 @@ class SavedPropertiesScreen extends StatelessWidget {
                 if (i < controller.properties.length - 1)
                   const SizedBox(height: 10),
               ],
+              const LoadMoreRecords('properties'),
               const SizedBox(height: 16),
               SecondaryButton(
                 label: 'إضافة عقار',
@@ -4229,93 +3672,6 @@ class SavedPropertiesScreen extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class SavedPartiesScreen extends StatelessWidget {
-  const SavedPartiesScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('الأطراف المحفوظة')),
-      bottomNavigationBar: _accountBottomNavigation(context),
-      body: SafeArea(
-        child: ResponsiveContent(
-          maxWidth: 700,
-          child: Column(
-            children: <Widget>[
-              const _SavedParty(
-                name: 'عبدالله العتيبي',
-                type: 'مؤجر • هوية وطنية',
-                mobile: '0500000001',
-              ),
-              const SizedBox(height: 10),
-              const _SavedParty(
-                name: 'شركة الواحة العقارية',
-                type: 'مستأجر • منشأة',
-                mobile: '0110000000',
-              ),
-              const SizedBox(height: 16),
-              SecondaryButton(
-                label: 'إضافة طرف',
-                icon: Icons.person_add_alt_1_rounded,
-                onPressed: () => showAppSnackBar(
-                  context,
-                  'يمكن حفظ الطرف أثناء تعبئة نموذج العقد.',
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SavedParty extends StatelessWidget {
-  final String name;
-  final String type;
-  final String mobile;
-
-  const _SavedParty({
-    required this.name,
-    required this.type,
-    required this.mobile,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      child: Row(
-        children: <Widget>[
-          const CircleAvatar(
-            backgroundColor: AppColors.primaryLight,
-            foregroundColor: AppColors.primary,
-            child: Icon(Icons.person_outline_rounded),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(name, style: const TextStyle(fontWeight: FontWeight.w900)),
-                const SizedBox(height: 3),
-                Text(
-                  '$type • $mobile',
-                  style: TextStyle(
-                    color: context.ejarzTheme.muted,
-                    fontSize: context.sp(11.5),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-              onPressed: () {}, icon: const Icon(Icons.more_vert_rounded)),
-        ],
       ),
     );
   }

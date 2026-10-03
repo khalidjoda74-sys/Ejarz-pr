@@ -1,5 +1,5 @@
-import 'package:aqood_pro/core/firebase_repository.dart';
-import 'package:aqood_pro/core/models.dart';
+import 'package:aqdak/core/firebase_repository.dart';
+import 'package:aqdak/core/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

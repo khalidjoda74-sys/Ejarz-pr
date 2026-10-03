@@ -1,9 +1,9 @@
-import 'package:aqood_pro/core/app_controller.dart';
-import 'package:aqood_pro/core/models.dart';
-import 'package:aqood_pro/core/theme.dart';
-import 'package:aqood_pro/screens/create_contract.dart';
-import 'package:aqood_pro/screens/home.dart';
-import 'package:aqood_pro/widgets/common.dart';
+import 'package:aqdak/core/app_controller.dart';
+import 'package:aqdak/core/models.dart';
+import 'package:aqdak/core/theme.dart';
+import 'package:aqdak/screens/create_contract.dart';
+import 'package:aqdak/screens/home.dart';
+import 'package:aqdak/widgets/common.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -115,7 +115,6 @@ Future<void> _pumpHome(WidgetTester tester, AppController controller) async {
         home: Directionality(
           textDirection: TextDirection.rtl,
           child: HomeScreen(
-            onMenu: () {},
             onNotifications: () {},
             onCreate: () {},
             onContracts: () {},

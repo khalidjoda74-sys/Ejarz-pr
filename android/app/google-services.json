@@ -7,12 +7,122 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:475770424762:android:9baad3534fa582435ea183",
+        "android_client_info": {
+          "package_name": "com.ejarzpro.ejarz_pro"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "475770424762-6sqdml4brvhlinkagsu2usgqvp67lmvp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.ejarzpro.ejarz_pro",
+            "certificate_hash": "49a0be7f28bc608423e23e885a233bea91967bfd"
+          }
+        },
+        {
+          "client_id": "475770424762-v9bjhhqenn52q64n74p98ovnqcqf5bik.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCvt6D6Th7WCK6AUEOHy2AyGj8UngcHO4Y"
+        },
+        {
+          "current_key": "AIzaSyBJfM2oqTT6LZNARLypgD9BltK0arLhShw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "475770424762-v9bjhhqenn52q64n74p98ovnqcqf5bik.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "475770424762-5cprsdb5fcr8uk98i7j0b47kh1ff8pev.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "sa.aqdak.app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:475770424762:android:7a9e2dfaf936dcb25ea183",
+        "android_client_info": {
+          "package_name": "sa.aqdak.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "475770424762-nf4d87olqmp4h93ib0d1qnon86dqn2c1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "sa.aqdak.app",
+            "certificate_hash": "978906399e4117b68d412124c233e91f2b2d0f57"
+          }
+        },
+        {
+          "client_id": "475770424762-t4qg2cmpc76dbhflcmomermj70jicpi2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "sa.aqdak.app",
+            "certificate_hash": "49a0be7f28bc608423e23e885a233bea91967bfd"
+          }
+        },
+        {
+          "client_id": "475770424762-v9bjhhqenn52q64n74p98ovnqcqf5bik.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCvt6D6Th7WCK6AUEOHy2AyGj8UngcHO4Y"
+        },
+        {
+          "current_key": "AIzaSyBJfM2oqTT6LZNARLypgD9BltK0arLhShw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "475770424762-v9bjhhqenn52q64n74p98ovnqcqf5bik.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "475770424762-5cprsdb5fcr8uk98i7j0b47kh1ff8pev.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "sa.aqdak.app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:475770424762:android:cb21cf45e21c593a5ea183",
         "android_client_info": {
           "package_name": "sa.aqoodpro.app"
         }
       },
       "oauth_client": [
+        {
+          "client_id": "475770424762-kpqefh4knogip77ai0b6lm8o9g8i6g91.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "sa.aqoodpro.app",
+            "certificate_hash": "978906399e4117b68d412124c233e91f2b2d0f57"
+          }
+        },
         {
           "client_id": "475770424762-m9tbeu4mdfjp54eh3pqn6pvks5c219fk.apps.googleusercontent.com",
           "client_type": 1,
@@ -42,10 +152,10 @@
               "client_type": 3
             },
             {
-              "client_id": "475770424762-m05t50ar04bgo83apfnbu60tvvqcbf4m.apps.googleusercontent.com",
+              "client_id": "475770424762-5cprsdb5fcr8uk98i7j0b47kh1ff8pev.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "sa.aqoodpro.app"
+                "bundle_id": "sa.aqdak.app"
               }
             }
           ]

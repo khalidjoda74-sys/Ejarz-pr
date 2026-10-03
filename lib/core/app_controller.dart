@@ -9,11 +9,17 @@ import 'package:flutter/material.dart';
 import 'firebase_bootstrap.dart';
 import 'demo_config.dart';
 import 'firebase_repository.dart';
+import 'paged_feed.dart';
 import 'legal_links.dart';
 import 'models.dart';
 import 'contract_pricing.dart';
+import 'runtime_config.dart';
+import 'app_telemetry.dart';
 import 'property_management.dart';
 import 'notification_service.dart';
+import 'assistant/contract_draft_store.dart';
+import 'appearance_store.dart';
+import 'phone_session.dart';
 
 class _PendingContractSubmission {
   final String localId;
@@ -56,23 +62,66 @@ class AppController extends ChangeNotifier {
   bool splashCompleted = false;
   bool onboardingCompleted = false;
   bool loggedIn = false;
+  AccountPhase accountPhase = AccountPhase.loading;
+  String sessionError = '';
+  int sessionEpoch = 0;
+  String? _sessionUid;
+  bool phoneSignInInProgress = false;
+  int _phoneSignInAttempt = 0;
+  bool preferencesLoaded = false;
+  int get accountGeneration => _authGeneration;
+  bool isCurrentAccount(int generation) =>
+      !_disposed && generation == _authGeneration;
   bool darkMode = false;
-  bool biometricEnabled = false;
+  bool _darkModeChanged = false;
+  final AppearanceStore _appearanceStore = AppearanceStore();
   bool pushNotificationsEnabled = true;
   bool accountBlocked = false;
   bool maintenanceMode = false;
   bool adminBypassMaintenance = false;
   int mainNavigationIndex = 0;
+  final List<Map<String, dynamic>> savedParties = [];
+  final List<Map<String, dynamic>> paymentRecords = [];
+  final List<Map<String, dynamic>> invoices = [];
+  String recordsError = '';
+  final Map<String, PagedFeed> _feeds = {};
+  Map<String, dynamic> customerMetrics = {};
+  String? _boundUid, _bindingUid;
+  Future<void>? _bindingFuture;
+  bool hasMoreRecords(String collection) =>
+      _feeds[collection]?.hasMore ?? false;
+  bool loadingRecords(String collection) =>
+      _feeds[collection]?.loading ?? false;
+  Future<void> loadMoreRecords(String collection) async =>
+      _feeds[collection]?.loadMore();
+  int recordCount(String collection, int fallback) =>
+      (customerMetrics[collection] as num?)?.toInt() ?? fallback;
+  int get totalContracts => recordCount('contracts', contracts.length);
+  int get totalProperties => recordCount('properties', properties.length);
+  int get totalUnits => recordCount(
+      'units', properties.fold<int>(0, (n, p) => n + p.units.length));
+  int contractStatusCount(ContractStatus status) => recordCount(
+      'contractStatus_${status.name}',
+      contracts.where((c) => c.status == status).length);
+
+  final List<StreamSubscription<dynamic>> _recordSubscriptions = [];
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _paymentConfigSubscription;
   bool offlineMode = false;
   bool syncingPendingChanges = false;
   DateTime? lastSyncedAt;
   String offlineMessage = '';
+  String syncConflictMessage = '';
+  void acknowledgeSyncConflict() {
+    syncConflictMessage = '';
+    setNavigationIndex(1);
+  }
 
   String userName = 'عميل عقود';
   String userPhone = '';
   String userEmail = '';
   String homeGreetingPrefix = 'مرحبًا';
-  String homeWelcomeText = 'مرحبًا بك في عقود برو';
+  String homeWelcomeText = 'مرحبًا بك في عقدك';
   String homeHeroTitle = 'إنشاء عقد جديد';
   String homeHeroSubtitle =
       'أنشئ طلب عقد احترافيًا في دقائق\nوأرسله للمراجعة والتوثيق.';
@@ -106,8 +155,7 @@ class AppController extends ChangeNotifier {
   String legalRefundUrl = LegalLinks.refund;
   String legalAccountDeletionUrl = LegalLinks.accountDeletion;
 
-  bool get maintenanceBlocksApp =>
-      maintenanceMode && !kEjarzDemoMode && !adminBypassMaintenance;
+  bool get maintenanceBlocksApp => maintenanceMode && !adminBypassMaintenance;
 
   final List<ContractRecord> contracts = <ContractRecord>[];
   final List<PropertyRecord> properties = <PropertyRecord>[];
@@ -131,6 +179,8 @@ class AppController extends ChangeNotifier {
       _contentSubscription;
   Timer? _serverReachabilityTimer;
   bool _checkingServerReachability = false;
+  int _authGeneration = 0;
+  bool _disposed = false;
 
   int get pendingSyncCount =>
       _pendingContractSubmissions.length + _pendingPropertySaves.length;
@@ -144,7 +194,10 @@ class AppController extends ChangeNotifier {
       supportTickets.isNotEmpty;
 
   AppController() {
+    unawaited(_restoreDarkMode());
+    unawaited(_restoreOnboarding());
     if (kEjarzLocalDemoMode) {
+      accountPhase = AccountPhase.signedOut;
       _seedData();
       return;
     }
@@ -156,9 +209,6 @@ class AppController extends ChangeNotifier {
       // to have completed before runApp.
       unawaited(_configureFirebaseWhenReady());
     }
-    if (!kReleaseMode && !kEjarzDemoMode) {
-      _seedData();
-    }
   }
 
   Future<void> _configureFirebaseWhenReady() async {
@@ -167,174 +217,440 @@ class AppController extends ChangeNotifier {
     } catch (_) {
       // Firebase is optional during launch. The UI remains usable and the
       // authentication flow can report an actionable connection error later.
+      if (!_disposed) {
+        accountPhase = AccountPhase.error;
+        sessionError = 'تعذر الاتصال الآن. أعد المحاولة.';
+        notifyListeners();
+      }
       return;
     }
-    if (!FirebaseBootstrap.initialized) return;
+    if (_disposed) return;
+    if (!FirebaseBootstrap.initialized) {
+      accountPhase = AccountPhase.signedOut;
+      notifyListeners();
+      return;
+    }
     _configureFirebase();
   }
 
   void _configureFirebase() {
     if (_repository != null) return;
     _repository = FirebaseRepository();
-    if (kIsWeb) {
-      unawaited(_syncCurrentWebUser());
-    } else {
-      _authSubscription =
-          FirebaseAuth.instance.authStateChanges().listen(_syncFirebaseUser);
-    }
+    _authSubscription =
+        FirebaseAuth.instance.authStateChanges().listen(_syncFirebaseUser);
     _contentSubscription = FirebaseFirestore.instance
         .collection('appContent')
         .doc('config')
         .snapshots()
         .listen(_syncAppContent);
-  }
-
-  Future<void> _syncCurrentWebUser() async {
-    try {
-      await Future<void>.delayed(Duration.zero);
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) _syncFirebaseUser(user);
-    } catch (_) {
-      // Keep the UI visible if the web auth bridge is unavailable.
-    }
+    _paymentConfigSubscription = FirebaseFirestore.instance
+        .doc('appContent/payments')
+        .snapshots()
+        .listen((s) {
+      AppRuntime.payments = s.data() ?? {};
+      notifyListeners();
+    });
   }
 
   void _syncFirebaseUser(User? user) {
-    if (user == null) {
-      adminBypassMaintenance = false;
-      _cancelUserStreams();
+    if (_disposed) return;
+    if (user == null || (!kEjarzDemoMode && user.isAnonymous)) {
+      beginAccountSession(null);
+      if (user != null) unawaited(FirebaseAuth.instance.signOut());
       return;
     }
-    userPhone = user.phoneNumber ?? userPhone;
-    userEmail = user.email ?? userEmail;
+    beginAccountSession(user.uid);
     unawaited(_bindFirebaseUser(user));
+  }
+
+  /// Invalidates every callback and route belonging to the previous identity.
+  void beginAccountSession(String? uid) {
+    if (_sessionUid == uid && uid != null) return;
+    // Only the first verified identity may keep the public OTP route alive.
+    // Switching an existing identity still disposes all of its routes.
+    final keepPhoneRoute =
+        phoneSignInInProgress && _sessionUid == null && uid != null;
+    if (phoneSignInInProgress && _sessionUid != null && _sessionUid != uid) {
+      _phoneSignInAttempt++;
+      phoneSignInInProgress = false;
+    }
+    if (_sessionUid != null) {
+      AppNotificationService.clearPendingNotificationTap();
+      unawaited(
+          ContractDraftStore().clear(_sessionUid!).catchError((Object _) {}));
+    }
+    _sessionUid = uid;
+    if (!keepPhoneRoute) sessionEpoch++;
+    _authGeneration++;
+    _boundUid = null;
+    _bindingUid = null;
+    _bindingFuture = null;
+    _cancelUserStreams();
+    _serverReachabilityTimer?.cancel();
+    _checkingServerReachability = false;
+    _pendingContractSubmissions.clear();
+    _pendingPropertySaves.clear();
+    _syncedDraftIds.clear();
+    contracts.clear();
+    properties.clear();
+    notifications.clear();
+    supportTickets.clear();
+    transactions.clear();
+    savedParties.clear();
+    paymentRecords.clear();
+    invoices.clear();
+    customerMetrics = {};
+    userName = 'عميل عقدك';
+    userPhone = '';
+    userEmail = '';
+    loggedIn = false;
+    accountBlocked = false;
+    adminBypassMaintenance = false;
+    mainNavigationIndex = 0;
+    offlineMode = false;
+    syncingPendingChanges = false;
+    lastSyncedAt = null;
+    offlineMessage = recordsError = syncConflictMessage = sessionError = '';
+    pushNotificationsEnabled = true;
+    accountPhase = uid == null ? AccountPhase.signedOut : AccountPhase.loading;
     notifyListeners();
   }
 
+  Future<void> confirmPhoneSignIn(Future<void> Function() verify) async {
+    final attempt = ++_phoneSignInAttempt;
+    phoneSignInInProgress = true;
+    notifyListeners();
+    try {
+      await verify();
+      if (_disposed || attempt != _phoneSignInAttempt) return;
+      await retryAccountSession();
+      if (_disposed || attempt != _phoneSignInAttempt) return;
+      if (accountPhase != AccountPhase.authenticated &&
+          accountPhase != AccountPhase.profileRequired) {
+        throw FirebaseFunctionsException(
+            code: 'failed-precondition',
+            message: sessionError.isNotEmpty
+                ? sessionError
+                : 'تعذر فتح الحساب. أعد المحاولة.');
+      }
+    } finally {
+      if (!_disposed && attempt == _phoneSignInAttempt) {
+        phoneSignInInProgress = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>?> resolveAccountSession(String uid,
+      {Future<Map<String, dynamic>> Function()? resolver,
+      Future<void> Function()? onRemoved}) async {
+    beginAccountSession(uid);
+    final generation = _authGeneration;
+    accountPhase = AccountPhase.loading;
+    sessionError = '';
+    notifyListeners();
+    try {
+      final result = await (resolver ??
+          () =>
+              callPhoneSession('resolvePhoneSession', {'expectedUid': uid}))();
+      if (!isCurrentAccount(generation)) return null;
+      completeOnboarding();
+      if (result['state'] == 'profileRequired') {
+        userPhone = result['phone'] as String;
+        accountPhase = AccountPhase.profileRequired;
+        notifyListeners();
+        return null;
+      }
+      final profile = Map<String, dynamic>.from(result['profile'] as Map);
+      if (result['state'] != 'ready' || profile['uid'] != uid) {
+        throw StateError('Invalid session');
+      }
+      userName = profile['name'] as String? ?? '';
+      userPhone = profile['phone'] as String? ?? '';
+      userEmail = profile['email'] as String? ?? '';
+      return profile;
+    } catch (error) {
+      if (!isCurrentAccount(generation)) return null;
+      final removed = error is FirebaseFunctionsException &&
+          error.details is Map &&
+          error.details['reason'] == 'account-removed';
+      final authRemoved = error is FirebaseAuthException &&
+          ['user-not-found', 'user-token-expired', 'invalid-user-token']
+              .contains(error.code);
+      if (removed || authRemoved) {
+        try {
+          await (onRemoved?.call() ?? FirebaseAuth.instance.signOut());
+          if (isCurrentAccount(generation)) beginAccountSession(null);
+          return null;
+        } catch (_) {
+          if (!isCurrentAccount(generation)) return null;
+        }
+      }
+      loggedIn = false;
+      accountBlocked = error is FirebaseFunctionsException &&
+          error.details is Map &&
+          error.details['reason'] == 'account-blocked';
+      accountPhase = accountBlocked ? AccountPhase.blocked : AccountPhase.error;
+      sessionError = authFlowError(error);
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<void> retryAccountSession() async {
+    if (!FirebaseBootstrap.initialized) {
+      accountPhase = AccountPhase.loading;
+      notifyListeners();
+      try {
+        await FirebaseBootstrap.retry();
+        if (!_disposed) _configureFirebase();
+      } catch (error) {
+        if (!_disposed) {
+          accountPhase = AccountPhase.error;
+          sessionError = authFlowError(error);
+          notifyListeners();
+        }
+      }
+      return;
+    }
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      beginAccountSession(null);
+      return;
+    }
+    await _bindFirebaseUser(user);
+  }
+
   Future<void> _bindFirebaseUser(User user) async {
+    beginAccountSession(user.uid);
+    if (_bindingUid == user.uid && _bindingFuture != null) {
+      await _bindingFuture;
+      return;
+    }
+    if (_boundUid == user.uid && _feeds.isNotEmpty) return;
+    _bindingUid = user.uid;
+    _boundUid = user.uid;
+    final task = _performUserBinding(user);
+    _bindingFuture = task;
+    try {
+      await task;
+    } finally {
+      if (identical(_bindingFuture, task)) {
+        _bindingFuture = null;
+        _bindingUid = null;
+      }
+    }
+  }
+
+  Future<void> _performUserBinding(User user) async {
+    final generation = ++_authGeneration;
+    _cancelUserStreams();
+    bool current() => !_disposed && generation == _authGeneration;
     final repository = _repository;
     if (repository == null) return;
     try {
+      if (!kEjarzDemoMode) {
+        final profile = await resolveAccountSession(user.uid);
+        if (!current() || profile == null) return;
+      }
+      var saved = await repository.firestore
+          .collection('users')
+          .doc(user.uid)
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 12));
+      if (!current()) return;
+      if (saved.exists) {
+        final data = saved.data()!;
+        userName = (data['name'] as String?) ?? '';
+        userPhone = (data['phone'] as String?) ?? '';
+        userEmail = (data['email'] as String?) ?? '';
+      }
       if (kEjarzFirebaseDemoMode) {
-        await repository.ensureUserProfile(
-          uid: user.uid,
-          phone: user.phoneNumber ?? userPhone,
-          name: userName,
-          email: user.email ?? userEmail,
-          isDemo: true,
-        );
         await repository.ensureDemoUserData(
           uid: user.uid,
           customerName: userName,
           customerPhone: userPhone,
           customerEmail: userEmail,
         );
+        if (!current()) return;
+        saved = await repository.firestore.doc('users/${user.uid}').get();
       } else {
-        final profileExists = await repository.userProfileExists(user.uid);
+        final profileExists = saved.exists;
+        if (!current()) return;
         if (!profileExists) {
           loggedIn = false;
+          accountPhase = AccountPhase.profileRequired;
           accountBlocked = false;
           _cancelUserStreams();
           notifyListeners();
           return;
         }
       }
-      final prefs = await repository.userNotificationPrefs(user.uid);
+      final prefs = Map<String, dynamic>.from(
+          saved.data()?['notificationPrefs'] as Map? ?? {});
+      if (!current()) return;
       pushNotificationsEnabled = prefs['push'] != false;
-      adminBypassMaintenance = await repository.isAdminUser(user.uid);
+      adminBypassMaintenance = await repository
+          .isAdminUser(user.uid)
+          .timeout(const Duration(seconds: 12));
+      if (!current()) return;
       unawaited(_registerMessagingToken(user.uid));
-      final status = await repository.userStatus(user.uid);
+      final status = saved.data()?['status'] as String? ?? 'active';
+      if (!current()) return;
       accountBlocked = status == 'blocked' || status == 'suspended';
       if (accountBlocked) {
         loggedIn = false;
+        accountPhase = AccountPhase.blocked;
         notifyListeners();
         return;
       }
     } catch (error) {
-      loggedIn = true;
+      if (!current()) return;
+      loggedIn = false;
       accountBlocked = false;
-      _handleServerOperationFailure(
-        error,
-        'تعذر الاتصال بالخادم. تم فتح التطبيق بآخر بيانات محفوظة.',
-      );
+      accountPhase = AccountPhase.error;
+      sessionError = authFlowError(error);
+      notifyListeners();
+      return;
     }
     loggedIn = true;
+    accountPhase = AccountPhase.authenticated;
+    AppTelemetry.record('session_start', 'home');
+    AppTelemetry.record('screen_view', 'home');
+    completeOnboarding();
     _cancelUserStreams();
-    _onlineStateSubscription = repository.watchUserOnlineState(user.uid).listen(
-          _handleOnlineState,
-          onError: (Object error) => _handleUserStreamError(
-            error,
-            _serverReachabilityCheckMessage,
-          ),
-        );
-    _contractsSubscription =
-        repository.watchUserContracts(user.uid).listen((items) {
-      final pendingLocal =
-          contracts.where((item) => item.pendingSync).toList(growable: false);
+    void bind(
+        String collection,
+        String order,
+        void Function(List<QueryDocumentSnapshot<Map<String, dynamic>>>)
+            onData) {
+      final feed = PagedFeed(
+        query: repository.firestore
+            .collection(collection)
+            .where('uid', isEqualTo: user.uid)
+            .orderBy(order, descending: true),
+        onData: (rows) {
+          if (!current()) return;
+          rows.sort((a, b) =>
+              ((b.data()[order] as Timestamp?)?.millisecondsSinceEpoch ?? 0)
+                  .compareTo(
+                      (a.data()[order] as Timestamp?)?.millisecondsSinceEpoch ??
+                          0));
+          onData(rows);
+          lastSyncedAt = DateTime.now();
+          recordsError = '';
+          notifyListeners();
+        },
+        onError: (error) {
+          if (!current()) return;
+          recordsError = 'تعذر تحديث السجلات. أعد المحاولة عند توفر الاتصال.';
+          _handleUserStreamError(error, recordsError);
+          notifyListeners();
+        },
+        onState: () {
+          if (current()) notifyListeners();
+        },
+      );
+      _feeds[collection] = feed;
+      feed.start();
+    }
+
+    for (final entry in {
+      'savedParties': savedParties,
+      'payments': paymentRecords,
+      'invoices': invoices
+    }.entries) {
+      bind(entry.key, entry.key == 'savedParties' ? 'updatedAt' : 'createdAt',
+          (rows) {
+        entry.value
+          ..clear()
+          ..addAll(rows
+              .where((d) => d.data()['archived'] != true)
+              .map((d) => {'id': d.id, ...d.data()}));
+      });
+    }
+    _recordSubscriptions.add(repository.firestore
+        .doc('customerOverview/${user.uid}')
+        .snapshots()
+        .listen((snapshot) {
+      if (!current()) return;
+      customerMetrics = {
+        'contracts': 0,
+        'properties': 0,
+        'units': 0,
+        'availableUnits': 0,
+        'unreadNotifications': 0,
+        'grossHalalas': 0,
+        'refundHalalas': 0,
+        ...Map<String, dynamic>.from(snapshot.data()?['metrics'] as Map? ?? {})
+      };
+      notifyListeners();
+    }, onError: (Object error) {
+      if (current()) {
+        recordsError = 'تعذر تحديث الإجماليات.';
+        notifyListeners();
+      }
+    }));
+    _recordSubscriptions.add(repository.firestore
+        .doc('users/${user.uid}')
+        .snapshots(includeMetadataChanges: true)
+        .listen((snapshot) {
+      if (!current()) return;
+      _handleOnlineState(!snapshot.metadata.isFromCache);
+      final data = snapshot.data();
+      if (data == null) return;
+      userName = data['name'] as String? ?? userName;
+      userEmail = data['email'] as String? ?? userEmail;
+      accountBlocked = ['blocked', 'suspended'].contains(data['status']);
+      notifyListeners();
+    }, onError: (Object error) {
+      if (current()) {
+        _handleUserStreamError(error, _serverReachabilityCheckMessage);
+      }
+    }));
+    bind('contracts', 'updatedAt', (rows) {
+      final pending = contracts.where((c) => c.pendingSync).toList();
       contracts
         ..clear()
-        ..addAll(items);
-      for (final pending in pendingLocal) {
-        if (!contracts.any((item) => item.id == pending.id)) {
-          contracts.insert(0, pending);
-        }
+        ..addAll(rows.map(repository.contractFromDoc));
+      for (final item in pending) {
+        if (!contracts.any((c) => c.id == item.id)) contracts.insert(0, item);
       }
-      lastSyncedAt = DateTime.now();
-      notifyListeners();
-    },
-            onError: (Object error) => _handleUserStreamError(
-                  error,
-                  'تعذر تحديث العقود الآن. يتم عرض آخر بيانات محفوظة.',
-                ));
-    _propertiesSubscription =
-        repository.watchUserProperties(user.uid).listen((items) {
-      final pendingIds =
-          _pendingPropertySaves.map((item) => item.localId).toSet();
-      final pendingLocal = properties
-          .where((item) => pendingIds.contains(item.id))
-          .toList(growable: false);
+    });
+    bind('properties', 'updatedAt', (rows) {
+      final ids = _pendingPropertySaves.map((p) => p.localId).toSet();
+      final pending = properties.where((p) => ids.contains(p.id)).toList();
       properties
         ..clear()
-        ..addAll(items);
-      for (final pending in pendingLocal) {
-        if (!properties.any((item) => item.id == pending.id)) {
-          properties.insert(0, pending);
-        }
+        ..addAll(rows
+            .where((d) => d.data()['status'] != 'archived')
+            .map(repository.propertyFromDoc));
+      for (final item in pending) {
+        if (!properties.any((p) => p.id == item.id)) properties.insert(0, item);
       }
-      lastSyncedAt = DateTime.now();
-      notifyListeners();
-    },
-            onError: (Object error) => _handleUserStreamError(
-                  error,
-                  'تعذر تحديث العقارات الآن. يتم عرض آخر بيانات محفوظة.',
-                ));
-    _notificationsSubscription =
-        repository.watchUserNotifications(user.uid).listen((items) {
+    });
+    bind('notifications', 'createdAt', (rows) {
       notifications
         ..clear()
-        ..addAll(items);
-      lastSyncedAt = DateTime.now();
-      notifyListeners();
-    },
-            onError: (Object error) => _handleUserStreamError(
-                  error,
-                  'تعذر تحديث الإشعارات الآن. يتم عرض آخر بيانات محفوظة.',
-                ));
-    _supportTicketsSubscription =
-        repository.watchUserSupportTickets(user.uid).listen((items) {
+        ..addAll(rows.map(repository.notificationFromDoc));
+    });
+    bind('supportTickets', 'updatedAt', (rows) {
       supportTickets
         ..clear()
-        ..addAll(items);
-      lastSyncedAt = DateTime.now();
-      notifyListeners();
-    },
-            onError: (Object error) => _handleUserStreamError(
-                  error,
-                  'تعذر تحديث الدعم الفني الآن. يتم عرض آخر بيانات محفوظة.',
-                ));
+        ..addAll(rows.map(repository.supportTicketFromDoc));
+    });
+    notifyListeners();
   }
 
   void _cancelUserStreams() {
+    for (final feed in _feeds.values) {
+      feed.dispose();
+    }
+    _feeds.clear();
+    for (final subscription in _recordSubscriptions) {
+      subscription.cancel();
+    }
+    _recordSubscriptions.clear();
     _onlineStateSubscription?.cancel();
     _contractsSubscription?.cancel();
     _propertiesSubscription?.cancel();
@@ -407,6 +723,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _verifyServerReachability(String offlineMessage) async {
+    final generation = _authGeneration;
     if (_checkingServerReachability) return;
     final repository = _repository;
     final user = FirebaseBootstrap.initialized
@@ -418,13 +735,15 @@ class AppController extends ChangeNotifier {
       await repository
           .verifyServerReachable(user.uid)
           .timeout(const Duration(seconds: 8));
+      if (!isCurrentAccount(generation)) return;
       _markOnline();
     } catch (error) {
+      if (!isCurrentAccount(generation)) return;
       if (_isConnectivityFailure(error)) {
         _markOffline(offlineMessage);
       }
     } finally {
-      _checkingServerReachability = false;
+      if (isCurrentAccount(generation)) _checkingServerReachability = false;
     }
   }
 
@@ -444,6 +763,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> syncPendingChangesNow() async {
+    final generation = _authGeneration;
     if (syncingPendingChanges || pendingSyncCount == 0) return;
     final repository = _repository;
     final user = FirebaseBootstrap.initialized
@@ -458,6 +778,7 @@ class AppController extends ChangeNotifier {
     final pendingItems =
         List<_PendingContractSubmission>.of(_pendingContractSubmissions);
     for (final pending in pendingItems) {
+      if (!isCurrentAccount(generation)) return;
       try {
         final synced = await repository.submitContract(
           uid: user.uid,
@@ -469,6 +790,7 @@ class AppController extends ChangeNotifier {
           existingDraftId: pending.remoteDraftId,
           progress: pending.progress,
         );
+        if (!isCurrentAccount(generation)) return;
         if (pending.localId != synced.id) {
           _syncedDraftIds[pending.localId] = synced.id;
         }
@@ -485,7 +807,21 @@ class AppController extends ChangeNotifier {
         }
         lastSyncedAt = DateTime.now();
       } catch (error) {
+        if (!isCurrentAccount(generation)) return;
         syncingPendingChanges = false;
+        if (error is FirebaseFunctionsException &&
+            ['failed-precondition', 'invalid-argument'].contains(error.code) &&
+            pending.status == ContractStatus.awaitingPayment) {
+          final reviewDraft = ContractDraft.copyOf(pending.draft)
+            ..frozenTotal = null
+            ..frozenPrice = null;
+          _queueContractSubmission(reviewDraft, ContractStatus.draft,
+              existingDraftId: pending.localId, progress: pending.progress);
+          syncConflictMessage =
+              '${error.message ?? 'تغيرت إعدادات الطلب.'} حُفظ الطلب كمسودة؛ راجعه قبل الإرسال.';
+          notifyListeners();
+          return;
+        }
         _handleServerOperationFailure(
           error,
           'تعذرت المزامنة الآن. سنعيد المحاولة عند عودة الاتصال.',
@@ -498,6 +834,7 @@ class AppController extends ChangeNotifier {
       _pendingPropertySaves,
     );
     for (final pending in pendingProperties) {
+      if (!isCurrentAccount(generation)) return;
       try {
         final saved = await repository.saveProperty(
           uid: user.uid,
@@ -508,6 +845,7 @@ class AppController extends ChangeNotifier {
           expectedUnits: pending.expectedUnits,
           replacingNumber: pending.replacingNumber,
         );
+        if (!isCurrentAccount(generation)) return;
         _pendingPropertySaves.remove(pending);
         final index =
             properties.indexWhere((item) => item.id == pending.localId);
@@ -524,6 +862,7 @@ class AppController extends ChangeNotifier {
         }
         lastSyncedAt = DateTime.now();
       } catch (error) {
+        if (!isCurrentAccount(generation)) return;
         syncingPendingChanges = false;
         _handleServerOperationFailure(
           error,
@@ -541,10 +880,14 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _registerMessagingToken(String uid) async {
+    final generation = _authGeneration;
     final repository = _repository;
-    if (repository == null || kIsWeb) return;
+    if (repository == null || !pushNotificationsEnabled) return;
     final token = await AppNotificationService.currentToken();
+    if (!isCurrentAccount(generation)) return;
     if (token != null && token.trim().isNotEmpty) {
+      if (kIsWeb) await AppNotificationService.initialize();
+      if (!isCurrentAccount(generation)) return;
       await repository.saveFcmToken(
         uid: uid,
         token: token,
@@ -552,8 +895,10 @@ class AppController extends ChangeNotifier {
       );
     }
     await _fcmTokenSubscription?.cancel();
+    if (!isCurrentAccount(generation)) return;
     _fcmTokenSubscription =
         AppNotificationService.tokenRefresh.listen((newToken) {
+      if (!isCurrentAccount(generation)) return;
       unawaited(repository.saveFcmToken(
         uid: uid,
         token: newToken,
@@ -565,6 +910,7 @@ class AppController extends ChangeNotifier {
   void _syncAppContent(DocumentSnapshot<Map<String, dynamic>> snapshot) {
     final data = snapshot.data();
     if (data == null) return;
+    AppRuntime.config = data;
     maintenanceMode = data['maintenanceMode'] == true;
     final legalLinks = data['legalLinks'];
     if (legalLinks is Map) {
@@ -655,8 +1001,11 @@ class AppController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _authGeneration++;
     _authSubscription?.cancel();
     _contentSubscription?.cancel();
+    _paymentConfigSubscription?.cancel();
     _serverReachabilityTimer?.cancel();
     _cancelUserStreams();
     super.dispose();
@@ -1350,27 +1699,20 @@ class AppController extends ChangeNotifier {
     ];
   }
 
-  int get unreadNotifications =>
-      notifications.where((item) => !item.read).length;
-  int get activeContracts => contracts
-      .where((contract) =>
-          contract.status != ContractStatus.authenticated &&
-          contract.status != ContractStatus.rejected)
-      .length;
-  int get awaitingContracts => contracts
-      .where((contract) => contract.status == ContractStatus.processing)
-      .length;
-  int get completedContracts => contracts
-      .where((contract) => contract.status == ContractStatus.authenticated)
-      .length;
-  int get processingContracts => contracts
-      .where((contract) => contract.status == ContractStatus.processing)
-      .length;
-  int get availableUnits => properties.fold<int>(
-        0,
-        (total, property) =>
-            total + property.units.where((unit) => unit.isAvailable).length,
-      );
+  int get unreadNotifications => recordCount(
+      'unreadNotifications', notifications.where((item) => !item.read).length);
+  int get activeContracts =>
+      totalContracts -
+      completedContracts -
+      contractStatusCount(ContractStatus.rejected);
+  int get awaitingContracts => contractStatusCount(ContractStatus.processing);
+  int get completedContracts =>
+      contractStatusCount(ContractStatus.authenticated);
+  int get processingContracts => contractStatusCount(ContractStatus.processing);
+  int get availableUnits => recordCount(
+      'availableUnits',
+      properties.fold<int>(
+          0, (n, p) => n + p.units.where((u) => u.isAvailable).length));
 
   void completeSplash() {
     splashCompleted = true;
@@ -1379,7 +1721,24 @@ class AppController extends ChangeNotifier {
 
   void completeOnboarding() {
     onboardingCompleted = true;
+    unawaited(_appearanceStore.completeOnboarding().catchError((Object _) {}));
     notifyListeners();
+  }
+
+  Future<void> _restoreOnboarding() async {
+    try {
+      final saved = await _appearanceStore
+          .readOnboardingCompleted()
+          .timeout(const Duration(seconds: 3));
+      if (!_disposed && !onboardingCompleted) onboardingCompleted = saved;
+    } catch (_) {
+      // Browsers with storage disabled can still continue through onboarding.
+    } finally {
+      if (!_disposed) {
+        preferencesLoaded = true;
+        notifyListeners();
+      }
+    }
   }
 
   void login({String? name, String? phone, String? email}) {
@@ -1412,40 +1771,45 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void logout() {
-    _pendingContractSubmissions.clear();
-    _pendingPropertySaves.clear();
-    _syncedDraftIds.clear();
-    offlineMode = false;
-    offlineMessage = '';
-    syncingPendingChanges = false;
-    if (kEjarzLocalDemoMode) {
-      loggedIn = false;
-      accountBlocked = false;
-      mainNavigationIndex = 0;
-      notifyListeners();
-      return;
-    }
+  Future<void> logout() async {
     final user = FirebaseBootstrap.initialized
         ? FirebaseAuth.instance.currentUser
         : null;
     final repository = _repository;
-    if (user != null && repository != null && !kIsWeb) {
-      unawaited(AppNotificationService.currentToken().then((token) async {
-        if (token == null || token.trim().isEmpty) return;
-        await repository.deactivateFcmToken(uid: user.uid, token: token);
-      }));
-    }
-    try {
-      unawaited(FirebaseAuth.instance.signOut());
-    } catch (_) {
-      // Firebase may be unavailable in lightweight widget tests.
-    }
-    loggedIn = false;
-    accountBlocked = false;
-    mainNavigationIndex = 0;
-    _cancelUserStreams();
+    beginAccountSession(null);
+    final generation = _authGeneration;
+    unawaited(ContractDraftStore()
+        .clear(user?.uid ?? 'local-demo')
+        .catchError((Object _) {}));
+    if (user == null || kEjarzLocalDemoMode) return;
+    accountPhase = AccountPhase.loading;
     notifyListeners();
+    try {
+      // Remove this device while the departing user's credentials are valid.
+      if (repository != null) {
+        try {
+          final token = await AppNotificationService.currentToken()
+              .timeout(const Duration(seconds: 3));
+          if (token != null &&
+              token.isNotEmpty &&
+              isCurrentAccount(generation)) {
+            await repository
+                .deactivateFcmToken(uid: user.uid, token: token)
+                .timeout(const Duration(seconds: 3));
+          }
+        } catch (_) {
+          /* Sign-out remains available when the device is offline. */
+        }
+      }
+      if (!isCurrentAccount(generation)) return;
+      await FirebaseAuth.instance.signOut();
+      if (isCurrentAccount(generation)) beginAccountSession(null);
+    } catch (_) {
+      if (!isCurrentAccount(generation)) return;
+      accountPhase = AccountPhase.error;
+      sessionError = 'تعذر إكمال تسجيل الخروج. حاول مجددًا.';
+      notifyListeners();
+    }
   }
 
   Future<void> deleteOwnAccount() async {
@@ -1464,16 +1828,23 @@ class AppController extends ChangeNotifier {
       options: HttpsCallableOptions(timeout: const Duration(minutes: 9)),
     );
     final result = await callable.call<Map<String, dynamic>>(
-      <String, Object?>{'confirmation': 'DELETE_ACCOUNT'},
+      <String, Object?>{
+        'confirmation': 'DELETE_ACCOUNT',
+        'expectedUid': user.uid
+      },
     );
     if (result.data['deleted'] != true) {
       throw StateError('لم يؤكد الخادم اكتمال حذف الحساب.');
     }
+    await ContractDraftStore().clear(user.uid);
   }
 
   Future<void> completeDeletedAccountSignOut() async {
+    beginAccountSession(null);
+    _authGeneration++;
     _cancelUserStreams();
     _pendingContractSubmissions.clear();
+    syncConflictMessage = '';
     _pendingPropertySaves.clear();
     _syncedDraftIds.clear();
     contracts.clear();
@@ -1500,17 +1871,36 @@ class AppController extends ChangeNotifier {
 
   void setNavigationIndex(int index) {
     mainNavigationIndex = index;
+    AppTelemetry.record(
+        'screen_view',
+        const [
+          'home',
+          'contracts',
+          'properties',
+          'wallet',
+          'profile'
+        ][index.clamp(0, 4)]);
     notifyListeners();
   }
 
   void toggleDarkMode(bool value) {
+    _darkModeChanged = true;
     darkMode = value;
     notifyListeners();
+    unawaited(_appearanceStore.saveDarkMode(value).catchError((Object _) {}));
   }
 
-  void toggleBiometric(bool value) {
-    biometricEnabled = value;
-    notifyListeners();
+  Future<void> _restoreDarkMode() async {
+    try {
+      final saved = await _appearanceStore
+          .readDarkMode()
+          .timeout(const Duration(seconds: 3));
+      if (_disposed || _darkModeChanged) return;
+      darkMode = saved;
+      notifyListeners();
+    } catch (_) {
+      // The device may have disabled secure storage; keep the default theme.
+    }
   }
 
   void togglePushNotifications(bool value) {
@@ -1525,9 +1915,10 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _enablePushNotifications() async {
+    final generation = _authGeneration;
     try {
       final authorized = await AppNotificationService.requestPermission();
-      if (!authorized) return;
+      if (!authorized || !isCurrentAccount(generation)) return;
       final user = FirebaseBootstrap.initialized
           ? FirebaseAuth.instance.currentUser
           : null;
@@ -1537,7 +1928,32 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<String> enableBrowserNotifications() async {
+    final generation = _authGeneration;
+    if (!FirebaseBootstrap.initialized) {
+      return 'تعذر الاتصال بخدمة الإشعارات. حاول لاحقًا.';
+    }
+    final authorized = await AppNotificationService.requestPermission();
+    if (!isCurrentAccount(generation)) return 'تغير الحساب';
+    if (!authorized) {
+      return 'لم يُمنح إذن الإشعارات. راجع أذونات الموقع في المتصفح. على الآيفون قد تحتاج إضافة الموقع إلى الشاشة الرئيسية أولًا.';
+    }
+    final token = await AppNotificationService.currentToken();
+    if (!isCurrentAccount(generation)) return 'تغير الحساب';
+    if (token == null) {
+      return 'تعذر تفعيل إشعارات المتصفح الآن. تظل جميع التنبيهات متاحة داخل صفحة الإشعارات.';
+    }
+    pushNotificationsEnabled = true;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) await _registerMessagingToken(user.uid);
+    if (!isCurrentAccount(generation)) return 'تغير الحساب';
+    _persistNotificationPrefs();
+    notifyListeners();
+    return 'تم تفعيل إشعارات هذا المتصفح بنجاح.';
+  }
+
   void _persistNotificationPrefs() {
+    final generation = _authGeneration;
     final repository = _repository;
     final user = FirebaseBootstrap.initialized
         ? FirebaseAuth.instance.currentUser
@@ -1550,6 +1966,7 @@ class AppController extends ChangeNotifier {
         push: pushNotificationsEnabled,
       )
           .catchError((Object error) {
+        if (!isCurrentAccount(generation)) return;
         _handleServerOperationFailure(
           error,
           'تم حفظ تفضيلات الإشعارات محليًا وسيتم تحديثها لاحقًا.',
@@ -1559,6 +1976,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> markAllNotificationsRead() async {
+    final generation = _authGeneration;
     for (final item in notifications) {
       item.read = true;
     }
@@ -1571,6 +1989,7 @@ class AppController extends ChangeNotifier {
       try {
         await repository.markAllNotificationsRead(user.uid);
       } catch (error) {
+        if (!isCurrentAccount(generation)) return;
         _handleServerOperationFailure(
           error,
           'تم تعليم الإشعارات محليًا وسيتم التحديث لاحقًا.',
@@ -1580,6 +1999,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> markNotificationRead(NotificationItem item) async {
+    final generation = _authGeneration;
     item.read = true;
     notifyListeners();
     final repository = _repository;
@@ -1587,6 +2007,7 @@ class AppController extends ChangeNotifier {
       try {
         await repository.markNotificationRead(item.id);
       } catch (error) {
+        if (!isCurrentAccount(generation)) return;
         _handleServerOperationFailure(
           error,
           'تم تعليم الإشعار محليًا وسيتم التحديث لاحقًا.',
@@ -1596,6 +2017,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> markNotificationReadById(String notificationId) async {
+    final generation = _authGeneration;
     if (notificationId.trim().isEmpty) return;
     for (final item in notifications) {
       if (item.id == notificationId) {
@@ -1608,6 +2030,7 @@ class AppController extends ChangeNotifier {
       try {
         await repository.markNotificationRead(notificationId);
       } catch (error) {
+        if (!isCurrentAccount(generation)) return;
         _handleServerOperationFailure(
           error,
           'سيتم تعليم الإشعار كمقروء عند عودة الاتصال.',
@@ -1617,6 +2040,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<ContractRecord?> contractById(String contractId) async {
+    final generation = _authGeneration;
     for (final contract in contracts) {
       if (contract.id == contractId) return contract;
     }
@@ -1624,6 +2048,7 @@ class AppController extends ChangeNotifier {
     if (repository == null) return null;
     try {
       final contract = await repository.fetchContract(contractId);
+      if (!isCurrentAccount(generation)) return null;
       if (contract != null) {
         _scheduleServerReachabilityCheck(
           _serverReachabilityCheckMessage,
@@ -1632,6 +2057,7 @@ class AppController extends ChangeNotifier {
       }
       return contract;
     } catch (error) {
+      if (!isCurrentAccount(generation)) return null;
       _handleServerOperationFailure(
         error,
         'تعذر جلب تفاصيل العقد الآن. يتم عرض البيانات المحفوظة.',
@@ -1640,12 +2066,38 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<void> saveParty(PartyData party,
+      {String id = '', bool archived = false}) async {
+    if (!AppRuntime.service('savedParties')) {
+      throw StateError('خدمة الأطراف غير متاحة حاليًا.');
+    }
+    await FirebaseFunctions.instanceFor(region: 'us-central1')
+        .httpsCallable('saveCustomerParty')
+        .call({
+      'id': id.isEmpty ? null : id,
+      'expectedUid': _sessionUid,
+      'values': FirebaseRepository.partyDataToMap(party),
+      'archived': archived
+    });
+  }
+
+  Future<void> replySupport(String ticketId, String message) async {
+    await FirebaseFunctions.instanceFor(region: 'us-central1')
+        .httpsCallable('replyCustomerSupport')
+        .call({
+      'ticketId': ticketId,
+      'message': message,
+      'expectedUid': _sessionUid
+    });
+  }
+
   Future<String> createSupportTicket({
     ContractRecord? contract,
     required String subject,
     required String message,
     String priority = 'normal',
   }) async {
+    final generation = _authGeneration;
     final user = FirebaseBootstrap.initialized
         ? FirebaseAuth.instance.currentUser
         : null;
@@ -1665,11 +2117,13 @@ class AppController extends ChangeNotifier {
         message: message,
         priority: priority,
       );
+      if (!isCurrentAccount(generation)) throw StateError('تغير الحساب');
       _scheduleServerReachabilityCheck(
         _serverReachabilityCheckMessage,
         delay: Duration.zero,
       );
     } catch (error) {
+      if (!isCurrentAccount(generation)) rethrow;
       _handleServerOperationFailure(
         error,
         'الدعم الفني يحتاج اتصال بالإنترنت. حاول مرة أخرى عند عودة الاتصال.',
@@ -1684,7 +2138,9 @@ class AppController extends ChangeNotifier {
     required MissingRequirement requirement,
     required String message,
     String fileName = '',
+    String fileUrl = '',
   }) async {
+    final generation = _authGeneration;
     final user = FirebaseBootstrap.initialized
         ? FirebaseAuth.instance.currentUser
         : null;
@@ -1700,12 +2156,15 @@ class AppController extends ChangeNotifier {
         requirement: requirement,
         message: message,
         fileName: fileName,
+        fileUrl: fileUrl,
       );
+      if (!isCurrentAccount(generation)) throw StateError('تغير الحساب');
       _scheduleServerReachabilityCheck(
         _serverReachabilityCheckMessage,
         delay: Duration.zero,
       );
     } catch (error) {
+      if (!isCurrentAccount(generation)) rethrow;
       _handleServerOperationFailure(
         error,
         'إرسال النواقص يحتاج اتصال بالإنترنت. جهّز الرد ثم أرسله عند عودة الاتصال.',
@@ -1721,6 +2180,7 @@ class AppController extends ChangeNotifier {
     List<UnitRecord>? unitEdits,
     String replacingNumber = '',
   }) async {
+    final generation = _authGeneration;
     if (existing != null) {
       existing = properties.firstWhere((p) => p.id == existing!.id,
           orElse: () => existing!);
@@ -1756,6 +2216,9 @@ class AppController extends ChangeNotifier {
           initialUnits: units,
           expectedUnits: priorPending?.expectedUnits,
         );
+        if (!isCurrentAccount(generation)) {
+          throw StateError("تغير الحساب، أعد المحاولة");
+        }
         _pendingPropertySaves.removeWhere((item) => item.localId == existingId);
         final index = properties
             .indexWhere((item) => item.id == saved.id || item.id == existingId);
@@ -1771,6 +2234,9 @@ class AppController extends ChangeNotifier {
         notifyListeners();
         return saved;
       } catch (error) {
+        if (!isCurrentAccount(generation)) {
+          throw StateError("تغير الحساب، أعد المحاولة");
+        }
         if (error is StateError || !_isConnectivityFailure(error)) rethrow;
         _handleServerOperationFailure(
           error,
@@ -1811,111 +2277,6 @@ class AppController extends ChangeNotifier {
     }
     notifyListeners();
     return local;
-  }
-
-  ContractDraft _cloneDraft(ContractDraft source) {
-    final clone = ContractDraft()
-      ..type = source.type
-      ..role = source.role
-      ..startDate = source.startDate
-      ..durationYears = source.durationYears
-      ..durationMonths = source.durationMonths
-      ..durationDays = source.durationDays
-      ..endDate = source.endDate
-      ..rentValue = source.rentValue
-      ..rentPeriod = source.rentPeriod
-      ..hasSecurityDeposit = source.hasSecurityDeposit
-      ..securityDeposit = source.securityDeposit
-      ..brokerageFee = source.brokerageFee
-      ..brokeragePayer = source.brokeragePayer
-      ..ownerSubjectToVat = source.ownerSubjectToVat
-      ..vatValue = source.vatValue
-      ..otherAmounts = source.otherAmounts
-      ..paymentScheduleType = source.paymentScheduleType
-      ..paymentFrequency = source.paymentFrequency
-      ..paymentCount = source.paymentCount
-      ..firstPaymentDate = source.firstPaymentDate
-      ..paymentChannel = source.paymentChannel
-      ..officialFeePayer = source.officialFeePayer
-      ..serviceFeePayer = source.serviceFeePayer
-      ..otherServices = source.otherServices
-      ..allowSublease = source.allowSublease
-      ..autoRenewal = source.autoRenewal
-      ..specialTerms = source.specialTerms
-      ..acceptAccuracyDeclaration = source.acceptAccuracyDeclaration
-      ..acceptDataSharing = source.acceptDataSharing
-      ..acceptTerms = source.acceptTerms
-      ..paymentMethod = source.paymentMethod;
-    clone.property = _clonePropertyData(source.property);
-    clone.lessor = _clonePartyData(source.lessor);
-    clone.tenant = _clonePartyData(source.tenant);
-    clone.representative = _cloneRepresentativeData(source.representative);
-    clone.electricity = _cloneServiceCharge(source.electricity);
-    clone.water = _cloneServiceCharge(source.water);
-    clone.gas = _cloneServiceCharge(source.gas);
-    clone.installments = source.installments
-        .map(
-          (item) => InstallmentData(
-            index: item.index,
-            amount: item.amount,
-            dueDate: item.dueDate,
-            note: item.note,
-          ),
-        )
-        .toList();
-    clone.attachments = source.attachments
-        .map(
-          (item) => AttachmentData(
-            keyName: item.keyName,
-            title: item.title,
-            required: item.required,
-            uploaded: item.uploaded,
-            fileName: item.fileName,
-            sizeLabel: item.sizeLabel,
-          ),
-        )
-        .toList();
-    return clone;
-  }
-
-  PartyData _clonePartyData(PartyData source) {
-    return PartyData(
-      kind: source.kind,
-      fullName: source.fullName,
-      idType: source.idType,
-      idNumber: source.idNumber,
-      birthDate: source.birthDate,
-      mobile: source.mobile,
-      email: source.email,
-      city: source.city,
-      district: source.district,
-      nationalAddress: source.nationalAddress,
-      mobileRegisteredInAbsher: source.mobileRegisteredInAbsher,
-      commercialRegistration: source.commercialRegistration,
-      unifiedNumber: source.unifiedNumber,
-      authorizedPersonName: source.authorizedPersonName,
-      authorizedPersonId: source.authorizedPersonId,
-      iban: source.iban,
-      bankName: source.bankName,
-      accountOwner: source.accountOwner,
-    );
-  }
-
-  RepresentativeData _cloneRepresentativeData(RepresentativeData source) {
-    return RepresentativeData(
-      enabled: source.enabled,
-      represents: source.represents,
-      type: source.type,
-      fullName: source.fullName,
-      idType: source.idType,
-      idNumber: source.idNumber,
-      birthDate: source.birthDate,
-      mobile: source.mobile,
-      authorizationNumber: source.authorizationNumber,
-      authorizationDate: source.authorizationDate,
-      issuer: source.issuer,
-      expiryDate: source.expiryDate,
-    );
   }
 
   PropertyData _clonePropertyData(PropertyData source) {
@@ -1962,15 +2323,6 @@ class AppController extends ChangeNotifier {
     );
   }
 
-  ServiceCharge _cloneServiceCharge(ServiceCharge source) {
-    return ServiceCharge(
-      enabled: source.enabled,
-      calculationMethod: source.calculationMethod,
-      fixedAmount: source.fixedAmount,
-      currentReading: source.currentReading,
-    );
-  }
-
   Future<DemoPaymentResult> submitDemoPayment({
     required ContractRecord contract,
     required DemoPaymentMethod method,
@@ -1978,6 +2330,7 @@ class AppController extends ChangeNotifier {
     required String cardLast4,
     required bool success,
   }) async {
+    final generation = _authGeneration;
     if (contract.pendingSync) {
       return const DemoPaymentResult(
         success: false,
@@ -1999,6 +2352,7 @@ class AppController extends ChangeNotifier {
           cardLast4: cardLast4,
           success: success,
         );
+        if (!isCurrentAccount(generation)) throw StateError('تغير الحساب');
         _scheduleServerReachabilityCheck(
           _serverReachabilityCheckMessage,
           delay: Duration.zero,
@@ -2014,6 +2368,7 @@ class AppController extends ChangeNotifier {
         }
         return result;
       } catch (error) {
+        if (!isCurrentAccount(generation)) rethrow;
         _handleServerOperationFailure(
           error,
           'الدفع يحتاج اتصال بالإنترنت. حاول مرة أخرى عند عودة الاتصال.',
@@ -2030,6 +2385,7 @@ class AppController extends ChangeNotifier {
     }
 
     await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (!isCurrentAccount(generation)) throw StateError('تغير الحساب');
     if (!success) {
       return const DemoPaymentResult(
         success: false,
@@ -2146,6 +2502,7 @@ class AppController extends ChangeNotifier {
     String draftId = '',
     DraftProgress progress = const DraftProgress(),
   }) async {
+    final generation = _authGeneration;
     final effectiveDraftId = _syncedDraftIds[draftId] ?? draftId;
     final user = FirebaseBootstrap.initialized
         ? FirebaseAuth.instance.currentUser
@@ -2163,6 +2520,9 @@ class AppController extends ChangeNotifier {
           existingDraftId: effectiveDraftId,
           progress: progress,
         );
+        if (!isCurrentAccount(generation)) {
+          throw StateError("تغير الحساب، أعد المحاولة");
+        }
         mainNavigationIndex = 1;
         _scheduleServerReachabilityCheck(
           _serverReachabilityCheckMessage,
@@ -2171,6 +2531,18 @@ class AppController extends ChangeNotifier {
         notifyListeners();
         return record;
       } catch (error) {
+        if (!isCurrentAccount(generation)) {
+          throw StateError("تغير الحساب، أعد المحاولة");
+        }
+        if (error is FirebaseFunctionsException &&
+            !['unavailable', 'deadline-exceeded'].contains(error.code)) {
+          rethrow;
+        }
+        if (error is FirebaseException &&
+            ['permission-denied', 'invalid-argument', 'failed-precondition']
+                .contains(error.code)) {
+          rethrow;
+        }
         _handleServerOperationFailure(
           error,
           'تعذر إرسال العقد الآن. تم حفظه محليًا وسيتم رفعه عند عودة الاتصال.',
@@ -2206,6 +2578,9 @@ class AppController extends ChangeNotifier {
     String existingDraftId = '',
     DraftProgress progress = const DraftProgress(),
   }) {
+    if (status == ContractStatus.awaitingPayment) {
+      draft = ContractDraft.copyOf(draft)..frozenTotal = draft.totalPayable;
+    }
     final existingIndex = existingDraftId.isEmpty
         ? -1
         : contracts.indexWhere((item) => item.id == existingDraftId);
@@ -2248,7 +2623,10 @@ class AppController extends ChangeNotifier {
       _PendingContractSubmission(
         localId: record.id,
         remoteDraftId: remoteDraftId,
-        draft: _cloneDraft(draft),
+        draft: ContractDraft.copyOf(draft)
+          ..frozenTotal = status == ContractStatus.awaitingPayment
+              ? draft.totalPayable
+              : null,
         status: status,
         progress: progress,
       ),
@@ -2359,6 +2737,7 @@ class AppController extends ChangeNotifier {
     String draftId = '',
     DraftProgress progress = const DraftProgress(),
   }) async {
+    final generation = _authGeneration;
     final effectiveDraftId = _syncedDraftIds[draftId] ?? draftId;
     final user = FirebaseBootstrap.initialized
         ? FirebaseAuth.instance.currentUser
@@ -2376,12 +2755,18 @@ class AppController extends ChangeNotifier {
           existingDraftId: effectiveDraftId,
           progress: progress,
         );
+        if (!isCurrentAccount(generation)) {
+          throw StateError("تغير الحساب، أعد المحاولة");
+        }
         _scheduleServerReachabilityCheck(
           _serverReachabilityCheckMessage,
           delay: Duration.zero,
         );
         return record;
       } catch (error) {
+        if (!isCurrentAccount(generation)) {
+          throw StateError("تغير الحساب، أعد المحاولة");
+        }
         _handleServerOperationFailure(
           error,
           'تعذر حفظ المسودة على الخادم. تم حفظها محليًا وستتم مزامنتها لاحقًا.',
@@ -2584,11 +2969,31 @@ class AppController extends ChangeNotifier {
     return record;
   }
 
-  void updateProfile(
-      {required String name, required String phone, required String email}) {
-    userName = name;
-    userPhone = phone;
-    userEmail = email;
+  Future<void> updateProfile(
+      {required String name,
+      required String phone,
+      required String email}) async {
+    final generation = _authGeneration;
+    final trimmedName = name.trim(), trimmedEmail = email.trim().toLowerCase();
+    if (trimmedName.length < 3 ||
+        trimmedName.length > 100 ||
+        optionalEmailError(trimmedEmail) != null) {
+      throw StateError('تحقق من الاسم والبريد الإلكتروني');
+    }
+    if (!kEjarzLocalDemoMode && FirebaseBootstrap.initialized) {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null || uid != _sessionUid) {
+        throw StateError('أعد تسجيل الدخول');
+      }
+      await FirebaseFirestore.instance.doc('users/$uid').update({
+        'name': trimmedName,
+        'email': trimmedEmail,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    if (!isCurrentAccount(generation)) return;
+    userName = trimmedName;
+    userEmail = trimmedEmail;
     notifyListeners();
   }
 }

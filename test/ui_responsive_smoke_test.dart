@@ -1,10 +1,10 @@
-import 'package:aqood_pro/core/app_controller.dart';
-import 'package:aqood_pro/core/models.dart';
-import 'package:aqood_pro/core/theme.dart';
-import 'package:aqood_pro/screens/contracts.dart';
-import 'package:aqood_pro/screens/create_contract.dart';
-import 'package:aqood_pro/screens/home.dart';
-import 'package:aqood_pro/screens/wallet_profile.dart';
+import 'package:aqdak/core/app_controller.dart';
+import 'package:aqdak/core/models.dart';
+import 'package:aqdak/core/theme.dart';
+import 'package:aqdak/screens/contracts.dart';
+import 'package:aqdak/screens/create_contract.dart';
+import 'package:aqdak/screens/home.dart';
+import 'package:aqdak/screens/wallet_profile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +15,10 @@ void main() {
     const Size(375, 812),
     const Size(390, 844),
     const Size(412, 915),
+    const Size(768, 1024),
+    const Size(1024, 768),
+    const Size(1366, 768),
+    const Size(1920, 1080),
   ];
 
   for (final size in sizes) {
@@ -24,7 +28,6 @@ void main() {
         tester,
         size,
         HomeScreen(
-          onMenu: () {},
           onNotifications: () {},
           onCreate: () {},
           onContracts: () {},

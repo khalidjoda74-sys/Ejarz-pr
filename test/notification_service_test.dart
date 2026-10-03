@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:aqood_pro/core/notification_service.dart';
+import 'package:aqdak/core/notification_service.dart';
 
 void main() {
   tearDown(() {

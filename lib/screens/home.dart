@@ -3,13 +3,16 @@ import 'package:flutter/material.dart';
 import '../core/app_controller.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
+import '../core/runtime_config.dart';
+import '../widgets/service_unavailable.dart';
+import '../widgets/load_more_records.dart';
 import '../widgets/common.dart';
 import '../widgets/illustrations.dart';
+import '../widgets/workspace.dart';
 import 'contracts.dart';
 import 'create_contract.dart';
 
 class HomeScreen extends StatelessWidget {
-  final VoidCallback onMenu;
   final VoidCallback onNotifications;
   final VoidCallback onCreate;
   final VoidCallback onContracts;
@@ -17,7 +20,6 @@ class HomeScreen extends StatelessWidget {
 
   const HomeScreen({
     super.key,
-    required this.onMenu,
     required this.onNotifications,
     required this.onCreate,
     required this.onContracts,
@@ -32,15 +34,13 @@ class HomeScreen extends StatelessWidget {
 
     return SafeArea(
       child: ResponsiveContent(
-        maxWidth: 780,
+        maxWidth: 1180,
         padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             BrandHeader(
-              onMenu: onMenu,
               onNotifications: onNotifications,
-              showMenu: true,
               useSplashLogo: true,
             ),
             const SizedBox(height: 16),
@@ -144,8 +144,8 @@ class HomeScreen extends StatelessWidget {
                     Expanded(
                       child: _ServiceTile(
                         icon: Icons.apartment_outlined,
-                        title: 'عقاراتي',
-                        subtitle: 'إدارة العقارات',
+                        title: controller.serviceHandoverTitle,
+                        subtitle: controller.serviceHandoverSubtitle,
                         onTap: onProperties,
                       ),
                     ),
@@ -169,20 +169,21 @@ class HomeScreen extends StatelessWidget {
                 onAction: onCreate,
               )
             else
-              for (var i = 0; i < recent.length; i++) ...<Widget>[
-                ContractListCard(
-                  contract: recent[i],
-                  showOwner: true,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => ContractDetailsScreen(
-                        contract: recent[i],
+              AdaptiveCardGrid(children: [
+                for (var i = 0; i < recent.length; i++)
+                  ContractListCard(
+                    contract: recent[i],
+                    showOwner: true,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        settings: const RouteSettings(name: 'contract_details'),
+                        builder: (_) => ContractDetailsScreen(
+                          contract: recent[i],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                if (i < recent.length - 1) const SizedBox(height: 7),
-              ],
+              ]),
             const SizedBox(height: 16),
             SectionTitle(
               title: controller.homePropertiesTitle,
@@ -199,10 +200,10 @@ class HomeScreen extends StatelessWidget {
                 onAction: onProperties,
               )
             else
-              for (var i = 0; i < recentProperties.length; i++) ...<Widget>[
-                _RecentPropertyTile(property: recentProperties[i]),
-                if (i < recentProperties.length - 1) const SizedBox(height: 7),
-              ],
+              AdaptiveCardGrid(children: [
+                for (var i = 0; i < recentProperties.length; i++)
+                  _RecentPropertyTile(property: recentProperties[i]),
+              ]),
           ],
         ),
       ),
@@ -213,6 +214,7 @@ class HomeScreen extends StatelessWidget {
     final draft = createContractDraftForType(type);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'create_contract'),
         builder: (_) => CreateContractScreen(
           initialDraft: draft,
           initialStep: 0,
@@ -236,6 +238,7 @@ class RenewContractSelectionScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
+    if (!AppRuntime.service('renewal')) return const ServiceUnavailable();
     final renewableContracts = controller.contracts
         .where((contract) => contract.status == ContractStatus.authenticated)
         .toList();
@@ -265,6 +268,7 @@ class RenewContractSelectionScreen extends StatelessWidget {
                   actionLabel: 'إنشاء عقد جديد',
                   onAction: () => Navigator.of(context).pushReplacement(
                     MaterialPageRoute<void>(
+                      settings: const RouteSettings(name: 'create_contract'),
                       builder: (_) => const CreateContractScreen(),
                     ),
                   ),
@@ -287,6 +291,7 @@ class RenewContractSelectionScreen extends StatelessWidget {
                     const SizedBox(height: 10),
                 ],
               ],
+              const LoadMoreRecords('contracts'),
             ],
           ),
         ),
@@ -298,6 +303,7 @@ class RenewContractSelectionScreen extends StatelessWidget {
     final draft = _renewalDraft(contract);
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'create_contract'),
         builder: (_) => CreateContractScreen(
           initialDraft: draft,
           initialStep: 0,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'contract_pricing.dart';
+import 'contract_calculation_engine.dart';
 
 const String kDemoContractPdfFileName = 'ejarz-demo-contract.pdf';
 const String kDemoContractPdfUrl =
@@ -468,6 +469,7 @@ class AttachmentData {
   bool uploaded;
   String fileName;
   String sizeLabel;
+  String downloadUrl;
 
   AttachmentData({
     required this.keyName,
@@ -476,10 +478,16 @@ class AttachmentData {
     this.uploaded = false,
     this.fileName = '',
     this.sizeLabel = '',
+    this.downloadUrl = '',
   });
 }
 
 class ContractDraft {
+  String submissionId = '';
+  bool renewal = false;
+  double? frozenTotal;
+  ContractPrice? frozenPrice;
+  Map<String, Map<String, Object?>> assistantFields = {};
   ContractType type;
   UserRole role;
   PropertyData property;
@@ -590,6 +598,10 @@ class ContractDraft {
   factory ContractDraft.copyOf(ContractDraft source) {
     final copy = ContractDraft()
       ..type = source.type
+      ..assistantFields = {
+        for (final e in source.assistantFields.entries)
+          e.key: Map<String, Object?>.from(e.value)
+      }
       ..role = source.role
       ..property = PropertyData(
         rentalMode: source.property.rentalMode,
@@ -676,6 +688,10 @@ class ContractDraft {
       ..allowSublease = source.allowSublease
       ..autoRenewal = source.autoRenewal
       ..specialTerms = source.specialTerms
+      ..submissionId = source.submissionId
+      ..renewal = source.renewal
+      ..frozenTotal = source.frozenTotal
+      ..frozenPrice = source.frozenPrice
       ..acceptAccuracyDeclaration = source.acceptAccuracyDeclaration
       ..acceptDataSharing = source.acceptDataSharing
       ..acceptTerms = source.acceptTerms
@@ -699,6 +715,7 @@ class ContractDraft {
               uploaded: item.uploaded,
               fileName: item.fileName,
               sizeLabel: item.sizeLabel,
+              downloadUrl: item.downloadUrl,
             ),
           )
           .toList();
@@ -739,14 +756,14 @@ class ContractDraft {
   double get depositNumber =>
       double.tryParse(securityDeposit.replaceAll(',', '')) ?? 0;
 
-  ContractPrice get price => ContractPrice.calculate(
+  ContractPrice get price => frozenPrice ?? ContractPrice.calculate(
         commercial: type == ContractType.commercial,
         years: int.tryParse(durationYears) ?? 0,
         months: int.tryParse(durationMonths) ?? 0,
         days: int.tryParse(durationDays) ?? 0,
       );
 
-  double get totalPayable => price.total;
+  double get totalPayable => frozenTotal ?? price.total;
 
   String get title {
     final unit = property.unitType.trim().isEmpty ? 'وحدة' : property.unitType;
@@ -756,18 +773,45 @@ class ContractDraft {
   }
 
   void regenerateInstallments() {
-    final count = paymentCount <= 0 ? 1 : paymentCount;
-    final total = rentValueNumber;
-    final each = count == 0 ? total : total / count;
+    final calculation = rentalCalculation;
+    if (calculation == null) return;
+    paymentCount = calculation.installments.length;
+    final first = ContractCalculationEngine.date(firstPaymentDate);
+    final interval =
+        ContractCalculationEngine.frequencyMonths(paymentFrequency);
     installments = List<InstallmentData>.generate(
-      count,
+      paymentCount,
       (index) => InstallmentData(
         index: index + 1,
-        amount: each == 0 ? '' : each.toStringAsFixed(2),
-        dueDate: index == 0 ? firstPaymentDate : '',
+        amount:
+            ContractCalculationEngine.amount(calculation.installments[index]),
+        dueDate: index == 0
+            ? firstPaymentDate
+            : first == null || paymentScheduleType == 'مخصص'
+                ? ''
+                : ContractCalculationEngine.formatDate(
+                    ContractCalculationEngine.addMonths(
+                        first, interval * index)),
         note: index == 0 ? 'دفعة مقدمة' : 'دفعة دورية',
       ),
     );
+  }
+
+  RentalCalculation? get rentalCalculation {
+    try {
+      return ContractCalculationEngine.calculate(
+        annualHalalas: ContractCalculationEngine.money(rentValue) ?? 0,
+        years: int.tryParse(durationYears) ?? 0,
+        months: int.tryParse(durationMonths) ?? 0,
+        days: int.tryParse(durationDays) ?? 0,
+        frequencyMonths:
+            ContractCalculationEngine.frequencyMonths(paymentFrequency),
+        customCount: paymentScheduleType == 'مخصص' ? paymentCount : null,
+        singlePayment: paymentScheduleType == 'دفعة واحدة',
+      );
+    } on FormatException {
+      return null;
+    }
   }
 }
 
@@ -803,6 +847,7 @@ class ContractRecord {
   final String rejectedBy;
   final String finalPdfUrl;
   final String finalPdfFileName;
+  final String ejarContractNumber;
   final List<MissingRequirement> missingRequirements;
   final String paymentStatus;
   final String paymentId;
@@ -843,6 +888,7 @@ class ContractRecord {
     this.rejectedBy = '',
     this.finalPdfUrl = '',
     this.finalPdfFileName = '',
+    this.ejarContractNumber = '',
     this.missingRequirements = const <MissingRequirement>[],
     this.paymentStatus = '',
     this.paymentId = '',
@@ -874,6 +920,7 @@ class ContractRecord {
     String? rejectedBy,
     String? finalPdfUrl,
     String? finalPdfFileName,
+    String? ejarContractNumber,
     String? paymentStatus,
     String? paymentId,
     String? invoiceId,
@@ -914,6 +961,7 @@ class ContractRecord {
       rejectedBy: rejectedBy ?? this.rejectedBy,
       finalPdfUrl: finalPdfUrl ?? this.finalPdfUrl,
       finalPdfFileName: finalPdfFileName ?? this.finalPdfFileName,
+      ejarContractNumber: ejarContractNumber ?? this.ejarContractNumber,
       missingRequirements: missingRequirements ?? this.missingRequirements,
       paymentStatus: paymentStatus ?? this.paymentStatus,
       paymentId: paymentId ?? this.paymentId,

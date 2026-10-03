@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'assistant_field_scope.dart';
 import 'package:flutter/services.dart';
 
 import '../core/app_controller.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
 import 'illustrations.dart';
+import 'workspace.dart';
 
 class ResponsiveContent extends StatelessWidget {
   final Widget child;
@@ -43,6 +45,7 @@ class ResponsiveContent extends StatelessWidget {
             : const ClampingScrollPhysics();
     return SingleChildScrollView(
       controller: controller,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       physics: physics ?? defaultPhysics,
       child: content,
     );
@@ -111,22 +114,7 @@ class BrandLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      textDirection: TextDirection.rtl,
-      children: <Widget>[
-        BrandMark(size: markSize),
-        SizedBox(width: compact ? 6 : 8),
-        Text(
-          compact ? 'عقود' : 'عقود برو',
-          style: TextStyle(
-            color: textColor ?? AppColors.primary,
-            fontSize: compact ? context.sp(17) : context.sp(18.5),
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ],
-    );
+    return BrandIdentity(height: markSize);
   }
 }
 
@@ -176,14 +164,7 @@ class BrandHeader extends StatelessWidget {
       if (trailing != null) trailing!,
       if (showLogo) ...<Widget>[
         const Spacer(),
-        if (useSplashLogo)
-          Image.asset(
-            'assets/images/ejarz_splash_logo.png',
-            height: 44,
-            fit: BoxFit.contain,
-          )
-        else
-          const BrandLogo(),
+        const BrandLogo(),
       ],
       if (showMenu && placeMenuAtStart) ...<Widget>[
         const Spacer(),
@@ -213,19 +194,23 @@ class _HeaderIconButton extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: <Widget>[
-        Material(
-          color: context.ejarzTheme.surface,
-          shape: const CircleBorder(),
-          child: InkWell(
-            onTap: onTap,
-            customBorder: const CircleBorder(),
-            child: SizedBox(
-              width: 38,
-              height: 38,
-              child: Icon(icon, size: 21, color: context.ejarzTheme.text),
-            ),
-          ),
-        ),
+        Tooltip(
+            message: icon == Icons.notifications_none_rounded
+                ? 'الإشعارات'
+                : 'القائمة',
+            child: Material(
+              color: context.ejarzTheme.surface,
+              shape: const CircleBorder(),
+              child: InkWell(
+                onTap: onTap,
+                customBorder: const CircleBorder(),
+                child: SizedBox(
+                  width: 38,
+                  height: 38,
+                  child: Icon(icon, size: 21, color: context.ejarzTheme.text),
+                ),
+              ),
+            )),
         if (badge > 0)
           Positioned(
             right: -1,
@@ -266,6 +251,9 @@ class EjarzBottomNavigation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (WorkspaceNavigationScope.active(context)) {
+      return const SizedBox.shrink();
+    }
     return Container(
       decoration: BoxDecoration(
         color: context.ejarzTheme.surface,
@@ -692,51 +680,55 @@ class AppTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        RichText(
-          text: TextSpan(
-            style: TextStyle(
-              color: context.ejarzTheme.text,
-              fontSize: context.sp(12.3),
-              fontWeight: FontWeight.w700,
-            ),
-            children: <InlineSpan>[
-              TextSpan(text: label),
-              if (required)
-                const TextSpan(
-                  text: ' *',
-                  style: TextStyle(color: AppColors.red),
+    return AssistantFieldDecoration(
+        label: label,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            RichText(
+              text: TextSpan(
+                style: TextStyle(
+                  fontFamily: AppTheme.fontFamily,
+                  color: context.ejarzTheme.text,
+                  fontSize: context.sp(12.3),
+                  fontWeight: FontWeight.w700,
                 ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 5),
-        TextFormField(
-          controller: controller,
-          focusNode: focusNode,
-          initialValue: controller == null ? initialValue : null,
-          onChanged: onChanged,
-          validator: validator,
-          keyboardType: keyboardType,
-          textInputAction: textInputAction,
-          obscureText: obscureText,
-          enabled: enabled,
-          readOnly: readOnly,
-          onTap: onTap,
-          maxLines: obscureText ? 1 : maxLines,
-          maxLength: maxLength,
-          inputFormatters: inputFormatters,
-          textAlign: TextAlign.right,
-          decoration: InputDecoration(
-            hintText: hint,
-            counterText: '',
-            suffixIcon: suffix ?? (icon == null ? null : Icon(icon, size: 19)),
-          ),
-        ),
-      ],
-    );
+                children: <InlineSpan>[
+                  TextSpan(text: label),
+                  if (required)
+                    const TextSpan(
+                      text: ' *',
+                      style: TextStyle(color: AppColors.red),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 5),
+            TextFormField(
+              controller: controller,
+              focusNode: focusNode,
+              initialValue: controller == null ? initialValue : null,
+              onChanged: onChanged,
+              validator: validator,
+              keyboardType: keyboardType,
+              textInputAction: textInputAction,
+              obscureText: obscureText,
+              enabled: enabled,
+              readOnly: readOnly,
+              onTap: onTap,
+              maxLines: obscureText ? 1 : maxLines,
+              maxLength: maxLength,
+              inputFormatters: inputFormatters,
+              textAlign: TextAlign.right,
+              decoration: InputDecoration(
+                hintText: hint,
+                counterText: '',
+                suffixIcon:
+                    suffix ?? (icon == null ? null : Icon(icon, size: 19)),
+              ),
+            ),
+          ],
+        ));
   }
 }
 
@@ -761,47 +753,50 @@ class AppDropdownField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final safeItems = <String>{...items, value}.toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        RichText(
-          text: TextSpan(
-            style: TextStyle(
-              color: context.ejarzTheme.text,
-              fontSize: context.sp(12.3),
-              fontWeight: FontWeight.w700,
-            ),
-            children: <InlineSpan>[
-              TextSpan(text: label),
-              if (required)
-                const TextSpan(
-                    text: ' *', style: TextStyle(color: AppColors.red)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 5),
-        DropdownButtonFormField<String>(
-          initialValue: value,
-          isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded),
-          decoration: InputDecoration(
-            suffixIcon: icon == null ? null : Icon(icon, size: 19),
-          ),
-          items: safeItems
-              .map(
-                (item) => DropdownMenuItem<String>(
-                  value: item,
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(item, overflow: TextOverflow.ellipsis),
-                  ),
+    return AssistantFieldDecoration(
+        label: label,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            RichText(
+              text: TextSpan(
+                style: TextStyle(
+                  fontFamily: AppTheme.fontFamily,
+                  color: context.ejarzTheme.text,
+                  fontSize: context.sp(12.3),
+                  fontWeight: FontWeight.w700,
                 ),
-              )
-              .toList(),
-          onChanged: onChanged,
-        ),
-      ],
-    );
+                children: <InlineSpan>[
+                  TextSpan(text: label),
+                  if (required)
+                    const TextSpan(
+                        text: ' *', style: TextStyle(color: AppColors.red)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 5),
+            DropdownButtonFormField<String>(
+              initialValue: value,
+              isExpanded: true,
+              icon: const Icon(Icons.keyboard_arrow_down_rounded),
+              decoration: InputDecoration(
+                suffixIcon: icon == null ? null : Icon(icon, size: 19),
+              ),
+              items: safeItems
+                  .map(
+                    (item) => DropdownMenuItem<String>(
+                      value: item,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(item, overflow: TextOverflow.ellipsis),
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: onChanged,
+            ),
+          ],
+        ));
   }
 }
 

@@ -11,48 +11,49 @@ class BrandMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      size: Size.square(size),
-      painter: _BrandMarkPainter(),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      width: size,
+      height: size,
+      padding: isDark ? const EdgeInsets.all(3) : EdgeInsets.zero,
+      decoration: isDark
+          ? BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(size * .15))
+          : null,
+      child: Image.asset(
+        'assets/images/aqdak_mark.png',
+        fit: BoxFit.contain,
+        excludeFromSemantics: true,
+      ),
     );
   }
 }
 
-class _BrandMarkPainter extends CustomPainter {
+/// Uses the supplied Arabic lettering with the name to the left of the mark.
+class BrandIdentity extends StatelessWidget {
+  final double height;
+  const BrandIdentity({super.key, this.height = 34});
+
   @override
-  void paint(Canvas canvas, Size size) {
-    final green = Paint()
-      ..color = AppColors.primary
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = size.width * 0.12
-      ..strokeJoin = StrokeJoin.round
-      ..strokeCap = StrokeCap.round;
-    final gold = Paint()
-      ..color = AppColors.secondary
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = size.width * 0.11
-      ..strokeJoin = StrokeJoin.round
-      ..strokeCap = StrokeCap.round;
-
-    final roof = Path()
-      ..moveTo(size.width * 0.12, size.height * 0.42)
-      ..lineTo(size.width * 0.50, size.height * 0.14)
-      ..lineTo(size.width * 0.88, size.height * 0.42)
-      ..lineTo(size.width * 0.88, size.height * 0.72)
-      ..lineTo(size.width * 0.50, size.height * 0.58)
-      ..lineTo(size.width * 0.12, size.height * 0.72)
-      ..close();
-    canvas.drawPath(roof, green);
-
-    final lower = Path()
-      ..moveTo(size.width * 0.18, size.height * 0.82)
-      ..lineTo(size.width * 0.50, size.height * 0.68)
-      ..lineTo(size.width * 0.82, size.height * 0.82);
-    canvas.drawPath(lower, gold);
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Semantics(
+      label: 'عقدك',
+      image: true,
+      child: Container(
+        width: height * 3.625,
+        height: height,
+        padding: isDark ? const EdgeInsets.all(3) : EdgeInsets.zero,
+        decoration: isDark
+            ? BoxDecoration(
+                color: Colors.white, borderRadius: BorderRadius.circular(6))
+            : null,
+        child: Image.asset('assets/images/aqdak_horizontal.png',
+            fit: BoxFit.contain, excludeFromSemantics: true),
+      ),
+    );
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class HeroContractIllustration extends StatelessWidget {

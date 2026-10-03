@@ -1,14 +1,25 @@
+import 'dart:async';
+import 'package:cloud_functions/cloud_functions.dart';
+import '../core/firebase_bootstrap.dart';
+import '../core/firebase_repository.dart';
+import '../widgets/load_more_records.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../core/app_controller.dart';
+import '../core/contract_files.dart';
+import '../core/demo_config.dart';
+import '../core/document_links.dart';
 import '../core/draft_resume_policy.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
+import '../core/runtime_config.dart';
 import '../widgets/common.dart';
 import '../widgets/illustrations.dart';
+import '../widgets/workspace.dart';
 import 'create_contract.dart';
 import 'payment_demo.dart';
+import 'account_records.dart';
 import 'wallet_profile.dart';
 
 Widget _contractDetailsBottomNavigation(BuildContext context) {
@@ -25,6 +36,7 @@ Widget _contractDetailsBottomNavigation(BuildContext context) {
       navigator.popUntil((route) => route.isFirst);
       navigator.push(
         MaterialPageRoute<void>(
+          settings: const RouteSettings(name: 'create_contract'),
           builder: (_) => const CreateContractScreen(),
         ),
       );
@@ -51,27 +63,102 @@ class ContractsScreen extends StatefulWidget {
 class _ContractsScreenState extends State<ContractsScreen> {
   String _query = '';
   ContractStatus? _filter;
+  final List<ContractRecord> _searchRows = [];
+  String? _searchCursor;
+  String _searchError = '';
+  bool _searchBusy = false;
+  int _searchGeneration = 0;
+  Timer? _searchDebounce;
+  bool get _serverSearch =>
+      FirebaseBootstrap.initialized &&
+      !kEjarzLocalDemoMode &&
+      (_query.trim().isNotEmpty || _filter != null);
+  @override
+  void dispose() {
+    _searchGeneration++;
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
+
+  void _changeSearch(
+      {String? query, ContractStatus? status, bool changeStatus = false}) {
+    _searchDebounce?.cancel();
+    _searchGeneration++;
+    setState(() {
+      if (query != null) _query = query;
+      if (changeStatus) _filter = status;
+      _searchRows.clear();
+      _searchCursor = null;
+      _searchError = '';
+      _searchBusy = _serverSearch;
+    });
+    if (_serverSearch) {
+      _searchDebounce =
+          Timer(const Duration(milliseconds: 350), () => _fetchSearch());
+    }
+  }
+
+  Future<void> _fetchSearch({bool more = false}) async {
+    final generation = ++_searchGeneration;
+    setState(() => _searchBusy = true);
+    try {
+      final response =
+          await FirebaseFunctions.instanceFor(region: 'us-central1')
+              .httpsCallable('searchCustomerContracts')
+              .call({
+        'search': _query.trim(),
+        'status': _filter?.name,
+        if (more) 'cursor': _searchCursor
+      });
+      if (!mounted || generation != _searchGeneration) return;
+      final data = Map<String, dynamic>.from(response.data as Map),
+          repository = FirebaseRepository();
+      final rows = (data['rows'] as List).map((v) {
+        final row = Map<String, dynamic>.from(v as Map);
+        return repository.contractFromMap(row['id'] as String, row);
+      }).toList();
+      setState(() {
+        if (!more) _searchRows.clear();
+        for (final row in rows) {
+          if (!_searchRows.any((r) => r.id == row.id)) _searchRows.add(row);
+        }
+        _searchCursor = data['cursor'] as String?;
+        _searchError = '';
+      });
+    } catch (_) {
+      if (mounted && generation == _searchGeneration) {
+        setState(
+            () => _searchError = 'تعذر البحث في جميع العقود. أعد المحاولة.');
+      }
+    } finally {
+      if (mounted && generation == _searchGeneration) {
+        setState(() => _searchBusy = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     final allContracts = controller.contracts;
-    final filtered = allContracts.where((contract) {
-      final matchesFilter = _filter == null || contract.status == _filter;
-      final normalized = _query.trim().toLowerCase();
-      final matchesQuery = normalized.isEmpty ||
-          contract.title.toLowerCase().contains(normalized) ||
-          contract.requestNumber.toLowerCase().contains(normalized) ||
-          contract.id.toLowerCase().contains(normalized) ||
-          contract.property.toLowerCase().contains(normalized) ||
-          contract.lessorName.toLowerCase().contains(normalized) ||
-          contract.tenantName.toLowerCase().contains(normalized);
-      return matchesFilter && matchesQuery;
-    }).toList();
+    final filtered = _serverSearch
+        ? _searchRows
+        : allContracts.where((contract) {
+            final matchesFilter = _filter == null || contract.status == _filter;
+            final normalized = _query.trim().toLowerCase();
+            final matchesQuery = normalized.isEmpty ||
+                contract.title.toLowerCase().contains(normalized) ||
+                contract.requestNumber.toLowerCase().contains(normalized) ||
+                contract.id.toLowerCase().contains(normalized) ||
+                contract.property.toLowerCase().contains(normalized) ||
+                contract.lessorName.toLowerCase().contains(normalized) ||
+                contract.tenantName.toLowerCase().contains(normalized);
+            return matchesFilter && matchesQuery;
+          }).toList();
 
     return SafeArea(
       child: ResponsiveContent(
-        maxWidth: 760,
+        maxWidth: 1180,
         padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -91,7 +178,7 @@ class _ContractsScreenState extends State<ContractsScreen> {
             ),
             const SizedBox(height: 12),
             TextField(
-              onChanged: (value) => setState(() => _query = value),
+              onChanged: (value) => _changeSearch(query: value),
               decoration: const InputDecoration(
                 hintText: 'ابحث برقم العقد أو العقار أو الطرف الآخر',
                 suffixIcon: Icon(Icons.search_rounded),
@@ -108,7 +195,7 @@ class _ContractsScreenState extends State<ContractsScreen> {
                       label: 'الكل',
                       selected: _filter == null,
                       color: AppColors.primary,
-                      onTap: () => setState(() => _filter = null),
+                      onTap: () => _changeSearch(changeStatus: true),
                     ),
                     for (final status in ContractStatus.values) ...<Widget>[
                       const SizedBox(width: 6),
@@ -116,7 +203,8 @@ class _ContractsScreenState extends State<ContractsScreen> {
                         label: status.label,
                         selected: _filter == status,
                         color: status.color,
-                        onTap: () => setState(() => _filter = status),
+                        onTap: () =>
+                            _changeSearch(status: status, changeStatus: true),
                       ),
                     ],
                   ],
@@ -133,12 +221,12 @@ class _ContractsScreenState extends State<ContractsScreen> {
                     Expanded(
                       child: StatCard(
                         title: 'الكل',
-                        value: '${allContracts.length}',
+                        value: '${controller.totalContracts}',
                         subtitle: 'جميع العقود',
                         icon: Icons.description_outlined,
                         color: AppColors.primary,
                         compact: true,
-                        onTap: () => setState(() => _filter = null),
+                        onTap: () => _changeSearch(changeStatus: true),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -146,14 +234,14 @@ class _ContractsScreenState extends State<ContractsScreen> {
                       child: StatCard(
                         title: 'قيد المعالجة',
                         value:
-                            '${allContracts.where((item) => item.status == ContractStatus.processing).length}',
+                            '${controller.contractStatusCount(ContractStatus.processing)}',
                         subtitle: 'طلبًا',
                         icon: Icons.miscellaneous_services_outlined,
                         color: AppColors.blue,
                         compact: true,
-                        onTap: () => setState(
-                          () => _filter = ContractStatus.processing,
-                        ),
+                        onTap: () => _changeSearch(
+                            status: ContractStatus.processing,
+                            changeStatus: true),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -161,14 +249,14 @@ class _ContractsScreenState extends State<ContractsScreen> {
                       child: StatCard(
                         title: 'بانتظار الدفع',
                         value:
-                            '${allContracts.where((item) => item.status == ContractStatus.awaitingPayment).length}',
+                            '${controller.contractStatusCount(ContractStatus.awaitingPayment)}',
                         subtitle: 'طلبات',
                         icon: Icons.payments_outlined,
                         color: AppColors.orange,
                         compact: true,
-                        onTap: () => setState(
-                          () => _filter = ContractStatus.awaitingPayment,
-                        ),
+                        onTap: () => _changeSearch(
+                            status: ContractStatus.awaitingPayment,
+                            changeStatus: true),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -176,14 +264,14 @@ class _ContractsScreenState extends State<ContractsScreen> {
                       child: StatCard(
                         title: 'مكتمل',
                         value:
-                            '${allContracts.where((item) => item.status == ContractStatus.authenticated).length}',
+                            '${controller.contractStatusCount(ContractStatus.authenticated)}',
                         subtitle: 'عقدًا',
                         icon: Icons.check_circle_outline_rounded,
                         color: AppColors.success,
                         compact: true,
-                        onTap: () => setState(
-                          () => _filter = ContractStatus.authenticated,
-                        ),
+                        onTap: () => _changeSearch(
+                            status: ContractStatus.authenticated,
+                            changeStatus: true),
                       ),
                     ),
                   ],
@@ -196,28 +284,40 @@ class _ContractsScreenState extends State<ContractsScreen> {
               action: '${filtered.length} عقد',
             ),
             const SizedBox(height: 10),
-            if (filtered.isEmpty)
+            if (_searchBusy) const LinearProgressIndicator(),
+            if (_searchError.isNotEmpty)
+              TextButton(
+                  onPressed: () => _fetchSearch(), child: Text(_searchError)),
+            if (filtered.isEmpty && !_searchBusy && _searchError.isEmpty)
               EmptyState(
                 icon: Icons.search_off_rounded,
-                title: 'لا توجد نتائج',
-                subtitle: 'جرّب تغيير عبارة البحث أو فلتر الحالة.',
+                title: AppRuntime.text('contractsEmptyTitle', 'لا توجد نتائج'),
+                subtitle: AppRuntime.text('contractsEmptySubtitle',
+                    'جرّب تغيير عبارة البحث أو فلتر الحالة.'),
                 actionLabel: 'إنشاء عقد جديد',
                 onAction: widget.onCreate,
               )
             else
-              for (var i = 0; i < filtered.length; i++) ...<Widget>[
-                ContractListCard(
-                  contract: filtered[i],
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => ContractDetailsScreen(
-                        contract: filtered[i],
+              AdaptiveCardGrid(children: [
+                for (var i = 0; i < filtered.length; i++)
+                  ContractListCard(
+                    contract: filtered[i],
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        settings: const RouteSettings(name: 'contract_details'),
+                        builder: (_) => ContractDetailsScreen(
+                          contract: filtered[i],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                if (i != filtered.length - 1) const SizedBox(height: 8),
-              ],
+              ]),
+            if (_serverSearch && _searchCursor != null)
+              OutlinedButton(
+                  onPressed:
+                      _searchBusy ? null : () => _fetchSearch(more: true),
+                  child: const Text('عرض المزيد من نتائج البحث')),
+            if (!_serverSearch) const LoadMoreRecords('contracts'),
           ],
         ),
       ),
@@ -458,6 +558,41 @@ class ContractDetailsScreen extends StatelessWidget {
                   );
                 },
               ),
+              if (contract.status == ContractStatus.authenticated &&
+                  contract.finalPdfUrl.trim().isNotEmpty &&
+                  contract.ejarContractNumber.trim().isNotEmpty) ...<Widget>[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF17362F)
+                        : AppColors.primaryLight,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.18)),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(Icons.verified_outlined, color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8CE5C1) : AppColors.primary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text('رقم عقد منصة إيجار', style: TextStyle(color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8CE5C1) : AppColors.primaryDark, fontWeight: FontWeight.w700)),
+                            const SizedBox(height: 3),
+                            SelectableText(
+                              contract.ejarContractNumber.trim(),
+                              textDirection: TextDirection.ltr,
+                              style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w700, fontSize: 16),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -613,7 +748,8 @@ class ContractDetailsScreen extends StatelessWidget {
       if (_meaningfulDraftText(file) && file != 'مطلوب' && file != 'اختياري') {
         attachment
           ..uploaded = true
-          ..fileName = file;
+          ..fileName = safeDocumentUri(file) == null ? file : 'مرفق محفوظ'
+          ..downloadUrl = safeDocumentUri(file) == null ? '' : file;
       }
     }
     return fallback;
@@ -642,6 +778,7 @@ class ContractDetailsScreen extends StatelessWidget {
     final draft = _draftSnapshot;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'create_contract'),
         builder: (_) => CreateContractScreen(
           initialDraft: draft,
           draftId: contract.id,
@@ -655,6 +792,7 @@ class ContractDetailsScreen extends StatelessWidget {
   void _openNewContract(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'create_contract'),
         builder: (_) => const CreateContractScreen(),
       ),
     );
@@ -683,23 +821,13 @@ class ContractDetailsScreen extends StatelessWidget {
       );
       return;
     }
-    final opened = await launchUrl(
-      Uri.parse(contract.finalPdfUrl),
-      mode: LaunchMode.externalApplication,
-    );
-    if (!opened && context.mounted) {
-      showAppSnackBar(
-        context,
-        contract.isDemoPayment
-            ? 'تعذر فتح نموذج العقد الآن.'
-            : 'تعذر فتح ملف العقد الآن.',
-      );
-    }
+    await openDocument(context, contract.finalPdfUrl);
   }
 
   void _openContractSupport(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'support'),
         builder: (_) => SupportScreen(
           initialSubject: 'دعم عقد ${contract.requestNumber}',
           initialMessage:
@@ -714,12 +842,15 @@ class ContractDetailsScreen extends StatelessWidget {
   Future<void> _openPaymentScreen(BuildContext context) async {
     final updated = await Navigator.of(context).push<ContractRecord>(
       MaterialPageRoute<ContractRecord>(
-        builder: (_) => DemoPaymentScreen(contract: contract),
+        builder: (_) => kEjarzDemoMode
+            ? DemoPaymentScreen(contract: contract)
+            : ServicePaymentScreen(contract: contract),
       ),
     );
     if (updated == null || !context.mounted) return;
     await Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'contract_details'),
         builder: (_) => ContractDetailsScreen(contract: updated),
       ),
     );
@@ -1070,9 +1201,11 @@ class ContractDetailsScreen extends StatelessWidget {
               for (var index = 0; index < files.length; index++) ...<Widget>[
                 _AttachmentRow(
                   title: files[index].title,
-                  file: files[index].fileName.trim().isEmpty
-                      ? 'مرفق محفوظ'
-                      : files[index].fileName.trim(),
+                  file: files[index].downloadUrl.isNotEmpty
+                      ? files[index].downloadUrl
+                      : files[index].fileName.trim().isEmpty
+                          ? 'مرفق محفوظ'
+                          : files[index].fileName.trim(),
                 ),
                 if (index != files.length - 1) const SizedBox(height: 10),
               ],
@@ -1743,7 +1876,8 @@ class _MissingResponseSheet extends StatefulWidget {
 class _MissingResponseSheetState extends State<_MissingResponseSheet> {
   late MissingRequirement _selected;
   final TextEditingController _message = TextEditingController();
-  final TextEditingController _fileName = TextEditingController();
+  String _fileName = '', _fileUrl = '';
+  bool _uploading = false;
   bool _sending = false;
 
   @override
@@ -1755,7 +1889,6 @@ class _MissingResponseSheetState extends State<_MissingResponseSheet> {
   @override
   void dispose() {
     _message.dispose();
-    _fileName.dispose();
     super.dispose();
   }
 
@@ -1827,12 +1960,17 @@ class _MissingResponseSheetState extends State<_MissingResponseSheet> {
                 required: true,
               ),
               const SizedBox(height: 10),
-              AppTextField(
-                label: 'اسم الملف المرفق',
-                hint: 'اختياري - مثال: commercial_record.pdf',
-                controller: _fileName,
-                icon: Icons.attach_file_rounded,
+              OutlinedButton.icon(
+                onPressed: _uploading || _sending ? null : _pickFile,
+                icon: const Icon(Icons.attach_file_rounded),
+                label: Text(_uploading
+                    ? 'جارٍ رفع المرفق…'
+                    : _fileName.isEmpty
+                        ? 'إرفاق PDF أو صورة (حتى 10 ميجابايت)'
+                        : _fileName),
               ),
+              if (_fileUrl.isNotEmpty)
+                const Text('تم رفع المرفق، وسيُرسل مع التصحيح.'),
               const SizedBox(height: 14),
               PrimaryButton(
                 label: _sending ? 'جاري الإرسال...' : 'إرسال التصحيح',
@@ -1847,10 +1985,40 @@ class _MissingResponseSheetState extends State<_MissingResponseSheet> {
     );
   }
 
+  Future<void> _pickFile() async {
+    setState(() => _uploading = true);
+    try {
+      final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['pdf', 'png', 'jpg', 'jpeg'],
+          withData: true);
+      if (result == null || !mounted) return;
+      final file = result.files.single;
+      if (file.bytes == null || file.size > ContractFiles.maxBytes) {
+        throw const FormatException('الملف غير صالح أو يتجاوز 10 ميجابايت.');
+      }
+      final url = await ContractFiles.upload(file.name, file.bytes!);
+      if (mounted) {
+        setState(() {
+          _fileName = file.name;
+          _fileUrl = url;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        showAppSnackBar(
+            context, 'تعذر رفع المرفق. تحقق من حجم الملف والاتصال.');
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
   Future<void> _send() async {
+    if (_sending || _uploading) return;
     final message = _message.text.trim();
-    if (message.isEmpty && _fileName.text.trim().isEmpty) {
-      showAppSnackBar(context, 'أدخل توضيحًا أو اسم ملف مرفق');
+    if (message.isEmpty && _fileUrl.isEmpty) {
+      showAppSnackBar(context, 'أدخل توضيحًا أو ارفع المرفق المطلوب');
       return;
     }
     setState(() => _sending = true);
@@ -1860,7 +2028,8 @@ class _MissingResponseSheetState extends State<_MissingResponseSheet> {
         contract: widget.contract,
         requirement: _selected,
         message: message.isEmpty ? 'تم استكمال المطلوب.' : message,
-        fileName: _fileName.text.trim(),
+        fileName: _fileName,
+        fileUrl: _fileUrl,
       );
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -2327,7 +2496,10 @@ class _AttachmentRow extends StatelessWidget {
                 Text(title,
                     style: const TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 3),
-                Text(file,
+                Text(
+                    safeDocumentUri(file) != null
+                        ? 'ملف محفوظ • اضغط للتنزيل'
+                        : file,
                     style: TextStyle(
                         color: context.ejarzTheme.muted, fontSize: 12)),
               ],
@@ -2335,7 +2507,35 @@ class _AttachmentRow extends StatelessWidget {
           ),
           if (showDownload)
             IconButton(
-              onPressed: () => showAppSnackBar(context, 'بدأ تنزيل $file'),
+              tooltip: 'تنزيل $title',
+              onPressed: () {
+                if (kEjarzDemoMode &&
+                    (safeDocumentUri(file) == null ||
+                        file == ContractFiles.demoPdf)) {
+                  showDialog<void>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                            title: const Text('مرفق تجريبي'),
+                            content: const Text(
+                                'سيُفتح نموذج PDF تجريبي، وليس مستندًا رسميًا أو هوية حقيقية.'),
+                            actions: [
+                              TextButton(
+                                  onPressed: () =>
+                                      Navigator.of(dialogContext).pop(),
+                                  child: const Text('إلغاء')),
+                              FilledButton(
+                                  onPressed: () {
+                                    Navigator.of(dialogContext).pop();
+                                    openDocument(
+                                        context, ContractFiles.demoPdf);
+                                  },
+                                  child: const Text('فتح النموذج')),
+                            ],
+                          ));
+                } else {
+                  openDocument(context, file);
+                }
+              },
               icon: const Icon(Icons.download_rounded),
             ),
         ],

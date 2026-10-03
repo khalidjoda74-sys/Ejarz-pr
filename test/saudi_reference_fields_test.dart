@@ -1,6 +1,6 @@
-import 'package:aqood_pro/core/saudi_reference_data.dart';
-import 'package:aqood_pro/core/theme.dart';
-import 'package:aqood_pro/widgets/saudi_reference_fields.dart';
+import 'package:aqdak/core/saudi_reference_data.dart';
+import 'package:aqdak/core/theme.dart';
+import 'package:aqdak/widgets/saudi_reference_fields.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../core/contract_pricing.dart';
 import '../core/models.dart';
+import '../core/app_controller.dart';
+import '../core/runtime_config.dart';
 import '../core/theme.dart';
 import '../widgets/common.dart';
 
@@ -8,7 +10,7 @@ class PricingScreen extends StatelessWidget {
   const PricingScreen({super.key});
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {AppScope.of(context);return Scaffold(
         appBar: AppBar(title: const Text('أسعار العقود')),
         body: SafeArea(
             child: ResponsiveContent(
@@ -26,8 +28,8 @@ class PricingScreen extends StatelessWidget {
                       _PriceCard(type: type),
                       const SizedBox(height: 14),
                     ],
-                    const InfoBanner(
-                        text: ContractPrice.inclusionNote,
+                    InfoBanner(
+                        text: AppRuntime.text('pricingNote',ContractPrice.inclusionNote),
                         icon: Icons.verified_outlined),
                     const SizedBox(height: 14),
                     const Text(ContractPrice.durationNote,
@@ -38,7 +40,7 @@ class PricingScreen extends StatelessWidget {
                         style: TextStyle(height: 1.7)),
                   ],
                 ))),
-      );
+      );}
 }
 
 class _PriceCard extends StatelessWidget {

@@ -10,7 +10,7 @@ plugins {
 }
 
 android {
-    namespace = "sa.aqoodpro.app"
+    namespace = "sa.aqdak.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -28,7 +28,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "sa.aqoodpro.app"
+        applicationId = "sa.aqdak.app"
         minSdk = 24
         targetSdk = 35
         versionCode = flutter.versionCode

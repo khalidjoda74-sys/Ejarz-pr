@@ -1,6 +1,6 @@
-import 'package:aqood_pro/core/app_controller.dart';
-import 'package:aqood_pro/core/theme.dart';
-import 'package:aqood_pro/screens/wallet_profile.dart';
+import 'package:aqdak/core/app_controller.dart';
+import 'package:aqdak/core/theme.dart';
+import 'package:aqdak/screens/wallet_profile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';

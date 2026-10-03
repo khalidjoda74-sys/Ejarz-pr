@@ -1,6 +1,6 @@
-import 'package:aqood_pro/core/app_controller.dart';
-import 'package:aqood_pro/core/theme.dart';
-import 'package:aqood_pro/screens/wallet_profile.dart';
+import 'package:aqdak/core/app_controller.dart';
+import 'package:aqdak/core/theme.dart';
+import 'package:aqdak/screens/wallet_profile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,7 +41,7 @@ void main() {
 
     expect(
       find.text(
-        'سيُحذف حساب التجربة الحالي وكل العقود والعقارات والمرفقات والبيانات التجريبية المرتبطة به. يمكنك بدء تجربة جديدة بعد تسجيل الدخول مرة أخرى.',
+        'سيُحذف حسابك وملفك الشخصي وعقودك وعقاراتك ومرفقاتك وإشعاراتك وطلبات الدعم وبيانات الدفع المرتبطة بالحساب. لا يمكن التراجع عن هذا الإجراء.',
       ),
       findsOneWidget,
     );

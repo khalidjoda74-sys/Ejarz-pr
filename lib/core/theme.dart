@@ -268,6 +268,7 @@ class AppTheme {
       scaffoldBackgroundColor: background,
       colorScheme: lightTheme.colorScheme.copyWith(
         brightness: Brightness.dark,
+        primary: const Color(0xFF68D6B4),
         surface: surface,
         onSurface: text,
       ),
@@ -288,6 +289,12 @@ class AppTheme {
           lightTheme.textTheme.apply(bodyColor: text, displayColor: text),
       inputDecorationTheme: lightTheme.inputDecorationTheme.copyWith(
         fillColor: surface,
+        labelStyle:
+            lightTheme.inputDecorationTheme.labelStyle?.copyWith(color: text),
+        floatingLabelStyle: lightTheme.inputDecorationTheme.labelStyle
+            ?.copyWith(color: const Color(0xFF68D6B4)),
+        prefixIconColor: muted,
+        suffixIconColor: muted,
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: border),

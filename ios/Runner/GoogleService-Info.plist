@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>475770424762-m05t50ar04bgo83apfnbu60tvvqcbf4m.apps.googleusercontent.com</string>
+	<string>475770424762-5cprsdb5fcr8uk98i7j0b47kh1ff8pev.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.475770424762-m05t50ar04bgo83apfnbu60tvvqcbf4m</string>
+	<string>com.googleusercontent.apps.475770424762-5cprsdb5fcr8uk98i7j0b47kh1ff8pev</string>
 	<key>ANDROID_CLIENT_ID</key>
 	<string>475770424762-6sqdml4brvhlinkagsu2usgqvp67lmvp.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
@@ -15,7 +15,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>sa.aqoodpro.app</string>
+	<string>sa.aqdak.app</string>
 	<key>PROJECT_ID</key>
 	<string>ejarz-pro-20260624</string>
 	<key>STORAGE_BUCKET</key>
@@ -31,6 +31,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:475770424762:ios:a209c44989390c5a5ea183</string>
+	<string>1:475770424762:ios:6250cda18d0b32095ea183</string>
 </dict>
 </plist>

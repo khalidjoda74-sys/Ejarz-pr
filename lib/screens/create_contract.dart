@@ -1,7 +1,25 @@
+import 'dart:async';
+import 'package:cloud_functions/cloud_functions.dart';
+import '../core/runtime_config.dart';
+import '../core/app_telemetry.dart';
+import '../widgets/service_unavailable.dart';
+import 'account_records.dart';
 import 'package:flutter/material.dart';
+import '../widgets/load_more_records.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../core/firebase_bootstrap.dart';
+import '../core/firebase_repository.dart';
+import '../core/assistant/contract_assistant_controller.dart';
+import '../core/assistant/contract_field_catalog.dart';
+import '../core/assistant/contract_draft_store.dart';
+import '../widgets/assistant_field_scope.dart';
+import '../widgets/saudi_voice_assistant.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../core/app_controller.dart';
+import '../core/contract_files.dart';
+import '../core/demo_config.dart';
 import '../core/contract_validators.dart';
 import '../core/contract_pricing.dart';
 import '../core/draft_resume_policy.dart';
@@ -375,7 +393,22 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     'المراجعة',
   ];
 
-  late final ContractDraft _draft;
+  late ContractDraft _draft;
+  late final ContractAssistantController _assistant;
+  final _fieldAnchors = <String, GlobalKey>{};
+  final _recoveryStore = ContractDraftStore();
+  Timer? _localSaveTimer, _cloudSaveTimer;
+  Future<void>? _cloudSaveFuture;
+  String _draftOwner = '';
+  AppController? _accountController;
+  int? _draftSessionEpoch;
+  bool get _sameDraftAccount =>
+      _accountController != null &&
+      _accountController!.sessionEpoch == _draftSessionEpoch;
+  String _saveStatus = '';
+  bool _localRecoveryAvailable = true;
+  bool _hasEdits = false, _submitted = false;
+  DateTime _lastManualInteraction = DateTime(2000);
   late String _draftId;
   final Set<String> _touchedSections = <String>{};
   final List<GlobalKey<FormState>> _formKeys =
@@ -387,6 +420,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
 
   int _currentStep = 0;
   int _partyTab = 0;
+  final String _flowId = DateTime.now().microsecondsSinceEpoch.toString();
   bool _submitting = false;
 
   @override
@@ -395,6 +429,10 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     _draft = widget.initialDraft == null
         ? ContractDraft()
         : ContractDraft.copyOf(widget.initialDraft!);
+    _draft.frozenTotal = null;
+    _draft.frozenPrice = null;
+    _draft.renewal = widget.renewalMode;
+    if (widget.renewalMode) _draft.submissionId = '';
     _draftId = widget.draftId.trim();
     _touchedSections.addAll(widget.initialTouchedSections);
     _currentStep = (widget.initialStep ??
@@ -402,10 +440,32 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
                 ? 0
                 : firstIncompleteDraftStep(_draft)))
         .clamp(0, _steps.length - 1);
+    _assistant = ContractAssistantController(
+        readDraft: () => _draft,
+        renewal: widget.renewalMode,
+        onApply: (draft, paths) {
+          if (!mounted) return;
+          setState(() => _draft = draft);
+          _scheduleAutosave();
+        },
+        onFocus: _focusAssistantField);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _offerRecovery();
+      AppTelemetry.record('contract_start', 'create_contract',
+          step: _currentStep, flowId: _flowId);
+    });
   }
 
   @override
   void dispose() {
+    if (!_submitted) {
+      AppTelemetry.record('contract_exit', 'create_contract',
+          step: _currentStep, flowId: _flowId);
+    }
+    _localSaveTimer?.cancel();
+    _cloudSaveTimer?.cancel();
+    if (_hasEdits && !_submitted) unawaited(_saveLocal());
+    _assistant.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -465,7 +525,173 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
 
   void _markChanged() {
     _touchedSections.add(draftSectionForStep(_currentStep));
+    _assistant.manualChanged();
+    _scheduleAutosave();
     setState(() {});
+  }
+
+  void _formChanged() {
+    _lastManualInteraction = DateTime.now();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _submitting) return;
+      _assistant.manualChanged();
+      _scheduleAutosave();
+      setState(() {});
+    });
+  }
+
+  void _focusAssistantField(ContractFieldSpec field) {
+    if (!mounted) return;
+    // Don't move a user's cursor or wrestle with a manual scroll.
+    if (DateTime.now().difference(_lastManualInteraction).inMilliseconds <
+        1400) {
+      return;
+    }
+    setState(() {
+      _currentStep = field.step;
+      if (field.path.startsWith('lessor.')) _partyTab = 0;
+      if (field.path.startsWith('tenant.')) _partyTab = 1;
+      if (field.path.startsWith('representative.')) _partyTab = 2;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final target = _fieldAnchors[field.path]?.currentContext;
+      if (target != null) {
+        Scrollable.ensureVisible(target,
+            alignment: .15,
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 380));
+      }
+    });
+  }
+
+  void _scheduleAutosave() {
+    if (_submitted || _submitting) return;
+    _hasEdits = true;
+    _localSaveTimer?.cancel();
+    _cloudSaveTimer?.cancel();
+    _localSaveTimer =
+        Timer(const Duration(milliseconds: 450), () => unawaited(_saveLocal()));
+    _cloudSaveTimer =
+        Timer(const Duration(seconds: 3), () => unawaited(_saveCloud()));
+  }
+
+  Future<void> _saveLocal({bool showStatus = true}) async {
+    if (!_sameDraftAccount || _draftOwner.isEmpty || _submitted) return;
+    if (_draftOwner != 'local-demo' &&
+        (!FirebaseBootstrap.initialized ||
+            FirebaseAuth.instance.currentUser?.uid != _draftOwner)) {
+      return;
+    }
+    try {
+      await _recoveryStore.save(_draftOwner, {
+        'draft': FirebaseRepository.draftToMap(_draft),
+        'draftId': _draftId,
+        'step': _currentStep,
+        'renewal': widget.renewalMode
+      });
+      _localRecoveryAvailable = true;
+      if (mounted && showStatus) {
+        setState(() => _saveStatus = 'تم الحفظ على هذا الجهاز');
+      }
+    } catch (error) {
+      _localRecoveryAvailable = false;
+      // Classify failures without logging draft contents, storage keys or UID.
+      final category = RegExp(
+              r'QuotaExceededError|SecurityError|OperationError|TypeError|MissingPluginException|UnsupportedError|JsonUnsupportedObjectError|InvalidAccessError')
+          .firstMatch('$error')
+          ?.group(0);
+      debugPrint(
+          'Contract recovery unavailable: ${category ?? 'storage_error'}');
+      if (mounted && showStatus) {
+        setState(
+            () => _saveStatus = 'تعذر الحفظ على الجهاز؛ استخدم حفظ كمسودة');
+      }
+    }
+  }
+
+  Future<void> _saveCloud() async {
+    if (!_sameDraftAccount ||
+        _submitted ||
+        !mounted ||
+        !FirebaseBootstrap.initialized ||
+        FirebaseAuth.instance.currentUser == null) {
+      return;
+    }
+    if (_cloudSaveFuture != null) {
+      await _cloudSaveFuture;
+      return;
+    }
+    final revision = _assistant.revision;
+    _cloudSaveFuture = () async {
+      try {
+        final result = await AppScope.of(context, listen: false).saveDraft(
+            ContractDraft.copyOf(_draft),
+            draftId: _draftId,
+            progress: _draftProgress);
+        if (!_sameDraftAccount) return;
+        _draftId = result.id;
+        // A failed local recovery copy must not overwrite a successful cloud save.
+        if (!_submitted) await _saveLocal(showStatus: false);
+        if (mounted) {
+          setState(() => _saveStatus = result.pendingSync
+              ? (_localRecoveryAvailable
+                  ? 'محفوظ على الجهاز • بانتظار المزامنة'
+                  : 'لم تتم المزامنة بعد؛ أبقِ الشاشة مفتوحة وأعد المحاولة')
+              : (_localRecoveryAvailable
+                  ? 'تمت مزامنة المسودة'
+                  : 'تم الحفظ في حسابك • النسخة المحلية غير متاحة'));
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() =>
+              _saveStatus = 'تعذرت المزامنة؛ حاول مجددًا أو استخدم حفظ كمسودة');
+        }
+      }
+    }();
+    await _cloudSaveFuture;
+    _cloudSaveFuture = null;
+    if (mounted && !_submitted && revision != _assistant.revision) {
+      _scheduleAutosave();
+    }
+  }
+
+  Future<void> _offerRecovery() async {
+    if (!mounted) return;
+    _accountController = AppScope.of(context, listen: false);
+    _draftSessionEpoch = _accountController!.sessionEpoch;
+    _draftOwner = FirebaseBootstrap.initialized
+        ? FirebaseAuth.instance.currentUser?.uid ?? 'local-demo'
+        : 'local-demo';
+    if (widget.initialDraft != null || widget.renewalMode) return;
+    try {
+      final stored = await _recoveryStore.read(_draftOwner);
+      if (!mounted || !_sameDraftAccount || stored == null || _hasEdits) return;
+      final restore = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+                  title: const Text('لديك عقد غير مكتمل'),
+                  content: const Text(
+                      'هل تريد متابعة المسودة المحفوظة على هذا الجهاز؟'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('عقد جديد')),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('متابعة العقد'))
+                  ]));
+      if (!mounted || !_sameDraftAccount || restore != true) return;
+      final recovered = FirebaseRepository.draftFromMap(stored['draft']);
+      if (recovered == null) return;
+      setState(() {
+        _draft = recovered;
+        _draftId = '${stored['draftId'] ?? ''}';
+        _currentStep = (stored['step'] as int? ?? 0).clamp(0, 6);
+      });
+      _assistant.resetObservation();
+    } catch (_) {/* Recovery cannot block ordinary manual creation. */}
   }
 
   DraftProgress get _draftProgress => DraftProgress(
@@ -718,6 +944,8 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
 
     if (_currentStep < _steps.length - 1) {
       setState(() => _currentStep += 1);
+      AppTelemetry.record('contract_step', 'create_contract',
+          step: _currentStep, flowId: _flowId);
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollTop());
     }
   }
@@ -733,6 +961,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
 
   List<AttachmentData> get _requiredAttachments {
     return _draft.attachments.where((attachment) {
+      if (AppRuntime.attachment(attachment.keyName, false)) return true;
       if (attachment.keyName == 'authorization') {
         return _draft.representative.enabled;
       }
@@ -743,7 +972,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
         return _draft.lessor.kind == PartyKind.company ||
             _draft.tenant.kind == PartyKind.company;
       }
-      return attachment.required;
+      return AppRuntime.attachment(attachment.keyName, attachment.required);
     }).toList();
   }
 
@@ -767,6 +996,12 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   }
 
   Future<void> _submit() async {
+    if (_assistant.pending.isNotEmpty) {
+      showAppSnackBar(
+          context, 'أكّد القيم التي أدخلها المساعد قبل إرسال الطلب');
+      _assistant.focus(_assistant.pending.first.path);
+      return;
+    }
     if (!_validateAllRequiredFields()) return;
     if (!_draft.acceptAccuracyDeclaration ||
         !_draft.acceptDataSharing ||
@@ -782,15 +1017,37 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
       draftSectionAttachments,
     });
     setState(() => _submitting = true);
+    _localSaveTimer?.cancel();
+    _cloudSaveTimer?.cancel();
+    await _cloudSaveFuture;
     await Future<void>.delayed(const Duration(milliseconds: 1100));
     if (!mounted) return;
     final controller = AppScope.of(context, listen: false);
-    final record = await controller.submitContract(
-      _draft,
-      draftId: _draftId,
-      progress: _draftProgress,
-    );
+    late final ContractRecord record;
+    try {
+      record = await controller.submitContract(_draft,
+          draftId: _draftId, progress: _draftProgress);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _submitting = false);
+        showAppSnackBar(
+            context,
+            error is FirebaseFunctionsException
+                ? error.message ?? 'تعذر إرسال العقد.'
+                : 'تعذر إرسال العقد. راجع البيانات والإعدادات.');
+      }
+      return;
+    }
+    if (!record.pendingSync) {
+      AppTelemetry.record('contract_submit', 'create_contract',
+          step: _currentStep, flowId: _flowId);
+    }
     final waitsForConnection = record.pendingSync;
+    // The controller owns offline submissions too; don't restore a second copy.
+    _submitted = true;
+    try {
+      if (_draftOwner.isNotEmpty) await _recoveryStore.clear(_draftOwner);
+    } catch (_) {/* A storage error must not undo a successful submission. */}
     if (!mounted) return;
     setState(() => _submitting = false);
     await showDialog<void>(
@@ -848,6 +1105,11 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   }
 
   Future<void> _saveDraft() async {
+    _localSaveTimer?.cancel();
+    _cloudSaveTimer?.cancel();
+    await _saveLocal();
+    await _cloudSaveFuture;
+    if (!mounted) return;
     _touchedSections.add(draftSectionForStep(_currentStep));
     final controller = AppScope.of(context, listen: false);
     final record = await controller.saveDraft(
@@ -857,6 +1119,8 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     );
     if (!mounted) return;
     _draftId = record.id;
+    await _saveLocal(showStatus: false);
+    if (!mounted) return;
     showAppSnackBar(
       context,
       record.pendingSync
@@ -867,6 +1131,14 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
 
   @override
   Widget build(BuildContext context) {
+    AppScope.of(context);
+    if (!AppRuntime.service(_draft.type.name) ||
+        (widget.renewalMode && !AppRuntime.service('renewal'))) {
+      return const ServiceUnavailable();
+    }
+    final compactAssistantLayout =
+        MediaQuery.viewInsetsOf(context).bottom > 0 ||
+            MediaQuery.sizeOf(context).height < 480;
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -893,35 +1165,68 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
           label: 'جارٍ إنشاء الطلب...',
           child: Column(
             children: <Widget>[
-              Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
-                    child: WizardProgress(
-                      labels: _steps,
-                      current: _currentStep,
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 92),
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 760),
-                      child: Form(
-                        key: _formKeys[_currentStep],
-                        child: _buildStep(),
+              if (!compactAssistantLayout)
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+                      child: WizardProgress(
+                        labels: _steps,
+                        current: _currentStep,
                       ),
                     ),
                   ),
                 ),
+              if (!compactAssistantLayout)
+                Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: ListenableBuilder(
+                        listenable: _assistant,
+                        builder: (context, _) => Column(children: [
+                              LinearProgressIndicator(
+                                  value: _assistant.progress,
+                                  minHeight: 3,
+                                  borderRadius: BorderRadius.circular(4)),
+                              Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                      'اكتمال البيانات ${(_assistant.progress * 100).round()}٪ • ${_assistant.missing.length} معلومة ناقصة${_assistant.pending.isEmpty ? '' : ' • ${_assistant.pending.length} بانتظار التأكيد'}${_saveStatus.isEmpty ? '' : '\n$_saveStatus'}',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          color: context.ejarzTheme.muted))),
+                            ]))),
+              Expanded(
+                child: NotificationListener<UserScrollNotification>(
+                    onNotification: (_) {
+                      _lastManualInteraction = DateTime.now();
+                      return false;
+                    },
+                    child: SingleChildScrollView(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 92),
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 760),
+                          child: AssistantFieldScope(
+                              controller: _assistant,
+                              anchors: _fieldAnchors,
+                              step: _currentStep,
+                              party: _partyTab,
+                              child: Form(
+                                key: _formKeys[_currentStep],
+                                onChanged: _formChanged,
+                                child: _buildStep(),
+                              )),
+                        ),
+                      ),
+                    )),
               ),
+              if (!_submitting && AppRuntime.assistantEnabled)
+                SaudiVoiceAssistant(controller: _assistant),
               Container(
                 padding: const EdgeInsets.fromLTRB(14, 7, 14, 8),
                 decoration: BoxDecoration(
@@ -1114,7 +1419,7 @@ class _TypeStep extends StatelessWidget {
         const SizedBox(height: 16),
         const InfoBanner(
           text:
-              'سيتم مراجعة بيانات العقد والمرفقات من فريق عقود برو قبل إدخاله في منصة إيجار للتأكد من اكتمالها وصحتها.',
+              'سيتم مراجعة بيانات العقد والمرفقات من فريق عقدك قبل إدخاله في منصة إيجار للتأكد من اكتمالها وصحتها.',
         ),
       ],
     );
@@ -1392,6 +1697,7 @@ class _PropertyStep extends StatelessWidget {
               const InfoBanner(
                   text:
                       'لم تُضف وحدات لهذه العمارة بعد. أضف الوحدات من «عقاراتي» ثم اختر الوحدة المطلوبة.'),
+            const LoadMoreRecords('properties'),
             AppDropdownField(
               label: 'استخدام العقار',
               value: property.propertyUsage,
@@ -1551,11 +1857,6 @@ class _PropertyStep extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(15),
-                child: const MiniMapPreview(height: 126),
-              ),
-              const SizedBox(height: 10),
               Row(
                 children: <Widget>[
                   const Icon(Icons.location_on_rounded,
@@ -1566,13 +1867,6 @@ class _PropertyStep extends StatelessWidget {
                       property.displayAddress,
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
-                  ),
-                  TextButton(
-                    onPressed: () => showAppSnackBar(
-                      context,
-                      'سيتم ربط اختيار الموقع بالخريطة عند إضافة خدمة الخرائط.',
-                    ),
-                    child: const Text('تحديد الموقع'),
                   ),
                 ],
               ),
@@ -1946,9 +2240,34 @@ class _PartiesStep extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
+        if (selectedTab != 2 && AppRuntime.service('savedParties')) ...[
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            TextButton.icon(
+                icon: const Icon(Icons.people_outline),
+                label: const Text('اختيار طرف محفوظ'),
+                onPressed: () async {
+                  final party = await chooseSavedParty(context);
+                  if (party != null) {
+                    if (selectedTab == 0) {
+                      draft.lessor = party;
+                    } else {
+                      draft.tenant = party;
+                    }
+                    onChanged();
+                  }
+                }),
+            TextButton.icon(
+                icon: const Icon(Icons.bookmark_add_outlined),
+                label: const Text('حفظ الطرف'),
+                onPressed: () => editSavedParty(context,
+                    initial: selectedTab == 0 ? draft.lessor : draft.tenant)),
+          ]),
+          const SizedBox(height: 12),
+        ],
         if (selectedTab == 0)
           _PartyForm(
-            key: ValueKey<String>('lessor-${draft.lessor.kind.name}'),
+            key: ValueKey<String>(
+                'lessor-${draft.lessor.kind.name}-${identityHashCode(draft.lessor)}'),
             title: 'بيانات المؤجر',
             data: draft.lessor,
             isLessor: true,
@@ -1956,7 +2275,8 @@ class _PartiesStep extends StatelessWidget {
           )
         else if (selectedTab == 1)
           _PartyForm(
-            key: ValueKey<String>('tenant-${draft.tenant.kind.name}'),
+            key: ValueKey<String>(
+                'tenant-${draft.tenant.kind.name}-${identityHashCode(draft.tenant)}'),
             title: 'بيانات المستأجر',
             data: draft.tenant,
             isLessor: false,
@@ -2491,9 +2811,8 @@ class _FinancialStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final installmentValue = draft.paymentCount <= 0
-        ? draft.rentValueNumber
-        : draft.rentValueNumber / draft.paymentCount;
+    final calculation = draft.rentalCalculation;
+    final installmentValue = (calculation?.installments.firstOrNull ?? 0) / 100;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2755,17 +3074,23 @@ class _FinancialStep extends StatelessWidget {
             AppTextField(
               label: 'عدد الدفعات',
               hint: 'مثال: 4',
-              initialValue: draft.paymentCount.toString(),
+              key: draft.paymentScheduleType == 'مخصص'
+                  ? const ValueKey('custom-payment-count')
+                  : ValueKey(
+                      'auto-payment-count-${calculation?.installments.length}'),
+              initialValue:
+                  '${draft.paymentScheduleType == 'مخصص' ? draft.paymentCount : calculation?.installments.length ?? 0}',
+              readOnly: draft.paymentScheduleType != 'مخصص',
               icon: Icons.format_list_numbered_rounded,
               keyboardType: TextInputType.number,
               inputFormatters: <TextInputFormatter>[
                 FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(2),
+                LengthLimitingTextInputFormatter(4),
               ],
               required: true,
               onChanged: _updatePaymentCount,
               validator: (value) =>
-                  _requiredPositiveInt(value, min: 1, max: 60),
+                  _requiredPositiveInt(value, min: 1, max: 1200),
             ),
             DateField(
               label: 'تاريخ أول دفعة',
@@ -2801,7 +3126,7 @@ class _FinancialStep extends StatelessWidget {
               },
             ),
             AppDropdownField(
-              label: 'دافع عمولة عقود برو',
+              label: 'دافع عمولة عقدك',
               value: draft.serviceFeePayer,
               items: const <String>['المؤجر', 'المستأجر', 'مناصفة'],
               icon: Icons.support_agent_outlined,
@@ -2814,8 +3139,9 @@ class _FinancialStep extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         InfoBanner(
-          text:
-              'قيمة الدفعة التقديرية: ${_money(installmentValue)}. سيتم إنشاء جدول الدفعات النهائي عند الانتقال للخطوة التالية.',
+          text: calculation == null
+              ? 'أكمل المدة والإيجار لإنشاء جدول الدفعات.'
+              : 'إجمالي الإيجار طوال العقد: ${_money(calculation.totalHalalas / 100)}\nعدد الدفعات: ${calculation.installments.length} • الدفعة الأولى: ${_money(installmentValue)}\nالأيام الإضافية تُحسب من الإيجار السنوي ÷ 365. قد تختلف الدفعة الأخيرة للفترة الجزئية أو التقريب. لا يشمل هذا الإجمالي الضمان أو رسوم الخدمة.',
           icon: Icons.info_outline_rounded,
         ),
         const SizedBox(height: 16),
@@ -3144,7 +3470,7 @@ class _AttachmentsStep extends StatelessWidget {
   }
 }
 
-class _AttachmentTile extends StatelessWidget {
+class _AttachmentTile extends StatefulWidget {
   final AttachmentData attachment;
   final bool requiredAttachment;
   final VoidCallback onChanged;
@@ -3154,6 +3480,54 @@ class _AttachmentTile extends StatelessWidget {
     required this.requiredAttachment,
     required this.onChanged,
   });
+
+  @override
+  State<_AttachmentTile> createState() => _AttachmentTileState();
+}
+
+class _AttachmentTileState extends State<_AttachmentTile> {
+  bool _uploading = false;
+  AttachmentData get attachment => widget.attachment;
+  bool get requiredAttachment => widget.requiredAttachment;
+  VoidCallback get onChanged => widget.onChanged;
+
+  Future<void> _pick() async {
+    if (_uploading) return;
+    setState(() => _uploading = true);
+    try {
+      final selection = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+        withData: true,
+        allowMultiple: false,
+      );
+      if (!mounted || selection == null) return;
+      final file = selection.files.single;
+      if (file.size > ContractFiles.maxBytes || file.bytes == null) {
+        throw const FormatException(
+            'تعذر قراءة الملف أو أن حجمه أكبر من 10 ميجابايت.');
+      }
+      final url = await ContractFiles.upload(file.name, file.bytes!);
+      if (!mounted) return;
+      attachment
+        ..uploaded = true
+        ..fileName = file.name
+        ..sizeLabel = '${(file.size / 1024).ceil()} KB'
+        ..downloadUrl = url;
+      onChanged();
+      showAppSnackBar(context, 'تم رفع ${attachment.title} وحفظه بنجاح');
+    } catch (error) {
+      if (mounted) {
+        showAppSnackBar(
+            context,
+            error is FormatException
+                ? error.message
+                : 'تعذر رفع المرفق. تحقق من الاتصال ثم أعد المحاولة.');
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3168,81 +3542,99 @@ class _AttachmentTile extends StatelessWidget {
                 ? AppColors.orange.withValues(alpha: 0.55)
                 : context.ejarzTheme.border,
       ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: uploaded
-                  ? AppColors.primaryLight
-                  : context.ejarzTheme.background,
-              borderRadius: BorderRadius.circular(13),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(children: <Widget>[
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: uploaded
+                    ? AppColors.primaryLight
+                    : context.ejarzTheme.background,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Icon(
+                uploaded ? Icons.task_outlined : Icons.upload_file_outlined,
+                color: uploaded ? AppColors.primary : context.ejarzTheme.muted,
+              ),
             ),
-            child: Icon(
-              uploaded ? Icons.task_outlined : Icons.upload_file_outlined,
-              color: uploaded ? AppColors.primary : context.ejarzTheme.muted,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        attachment.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          attachment.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    _AttachmentBadge(requiredAttachment: requiredAttachment),
-                  ],
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  uploaded
-                      ? '${attachment.fileName} - ${attachment.sizeLabel}'
-                      : 'لم يتم الرفع بعد',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: context.ejarzTheme.muted,
-                    fontSize: context.sp(11.5),
-                    fontWeight: FontWeight.w600,
+                      const SizedBox(width: 8),
+                      _AttachmentBadge(requiredAttachment: requiredAttachment),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 5),
+                  Text(
+                    uploaded
+                        ? '${attachment.fileName} - ${attachment.sizeLabel}'
+                        : 'لم يتم الرفع بعد',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.ejarzTheme.muted,
+                      fontSize: context.sp(11.5),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          if (uploaded)
-            IconButton(
-              tooltip: 'حذف المرفق',
-              onPressed: () {
-                attachment.uploaded = false;
-                attachment.fileName = '';
-                attachment.sizeLabel = '';
-                onChanged();
-              },
-              icon: const Icon(Icons.delete_outline_rounded),
-            )
-          else
+            const SizedBox(width: 8),
+            if (_uploading)
+              const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+            else if (uploaded)
+              IconButton(
+                tooltip: 'حذف المرفق',
+                onPressed: () {
+                  attachment.uploaded = false;
+                  attachment.fileName = '';
+                  attachment.sizeLabel = '';
+                  attachment.downloadUrl = '';
+                  onChanged();
+                },
+                icon: const Icon(Icons.delete_outline_rounded),
+              )
+            else
+              TextButton.icon(
+                onPressed: _pick,
+                icon: const Icon(Icons.cloud_upload_outlined, size: 18),
+                label: const Text('رفع'),
+              ),
+          ]),
+          if (kEjarzDemoMode && !uploaded && !_uploading) ...[
+            const SizedBox(height: 8),
             TextButton.icon(
               onPressed: () {
-                attachment.uploaded = true;
-                attachment.fileName = '${attachment.keyName}.pdf';
-                attachment.sizeLabel = '1.2 MB';
+                attachment
+                  ..uploaded = true
+                  ..fileName = '${attachment.keyName}.pdf'
+                  ..sizeLabel = 'نموذج تجريبي'
+                  ..downloadUrl = ContractFiles.demoPdf;
                 onChanged();
-                showAppSnackBar(context, 'تم إرفاق ${attachment.title} بنجاح');
               },
-              icon: const Icon(Icons.cloud_upload_outlined, size: 18),
-              label: const Text('رفع'),
+              icon: const Icon(Icons.science_outlined, size: 18),
+              label: const Text('استخدام مرفق تجريبي دون رفع وثائق شخصية'),
             ),
+          ],
         ],
       ),
     );
@@ -3395,6 +3787,11 @@ class _ReviewStep extends StatelessWidget {
                 label: 'مبلغ الإيجار السنوي',
                 value: _money(draft.rentValueNumber)),
             _ReviewLine(label: 'دورة السداد', value: draft.rentPeriod),
+            if (draft.rentalCalculation case final rental?)
+              _ReviewLine(
+                  label: 'إجمالي الإيجار طوال العقد',
+                  value: _money(rental.totalHalalas / 100),
+                  strong: true),
             _ReviewLine(
               label: 'الضمان',
               value: draft.hasSecurityDeposit

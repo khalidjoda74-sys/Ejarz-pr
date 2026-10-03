@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:aqood_pro/core/missing_requirement_policy.dart';
+import 'package:aqdak/core/missing_requirement_policy.dart';
 
 void main() {
   test('review descriptions never claim a required upload is absent', () {

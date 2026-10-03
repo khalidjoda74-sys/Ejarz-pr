@@ -1,7 +1,7 @@
-name: aqood_pro
-description: تطبيق عقود برو لإدارة وتجهيز ومتابعة عقود الإيجار.
+name: aqdak
+description: تطبيق عقدك لإدارة وتجهيز ومتابعة عقود الإيجار.
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -10,6 +10,8 @@ dependencies:
   cloud_firestore: ^5.6.12
   cloud_functions: ^5.6.0
   file_picker: ^8.3.7
+  flutter_webrtc: ^1.4.0
+  flutter_secure_storage: ^10.3.4
   firebase_auth: ^5.7.0
   firebase_core: ^3.15.2
   firebase_messaging: ^15.2.10
@@ -21,6 +23,8 @@ dependencies:
   flutter_local_notifications: ^17.2.4
   cupertino_icons: ^1.0.8
   url_launcher: ^6.3.1
+  package_info_plus: ^8.3.1
+  firebase_app_check: 0.3.2+10
 
 dev_dependencies:
   flutter_test:

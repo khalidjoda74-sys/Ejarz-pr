@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>عقود برو</string>
+	<string>عقدك</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>AqoodPro</string>
+	<string>Aqdak</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -22,6 +22,16 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.475770424762-5cprsdb5fcr8uk98i7j0b47kh1ff8pev</string>
+				<string>app-1-475770424762-ios-6250cda18d0b32095ea183</string>
+			</array>
+		</dict>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -44,15 +54,18 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>يحتاج تطبيق عقود برو إلى الوصول إلى مكتبة الصور لاختيار صور المستندات والمرفقات وإضافتها إلى العقود وطلبات الدعم.</string>
+	<string>يحتاج تطبيق عقدك إلى الوصول إلى مكتبة الصور لاختيار صور المستندات والمرفقات وإضافتها إلى العقود وطلبات الدعم.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>يحتاج تطبيق عقود برو إلى استخدام الكاميرا لالتقاط صور المستندات والمرفقات وإضافتها إلى العقود وطلبات الدعم.</string>
+	<string>يحتاج تطبيق عقدك إلى استخدام الكاميرا لالتقاط صور المستندات والمرفقات وإضافتها إلى العقود وطلبات الدعم.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>عند بدء مساعد العقود الصوتي، نستخدم الميكروفون لفهم إجاباتك وتعبئة بيانات العقد. يمكنك إيقافه أو الكتابة في أي وقت.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>يحتاج تطبيق عقود برو إلى موقعك أثناء الاستخدام لتسهيل تحديد عنوان العقار عند اختيار الخدمات المرتبطة بالموقع.</string>
+	<string>يحتاج تطبيق عقدك إلى موقعك أثناء الاستخدام لتسهيل تحديد عنوان العقار عند اختيار الخدمات المرتبطة بالموقع.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>fetch</string>
 		<string>remote-notification</string>
 	</array>
 </dict>
