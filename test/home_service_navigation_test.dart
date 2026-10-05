@@ -59,7 +59,9 @@ void main() {
     await tester.tap(find.text(controller.serviceRenewalTitle));
     await tester.pumpAndSettle();
 
-    expect(find.text('اختر العقد المراد تجديده'), findsOneWidget);
+    expect(find.text('جدّد عقدك بكل سهولة'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(
+        const ValueKey<String>('renew-contract-renewable-commercial-1')));
     await tester.tap(
       find.byKey(
         const ValueKey<String>('renew-contract-renewable-commercial-1'),
@@ -87,8 +89,8 @@ void main() {
     await tester.tap(find.text(controller.serviceRenewalTitle));
     await tester.pumpAndSettle();
 
-    expect(find.text('لا توجد عقود متاحة للتجديد'), findsOneWidget);
-    expect(find.text('إنشاء عقد جديد'), findsOneWidget);
+    expect(find.text('لا توجد عقود مكتملة هنا بعد'), findsOneWidget);
+    expect(find.text('إضافة تجديد عقد سابق'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

@@ -394,6 +394,12 @@ class ContractDetailsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
+    final latest = controller.contracts
+        .where((item) => item.id == contract.id)
+        .firstOrNull;
+    if (latest != null && !identical(latest, contract)) {
+      return ContractDetailsScreen(contract: latest);
+    }
     return Scaffold(
       appBar: DetailAppBar(
         title: 'تفاصيل العقد',
@@ -455,22 +461,30 @@ class ContractDetailsScreen extends StatelessWidget {
                     const Divider(),
                     _DetailsRow(
                       icon: Icons.people_outline_rounded,
-                      title: 'الأطراف',
-                      subtitle: 'عرض بيانات المؤجر والمستأجر',
+                      title: contract.isExternalRenewal
+                          ? 'بيانات المستأجر'
+                          : 'الأطراف',
+                      subtitle: contract.isExternalRenewal
+                          ? 'الهوية وتاريخ الميلاد ورقم الجوال'
+                          : 'عرض بيانات المؤجر والمستأجر',
                       onTap: () => _openParties(context),
                     ),
-                    const Divider(),
-                    _DetailsRow(
-                      icon: contract.type.icon,
-                      title: 'العقار',
-                      subtitle: 'تفاصيل العقار وعنوانه',
-                      onTap: () => _openProperty(context),
-                    ),
+                    if (!contract.isExternalRenewal) ...[
+                      const Divider(),
+                      _DetailsRow(
+                        icon: contract.type.icon,
+                        title: 'العقار',
+                        subtitle: 'تفاصيل العقار وعنوانه',
+                        onTap: () => _openProperty(context),
+                      ),
+                    ],
                     const Divider(),
                     _DetailsRow(
                       icon: Icons.account_balance_wallet_outlined,
                       title: 'الرسوم',
-                      subtitle: 'تفاصيل الرسوم والمدفوعات',
+                      subtitle: contract.awaitingRenewalQuote
+                          ? 'تُحدد بعد مراجعة العقد'
+                          : 'تفاصيل الرسوم والمدفوعات',
                       onTap: () => _openFees(context),
                     ),
                     const Divider(),
@@ -528,9 +542,15 @@ class ContractDetailsScreen extends StatelessWidget {
                             ? contract.isDemoPayment
                                 ? 'تحميل نموذج العقد'
                                 : 'تحميل العقد'
-                            : 'تحميل ملخص الطلب',
+                            : contract.isExternalRenewal
+                                ? 'فتح عقد إيجار المرفق'
+                                : 'تحميل ملخص الطلب',
                         icon: Icons.download_rounded,
-                        onPressed: () => _downloadContract(context),
+                        onPressed: () => contract.isExternalRenewal &&
+                                contract.status != ContractStatus.authenticated
+                            ? openDocument(context,
+                                contract.renewalRequest['fileUrl'] ?? '')
+                            : _downloadContract(context),
                       ),
                     if (contract.status != ContractStatus.draft)
                       SecondaryButton(
@@ -563,28 +583,43 @@ class ContractDetailsScreen extends StatelessWidget {
                   contract.ejarContractNumber.trim().isNotEmpty) ...<Widget>[
                 const SizedBox(height: 12),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
                     color: Theme.of(context).brightness == Brightness.dark
                         ? const Color(0xFF17362F)
                         : AppColors.primaryLight,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.18)),
+                    border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.18)),
                   ),
                   child: Row(
                     children: <Widget>[
-                      Icon(Icons.verified_outlined, color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8CE5C1) : AppColors.primary),
+                      Icon(Icons.verified_outlined,
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? const Color(0xFF8CE5C1)
+                              : AppColors.primary),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            Text('رقم عقد منصة إيجار', style: TextStyle(color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF8CE5C1) : AppColors.primaryDark, fontWeight: FontWeight.w700)),
+                            Text('رقم عقد منصة إيجار',
+                                style: TextStyle(
+                                    color: Theme.of(context).brightness ==
+                                            Brightness.dark
+                                        ? const Color(0xFF8CE5C1)
+                                        : AppColors.primaryDark,
+                                    fontWeight: FontWeight.w700)),
                             const SizedBox(height: 3),
                             SelectableText(
                               contract.ejarContractNumber.trim(),
                               textDirection: TextDirection.ltr,
-                              style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w700, fontSize: 16),
+                              style: TextStyle(
+                                  color:
+                                      Theme.of(context).colorScheme.onSurface,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 16),
                             ),
                           ],
                         ),
@@ -1270,7 +1305,7 @@ class ContractDetailsScreen extends StatelessWidget {
             ),
             _ContractDetailItem(
               label: 'نوع العقد',
-              value: contract.type.label,
+              value: contract.typeLabel,
             ),
             _ContractDetailItem(label: 'تاريخ الطلب', value: contract.date),
             _ContractDetailItem(
@@ -1302,6 +1337,15 @@ class ContractDetailsScreen extends StatelessWidget {
   }
 
   void _openParties(BuildContext context) {
+    if (contract.isExternalRenewal) {
+      _openDetailsPage(context, title: 'بيانات المستأجر', sections: [
+        _ContractDetailSection(
+            title: 'البيانات المرسلة مع عقد إيجار',
+            icon: Icons.person_outline,
+            items: _detailItems(contract.partyDetails.entries.toList()))
+      ]);
+      return;
+    }
     if (contract.status == ContractStatus.draft) {
       _openDraftParties(context);
       return;
@@ -1481,18 +1525,37 @@ class ContractDetailsScreen extends StatelessWidget {
   }
 
   void _openFees(BuildContext context) {
+    if (contract.awaitingRenewalQuote) {
+      _openDetailsPage(context, title: 'رسوم التجديد', sections: [
+        const _ContractDetailSection(
+            title: 'قيد مراجعة العقد',
+            icon: Icons.receipt_long_outlined,
+            items: [
+              _ContractDetailItem(
+                  label: 'الرسوم',
+                  value:
+                      'تُحدد حسب نوع العقد ومدة التجديد بعد مراجعة الإدارة؛ لم يُطلب منك الدفع بعد.')
+            ])
+      ]);
+      return;
+    }
     if (contract.status == ContractStatus.draft) {
       _openDraftFinancial(context);
       return;
     }
     final paid = contract.paymentStatus == 'paid' ||
         contract.paymentId.trim().isNotEmpty ||
-        contract.status == ContractStatus.processing ||
-        contract.status == ContractStatus.authenticated;
+        (!contract.isExternalRenewal &&
+            (contract.status == ContractStatus.processing ||
+                contract.status == ContractStatus.authenticated));
     final paymentItems = <_ContractDetailItem>[
       _ContractDetailItem(
         label: 'حالة الدفع',
-        value: paid ? 'مدفوع' : 'بانتظار الدفع',
+        value: contract.paymentStatus == 'waived'
+            ? 'معفى من الرسوم'
+            : paid
+                ? 'مدفوع'
+                : 'بانتظار الدفع',
       ),
       const _ContractDetailItem(
         label: 'طرق الدفع',
@@ -1648,6 +1711,8 @@ class ContractDetailsScreen extends StatelessWidget {
   String _paymentMethodLabel(String value) {
     return switch (value) {
       'mada' => 'مدى',
+      'cash' => 'نقدًا',
+      'bankTransfer' => 'تحويل بنكي',
       'visaMastercard' => 'Visa / Mastercard',
       'applePay' => 'Apple Pay - Demo',
       'stcPay' => 'STC Pay - Demo',

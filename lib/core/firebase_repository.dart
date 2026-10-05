@@ -6,13 +6,27 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'contract_pricing.dart';
+import 'contract_calculation_engine.dart';
 import 'runtime_config.dart';
+import 'renewal_request.dart';
 
 import 'missing_requirement_policy.dart';
 import 'models.dart';
 import 'property_management.dart';
 
 class FirebaseRepository {
+  Future<ContractRecord> submitExternalRenewal(
+      String uid, RenewalRequest request) async {
+    _assertAccount(uid);
+    request.validate();
+    final result = await FirebaseFunctions.instanceFor(region: 'us-central1')
+        .httpsCallable('submitExternalRenewal')
+        .call({...request.toMap(), 'expectedUid': uid});
+    _assertAccount(uid);
+    return contractFromMap(request.submissionId,
+        Map<String, dynamic>.from(result.data['record'] as Map));
+  }
+
   void _assertAccount(String uid) {
     if (FirebaseAuth.instance.currentUser?.uid != uid) {
       throw StateError('تغير الحساب، أعد المحاولة');
@@ -761,6 +775,9 @@ class FirebaseRepository {
           kitchen: source.kitchen,
           storage: source.storage,
           majlis: source.majlis,
+          kitchenCount: source.kitchenCount,
+          storageCount: source.storageCount,
+          majlisCount: source.majlisCount,
           furnishingStatus: _demoText(
             source.furnishingStatus,
             'غير مؤثثة',
@@ -768,6 +785,9 @@ class FirebaseRepository {
           acWindow: source.acWindow,
           acSplit: source.acSplit || (!source.acWindow && !source.acCentral),
           acCentral: source.acCentral,
+          acWindowCount: source.acWindowCount,
+          acSplitCount: source.acSplitCount,
+          acCentralCount: source.acCentralCount,
           privateParking: source.privateParking,
           electricityMeter: _demoPositiveInteger(
             source.electricityMeter,
@@ -1073,6 +1093,8 @@ class FirebaseRepository {
         'contractId': contractId,
         'expectedUid': uid,
         'draft': draftToMap(draft),
+        if (draft.serverRevision != null)
+          'expectedUpdatedAt': draft.serverRevision,
         'expectedAmount': draft.totalPayable,
         'progress': draftProgressToMap(progress),
         if (draft.property.propertySource.trim() == 'إضافة عقار جديد')
@@ -1192,6 +1214,12 @@ class FirebaseRepository {
       );
     }
     await batch.commit();
+    // The acknowledged cache contains the server timestamp needed for the
+    // next optimistic edit; avoid an extra network request after the commit.
+    try {
+      final saved = await doc.get(const GetOptions(source: Source.cache));
+      if (saved.exists) return contractFromDoc(saved);
+    } catch (_) {/* Preserve the committed record if cache access fails. */}
     return record;
   }
 
@@ -1216,6 +1244,15 @@ class FirebaseRepository {
       final current = snapshot.data();
       if (current == null) {
         throw StateError('المسودة غير موجودة.');
+      }
+      final currentRevision =
+          _dateTimeFromAny(current['updatedAt'])?.millisecondsSinceEpoch;
+      if (draft.serverRevision != null &&
+          draft.serverRevision != currentRevision) {
+        throw FirebaseFunctionsException(
+            code: 'aborted',
+            message:
+                'تغيرت المسودة بواسطة الإدارة أو جهاز آخر. أعد تحميلها قبل الحفظ.');
       }
       if ((current['uid'] as String?) != uid ||
           (current['status'] as String?) != ContractStatus.draft.name) {
@@ -1528,6 +1565,8 @@ class FirebaseRepository {
     return ContractRecord(
       id: id,
       requestNumber: (data['requestNumber'] as String?) ?? id,
+      requestKind: (data['requestKind'] as String?) ?? '',
+      renewalRequest: _readableStringMap(data['renewalRequest']),
       uid: (data['uid'] as String?) ?? '',
       type: type,
       role: _userRole((data['role'] as String?) ?? ''),
@@ -1569,15 +1608,26 @@ class FirebaseRepository {
       partyDetails: _readableStringMap(data['partyDetails']),
       propertyDetails: _readableStringMap(data['propertyDetails']),
       attachmentFiles: _readableStringMap(data['attachmentFiles']),
-      draftData: draftFromMap(data['draftData']),
+      draftData: _draftWithRevision(data),
       draftProgress: draftProgressFromMap(data['draftProgress']),
     );
   }
 
   PropertyRecord propertyFromDoc(
     DocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final data = doc.data() ?? <String, dynamic>{};
+  ) =>
+      propertyFromMap(doc.id, doc.data() ?? <String, dynamic>{});
+
+  static ContractDraft? _draftWithRevision(Map<String, dynamic> data) {
+    final draft = draftFromMap(data['draftData']);
+    if (draft != null) {
+      draft.serverRevision =
+          _dateTimeFromAny(data['updatedAt'])?.millisecondsSinceEpoch;
+    }
+    return draft;
+  }
+
+  PropertyRecord propertyFromMap(String id, Map<String, dynamic> data) {
     final address = data['address'] is Map
         ? Map<String, dynamic>.from(data['address'] as Map)
         : <String, dynamic>{};
@@ -1598,7 +1648,7 @@ class FirebaseRepository {
     final totalUnits = ((data['totalUnits'] as num?) ?? 1).toInt();
     final details = PropertyData(
       rentalMode: _readableText(data['rentalMode'], ''),
-      savedPropertyId: doc.id,
+      savedPropertyId: id,
       propertySource: 'عقار محفوظ',
       ownershipDocumentType:
           _readableText(ownership['documentType'], 'صك إلكتروني'),
@@ -1609,6 +1659,10 @@ class FirebaseRepository {
       floorsCount: floors.toString(),
       unitsPerFloor: unitsPerFloor > 0 ? unitsPerFloor.toString() : '',
       totalUnits: totalUnits.toString(),
+      cityReferenceId: _readableText(
+          address['cityReferenceId'] ?? data['cityReferenceId'], ''),
+      districtReferenceId: _readableText(
+          address['districtReferenceId'] ?? data['districtReferenceId'], ''),
       city: _readableText(address['city'] ?? data['city'], 'الرياض'),
       district: _readableText(address['district'] ?? data['district'], ''),
       street: _readableText(address['street'], ''),
@@ -1628,6 +1682,12 @@ class FirebaseRepository {
       kitchen: firstUnit?['kitchen'] != false,
       storage: firstUnit?['storage'] == true,
       majlis: firstUnit?['majlis'] == true,
+      kitchenCount: _readableText(firstUnit?['kitchenCount'],
+          firstUnit?['kitchen'] != false ? '1' : '0'),
+      storageCount: _readableText(firstUnit?['storageCount'],
+          firstUnit?['storage'] == true ? '1' : '0'),
+      majlisCount: _readableText(
+          firstUnit?['majlisCount'], firstUnit?['majlis'] == true ? '1' : '0'),
       furnishingStatus: _readableText(
         firstUnit?['furnishingStatus'],
         'غير مؤثثة',
@@ -1639,10 +1699,16 @@ class FirebaseRepository {
       acWindow: firstUnit?['acWindow'] == true,
       acSplit: firstUnit?['acSplit'] != false,
       acCentral: firstUnit?['acCentral'] == true,
+      acWindowCount: _readableText(firstUnit?['acWindowCount'],
+          firstUnit?['acWindow'] == true ? '1' : '0'),
+      acSplitCount: _readableText(firstUnit?['acSplitCount'],
+          firstUnit?['acSplit'] != false ? '1' : '0'),
+      acCentralCount: _readableText(firstUnit?['acCentralCount'],
+          firstUnit?['acCentral'] == true ? '1' : '0'),
       notes: _readableText(firstUnit?['notes'], ''),
     );
     return PropertyRecord(
-      id: doc.id,
+      id: id,
       title: _readableText(data['title'], 'عقار'),
       city: _readableText(data['city'], 'الرياض'),
       district: _readableText(data['district'], ''),
@@ -1677,6 +1743,12 @@ class FirebaseRepository {
               kitchen: data['kitchen'] != false,
               storage: data['storage'] == true,
               majlis: data['majlis'] == true,
+              kitchenCount: _readableText(
+                  data['kitchenCount'], data['kitchen'] != false ? '1' : '0'),
+              storageCount: _readableText(
+                  data['storageCount'], data['storage'] == true ? '1' : '0'),
+              majlisCount: _readableText(
+                  data['majlisCount'], data['majlis'] == true ? '1' : '0'),
               furnishingStatus:
                   _readableText(data['furnishingStatus'], 'غير مؤثثة'),
               privateParking: data['privateParking'] == true,
@@ -1686,6 +1758,12 @@ class FirebaseRepository {
               acWindow: data['acWindow'] == true,
               acSplit: data['acSplit'] != false,
               acCentral: data['acCentral'] == true,
+              acWindowCount: _readableText(
+                  data['acWindowCount'], data['acWindow'] == true ? '1' : '0'),
+              acSplitCount: _readableText(
+                  data['acSplitCount'], data['acSplit'] != false ? '1' : '0'),
+              acCentralCount: _readableText(data['acCentralCount'],
+                  data['acCentral'] == true ? '1' : '0'),
               notes: _readableText(data['notes'], ''),
             )
           : null,
@@ -1856,6 +1934,7 @@ class FirebaseRepository {
     return <String, Object?>{
       'assistantFields': draft.assistantFields,
       'submissionId': draft.submissionId,
+      if (draft.serverRevision != null) 'serverRevision': draft.serverRevision,
       'renewal': draft.renewal,
       'type': draft.type.name,
       'role': roleFromDraft(draft).name,
@@ -1871,15 +1950,28 @@ class FirebaseRepository {
         'days': draft.durationDays,
       },
       'financial': <String, Object?>{
-        'rentValue': draft.rentValue,
+        'rentValue': ContractCalculationEngine.normalizeDigits(draft.rentValue)
+            .replaceAll(',', '')
+            .trim(),
         'rentPeriod': draft.rentPeriod,
         'hasSecurityDeposit': draft.hasSecurityDeposit,
-        'securityDeposit': draft.securityDeposit,
-        'brokerageFee': draft.brokerageFee,
+        'securityDeposit':
+            ContractCalculationEngine.normalizeDigits(draft.securityDeposit)
+                .replaceAll(',', '')
+                .trim(),
+        'brokerageFee':
+            ContractCalculationEngine.normalizeDigits(draft.brokerageFee)
+                .replaceAll(',', '')
+                .trim(),
         'brokeragePayer': draft.brokeragePayer,
         'ownerSubjectToVat': draft.ownerSubjectToVat,
-        'vatValue': draft.vatValue,
-        'otherAmounts': draft.otherAmounts,
+        'vatValue': ContractCalculationEngine.normalizeDigits(draft.vatValue)
+            .replaceAll(',', '')
+            .trim(),
+        'otherAmounts':
+            ContractCalculationEngine.normalizeDigits(draft.otherAmounts)
+                .replaceAll(',', '')
+                .trim(),
         'paymentScheduleType': draft.paymentScheduleType,
         'paymentFrequency': draft.paymentFrequency,
         'paymentCount': draft.paymentCount,
@@ -1935,6 +2027,7 @@ class FirebaseRepository {
     final root = _dynamicMap(value);
     if (root.isEmpty) return null;
     final draft = ContractDraft()
+      ..serverRevision = (root['serverRevision'] as num?)?.toInt()
       ..submissionId = _mapString(root, 'submissionId')
       ..renewal = _mapBool(root, 'renewal', false);
     final assistantMetadata = _dynamicMap(root['assistantFields']);
@@ -1972,6 +2065,8 @@ class FirebaseRepository {
       floorsCount: _mapString(property, 'floorsCount'),
       unitsPerFloor: _mapString(property, 'unitsPerFloor'),
       totalUnits: _mapString(property, 'totalUnits'),
+      cityReferenceId: _mapString(property, 'cityReferenceId'),
+      districtReferenceId: _mapString(property, 'districtReferenceId'),
       city: _mapString(property, 'city', draft.property.city),
       district: _mapString(property, 'district'),
       street: _mapString(property, 'street'),
@@ -1991,6 +2086,12 @@ class FirebaseRepository {
       kitchen: _mapBool(property, 'kitchen', draft.property.kitchen),
       storage: _mapBool(property, 'storage', draft.property.storage),
       majlis: _mapBool(property, 'majlis', draft.property.majlis),
+      kitchenCount: _mapString(property, 'kitchenCount',
+          _mapBool(property, 'kitchen', draft.property.kitchen) ? '1' : '0'),
+      storageCount: _mapString(property, 'storageCount',
+          _mapBool(property, 'storage', draft.property.storage) ? '1' : '0'),
+      majlisCount: _mapString(property, 'majlisCount',
+          _mapBool(property, 'majlis', draft.property.majlis) ? '1' : '0'),
       furnishingStatus: _mapString(
         property,
         'furnishingStatus',
@@ -1999,6 +2100,16 @@ class FirebaseRepository {
       acWindow: _mapBool(property, 'acWindow', draft.property.acWindow),
       acSplit: _mapBool(property, 'acSplit', draft.property.acSplit),
       acCentral: _mapBool(property, 'acCentral', draft.property.acCentral),
+      acWindowCount: _mapString(property, 'acWindowCount',
+          _mapBool(property, 'acWindow', draft.property.acWindow) ? '1' : '0'),
+      acSplitCount: _mapString(property, 'acSplitCount',
+          _mapBool(property, 'acSplit', draft.property.acSplit) ? '1' : '0'),
+      acCentralCount: _mapString(
+          property,
+          'acCentralCount',
+          _mapBool(property, 'acCentral', draft.property.acCentral)
+              ? '1'
+              : '0'),
       privateParking:
           _mapBool(property, 'privateParking', draft.property.privateParking),
       electricityMeter: _mapString(property, 'electricityMeter'),
@@ -2161,6 +2272,8 @@ class FirebaseRepository {
       birthDate: _mapString(data, 'birthDate'),
       mobile: _mapString(data, 'mobile'),
       email: _mapString(data, 'email'),
+      cityReferenceId: _mapString(data, 'cityReferenceId'),
+      districtReferenceId: _mapString(data, 'districtReferenceId'),
       city: _mapString(data, 'city', defaults.city),
       district: _mapString(data, 'district'),
       nationalAddress: _mapString(data, 'nationalAddress'),
@@ -2358,13 +2471,13 @@ class FirebaseRepository {
       'عدد دورات المياه': _valueOrDash(property.bathroomsCount),
       'عدد الصالات': _valueOrDash(property.hallsCount),
       'غرفة عاملة': _yesNo(property.maidRoom),
-      'مطبخ': _yesNo(property.kitchen),
-      'مستودع': _yesNo(property.storage),
-      'مجلس': _yesNo(property.majlis),
+      'عدد المطابخ': property.kitchenCount,
+      'عدد المخازن': property.storageCount,
+      'عدد المجالس': property.majlisCount,
       'حالة التأثيث': _valueOrDash(property.furnishingStatus),
-      'مكيفات شباك': _yesNo(property.acWindow),
-      'مكيفات سبليت': _yesNo(property.acSplit),
-      'تكييف مركزي': _yesNo(property.acCentral),
+      'مكيفات شباك': property.acWindowCount,
+      'مكيفات سبليت': property.acSplitCount,
+      'تكييف مركزي': property.acCentralCount,
       'موقف خاص': _yesNo(property.privateParking),
       'عداد الكهرباء': _valueOrDash(property.electricityMeter),
       'عداد المياه': _valueOrDash(property.waterMeter),
@@ -2439,6 +2552,8 @@ class FirebaseRepository {
       'birthDate': data.birthDate,
       'mobile': data.mobile,
       'email': data.email,
+      'cityReferenceId': data.cityReferenceId,
+      'districtReferenceId': data.districtReferenceId,
       'city': data.city,
       'district': data.district,
       'nationalAddress': data.nationalAddress,
@@ -2466,6 +2581,8 @@ class FirebaseRepository {
       'floorsCount': data.floorsCount,
       'unitsPerFloor': data.unitsPerFloor,
       'totalUnits': data.totalUnits,
+      'cityReferenceId': data.cityReferenceId,
+      'districtReferenceId': data.districtReferenceId,
       'city': data.city,
       'district': data.district,
       'street': data.street,
@@ -2485,10 +2602,16 @@ class FirebaseRepository {
       'kitchen': data.kitchen,
       'storage': data.storage,
       'majlis': data.majlis,
+      'kitchenCount': _intFromText(data.kitchenCount),
+      'storageCount': _intFromText(data.storageCount),
+      'majlisCount': _intFromText(data.majlisCount),
       'furnishingStatus': data.furnishingStatus,
       'acWindow': data.acWindow,
       'acSplit': data.acSplit,
       'acCentral': data.acCentral,
+      'acWindowCount': _intFromText(data.acWindowCount),
+      'acSplitCount': _intFromText(data.acSplitCount),
+      'acCentralCount': _intFromText(data.acCentralCount),
       'privateParking': data.privateParking,
       'electricityMeter': data.electricityMeter,
       'waterMeter': data.waterMeter,
@@ -2514,6 +2637,8 @@ class FirebaseRepository {
       'userId': uid,
       'sourceContractId': contractId,
       'title': title.isEmpty ? data.propertyType : title,
+      'cityReferenceId': data.cityReferenceId,
+      'districtReferenceId': data.districtReferenceId,
       'city': data.city,
       'district': data.district,
       'type': data.propertyType,
@@ -2524,6 +2649,8 @@ class FirebaseRepository {
       'totalUnits': _intFromText(data.totalUnits, fallback: 1),
       'status': 'active',
       'address': <String, Object?>{
+        'cityReferenceId': data.cityReferenceId,
+        'districtReferenceId': data.districtReferenceId,
         'city': data.city,
         'district': data.district,
         'street': data.street,
@@ -2561,6 +2688,9 @@ class FirebaseRepository {
       'kitchen': data.kitchen,
       'storage': data.storage,
       'majlis': data.majlis,
+      'kitchenCount': _intFromText(data.kitchenCount),
+      'storageCount': _intFromText(data.storageCount),
+      'majlisCount': _intFromText(data.majlisCount),
       'furnishingStatus': data.furnishingStatus,
       'privateParking': data.privateParking,
       'electricityMeter': data.electricityMeter,
@@ -2569,6 +2699,9 @@ class FirebaseRepository {
       'acWindow': data.acWindow,
       'acSplit': data.acSplit,
       'acCentral': data.acCentral,
+      'acWindowCount': _intFromText(data.acWindowCount),
+      'acSplitCount': _intFromText(data.acSplitCount),
+      'acCentralCount': _intFromText(data.acCentralCount),
       'notes': data.notes,
     };
   }
@@ -2641,8 +2774,13 @@ class FirebaseRepository {
     return <String, Object?>{
       'enabled': data.enabled,
       'calculationMethod': data.calculationMethod,
-      'fixedAmount': data.fixedAmount,
-      'currentReading': data.currentReading,
+      'fixedAmount': ContractCalculationEngine.normalizeDigits(data.fixedAmount)
+          .replaceAll(',', '')
+          .trim(),
+      'currentReading':
+          ContractCalculationEngine.normalizeDigits(data.currentReading)
+              .replaceAll(',', '')
+              .trim(),
     };
   }
 

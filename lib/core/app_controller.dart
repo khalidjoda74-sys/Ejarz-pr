@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'firebase_bootstrap.dart';
 import 'demo_config.dart';
 import 'firebase_repository.dart';
+import 'renewal_request.dart';
 import 'paged_feed.dart';
 import 'legal_links.dart';
 import 'models.dart';
@@ -193,7 +194,8 @@ class AppController extends ChangeNotifier {
       notifications.isNotEmpty ||
       supportTickets.isNotEmpty;
 
-  AppController() {
+  AppController({bool initializeSession = true}) {
+    if (!initializeSession) return;
     unawaited(_restoreDarkMode());
     unawaited(_restoreOnboarding());
     if (kEjarzLocalDemoMode) {
@@ -2292,6 +2294,8 @@ class AppController extends ChangeNotifier {
       floorsCount: source.floorsCount,
       unitsPerFloor: source.unitsPerFloor,
       totalUnits: source.totalUnits,
+      cityReferenceId: source.cityReferenceId,
+      districtReferenceId: source.districtReferenceId,
       city: source.city,
       district: source.district,
       street: source.street,
@@ -2311,10 +2315,16 @@ class AppController extends ChangeNotifier {
       kitchen: source.kitchen,
       storage: source.storage,
       majlis: source.majlis,
+      kitchenCount: source.kitchenCount,
+      storageCount: source.storageCount,
+      majlisCount: source.majlisCount,
       furnishingStatus: source.furnishingStatus,
       acWindow: source.acWindow,
       acSplit: source.acSplit,
       acCentral: source.acCentral,
+      acWindowCount: source.acWindowCount,
+      acSplitCount: source.acSplitCount,
+      acCentralCount: source.acCentralCount,
       privateParking: source.privateParking,
       electricityMeter: source.electricityMeter,
       waterMeter: source.waterMeter,
@@ -2495,6 +2505,25 @@ class AppController extends ChangeNotifier {
       ),
     );
     notifyListeners();
+  }
+
+  Future<ContractRecord> submitExternalRenewal(RenewalRequest request) async {
+    final generation = _authGeneration;
+    final user = FirebaseBootstrap.initialized
+        ? FirebaseAuth.instance.currentUser
+        : null;
+    final repository = _repository;
+    if (user == null || repository == null || offlineMode) {
+      throw StateError('اتصل بالإنترنت وسجّل الدخول لإرسال طلب التجديد.');
+    }
+    final record = await repository.submitExternalRenewal(user.uid, request);
+    if (!isCurrentAccount(generation)) {
+      throw StateError('تغير الحساب، أعد المحاولة');
+    }
+    contracts.removeWhere((c) => c.id == record.id);
+    contracts.insert(0, record);
+    notifyListeners();
+    return record;
   }
 
   Future<ContractRecord> submitContract(

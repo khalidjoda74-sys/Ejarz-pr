@@ -18,14 +18,20 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../core/app_controller.dart';
+import '../core/admin_contract_session.dart';
+import '../core/admin_editor_navigation.dart';
+import '../widgets/admin_contract_fee_panel.dart';
 import '../core/contract_files.dart';
 import '../core/demo_config.dart';
 import '../core/contract_validators.dart';
+import '../core/contract_calculation_engine.dart';
 import '../core/contract_pricing.dart';
 import '../core/draft_resume_policy.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
 import '../widgets/common.dart';
+import '../widgets/unit_count_field.dart';
+import '../core/property_management.dart';
 import '../widgets/illustrations.dart';
 import '../widgets/saudi_reference_fields.dart';
 import 'contracts.dart';
@@ -99,7 +105,7 @@ String? _requiredReferenceNumber(String? value, String label) {
 }
 
 String? _requiredPositiveInt(String? value, {int? min, int? max}) {
-  final digits = _digitsOnly(value ?? '');
+  final digits = ContractCalculationEngine.normalizeDigits(value ?? '').trim();
   if (digits.isEmpty) return 'هذا الحقل مطلوب';
   final number = int.tryParse(digits);
   if (number == null) return 'أدخل رقمًا صحيحًا';
@@ -116,8 +122,7 @@ String? _requiredFixedDigits(String? value, int length, String label) {
 }
 
 String? _requiredPositiveAmount(String? value) {
-  final normalized = value?.replaceAll(',', '').trim() ?? '';
-  final amount = double.tryParse(normalized);
+  final amount = ContractCalculationEngine.money(value ?? '');
   if (amount == null || amount <= 0) return 'أدخل مبلغًا صحيحًا أكبر من صفر';
   return null;
 }
@@ -125,14 +130,16 @@ String? _requiredPositiveAmount(String? value) {
 String? _requiredPositiveNumber(String? value) {
   final normalized = value?.replaceAll(',', '').trim() ?? '';
   final number = double.tryParse(normalized);
-  if (number == null || number <= 0) return 'أدخل رقمًا صحيحًا أكبر من صفر';
+  if (number == null || !number.isFinite || number <= 0) {
+    return 'أدخل رقمًا صحيحًا أكبر من صفر';
+  }
   return null;
 }
 
 String? _optionalPositiveAmount(String? value) {
   final normalized = value?.replaceAll(',', '').trim() ?? '';
   if (normalized.isEmpty) return null;
-  final amount = double.tryParse(normalized);
+  final amount = ContractCalculationEngine.money(normalized);
   if (amount == null || amount < 0) return 'أدخل مبلغًا صحيحًا';
   return null;
 }
@@ -141,7 +148,9 @@ String? _optionalPositiveNumber(String? value) {
   final normalized = value?.replaceAll(',', '').trim() ?? '';
   if (normalized.isEmpty) return null;
   final number = double.tryParse(normalized);
-  if (number == null || number < 0) return 'أدخل رقمًا صحيحًا';
+  if (number == null || !number.isFinite || number < 0) {
+    return 'أدخل رقمًا صحيحًا';
+  }
   return null;
 }
 
@@ -171,6 +180,26 @@ DateTime? _parseAppDate(String value) {
   return parsed;
 }
 
+String? _ownershipDateError(String? value) {
+  if (value == null || value.trim().isEmpty) return 'هذا الحقل مطلوب';
+  final date = _parseAppDate(value);
+  if (date == null || date.year < 1900) return 'أدخل تاريخ وثيقة صحيحًا';
+  if (date.isAfter(DateTime.now())) {
+    return 'تاريخ الوثيقة لا يمكن أن يكون مستقبليًا';
+  }
+  return null;
+}
+
+String? _optionalDateError(String? value) {
+  if (value == null || value.trim().isEmpty) return null;
+  return ContractCalculationEngine.date(value) == null
+      ? 'أدخل تاريخًا صحيحًا'
+      : null;
+}
+
+bool _attachmentReady(AttachmentData attachment) =>
+    attachment.uploaded && attachment.downloadUrl.trim().isNotEmpty;
+
 const String _newPropertySource = 'إضافة عقار جديد';
 
 String _contractEndDate(ContractDraft draft) {
@@ -183,7 +212,7 @@ String _contractEndDate(ContractDraft draft) {
   final year = start.year + years + (monthIndex - 1) ~/ 12;
   final month = (monthIndex - 1) % 12 + 1;
   final day = start.day.clamp(1, DateTime(year, month + 1, 0).day);
-  final end = DateTime(year, month, day).add(Duration(days: days - 1));
+  final end = DateTime.utc(year, month, day).add(Duration(days: days - 1));
   return '${end.year}/${end.month.toString().padLeft(2, '0')}/${end.day.toString().padLeft(2, '0')}';
 }
 
@@ -269,6 +298,8 @@ PropertyData _propertyDataFromRecord(
       unitsPerFloor: data.unitsPerFloor,
       totalUnits: data.totalUnits,
       city: data.city,
+      cityReferenceId: data.cityReferenceId,
+      districtReferenceId: data.districtReferenceId,
       district: data.district,
       street: data.street,
       buildingNumber: data.buildingNumber,
@@ -287,10 +318,16 @@ PropertyData _propertyDataFromRecord(
       kitchen: data.kitchen,
       storage: data.storage,
       majlis: data.majlis,
+      kitchenCount: data.kitchenCount,
+      storageCount: data.storageCount,
+      majlisCount: data.majlisCount,
       furnishingStatus: data.furnishingStatus,
       acWindow: data.acWindow,
       acSplit: data.acSplit,
       acCentral: data.acCentral,
+      acWindowCount: data.acWindowCount,
+      acSplitCount: data.acSplitCount,
+      acCentralCount: data.acCentralCount,
       privateParking: data.privateParking,
       electricityMeter: data.electricityMeter,
       waterMeter: data.waterMeter,
@@ -310,6 +347,8 @@ PropertyData _propertyDataFromRecord(
     unitsPerFloor: '1',
     totalUnits: property.totalUnits.toString(),
     city: property.city,
+    cityReferenceId: property.data?.cityReferenceId ?? '',
+    districtReferenceId: property.data?.districtReferenceId ?? '',
     district: property.district,
     buildingName: property.title,
     unitNumber: _cleanPropertyText(unit?.number ?? ''),
@@ -361,6 +400,7 @@ ContractDraft createContractDraftForType(ContractType type) {
 }
 
 class CreateContractScreen extends StatefulWidget {
+  final AdminContractSession? adminSession;
   final ContractDraft? initialDraft;
   final String draftId;
   final int? initialStep;
@@ -370,6 +410,7 @@ class CreateContractScreen extends StatefulWidget {
 
   const CreateContractScreen({
     super.key,
+    this.adminSession,
     this.initialDraft,
     this.draftId = '',
     this.initialStep,
@@ -430,6 +471,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
         ? ContractDraft()
         : ContractDraft.copyOf(widget.initialDraft!);
     _draft.frozenTotal = null;
+    _syncPaymentPeriod();
     _draft.frozenPrice = null;
     _draft.renewal = widget.renewalMode;
     if (widget.renewalMode) _draft.submissionId = '';
@@ -445,20 +487,25 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
         renewal: widget.renewalMode,
         onApply: (draft, paths) {
           if (!mounted) return;
-          setState(() => _draft = draft);
+          setState(() {
+            _draft = draft;
+            _syncPaymentPeriod();
+          });
           _scheduleAutosave();
         },
         onFocus: _focusAssistantField);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _offerRecovery();
-      AppTelemetry.record('contract_start', 'create_contract',
-          step: _currentStep, flowId: _flowId);
+      if (widget.adminSession == null) {
+        AppTelemetry.record('contract_start', 'create_contract',
+            step: _currentStep, flowId: _flowId);
+      }
     });
   }
 
   @override
   void dispose() {
-    if (!_submitted) {
+    if (!_submitted && widget.adminSession == null) {
       AppTelemetry.record('contract_exit', 'create_contract',
           step: _currentStep, flowId: _flowId);
     }
@@ -491,6 +538,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
         if (validateAdultBirthDate(party.birthDate) != null) 'تاريخ الميلاد',
         if (_requiredSaudiMobile(party.mobile) != null) 'رقم جوال أبشر',
         if (_optionalEmail(party.email) != null) 'البريد الإلكتروني',
+        if (_requiredValue(party.city) != null) 'مدينة العنوان الوطني',
         if (_requiredName(party.district) != null) 'حي العنوان الوطني',
         if (_requiredValue(party.nationalAddress) != null)
           'تفاصيل العنوان الوطني',
@@ -512,6 +560,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
         'هوية المفوض',
       if (_requiredSaudiMobile(party.mobile) != null) 'رقم جوال أبشر للمفوض',
       if (_optionalEmail(party.email) != null) 'البريد الإلكتروني',
+      if (_requiredValue(party.city) != null) 'مدينة العنوان الوطني',
       if (_requiredName(party.district) != null) 'حي العنوان الوطني',
       if (_requiredValue(party.nationalAddress) != null)
         'تفاصيل العنوان الوطني',
@@ -524,6 +573,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   }
 
   void _markChanged() {
+    _syncPaymentPeriod();
     _touchedSections.add(draftSectionForStep(_currentStep));
     _assistant.manualChanged();
     _scheduleAutosave();
@@ -569,6 +619,11 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   void _scheduleAutosave() {
     if (_submitted || _submitting) return;
     _hasEdits = true;
+    if (widget.adminSession != null) {
+      setAdminEditorDirty(true);
+      if (_currentStep != 6) widget.adminSession!.acknowledged = false;
+      return;
+    }
     _localSaveTimer?.cancel();
     _cloudSaveTimer?.cancel();
     _localSaveTimer =
@@ -578,6 +633,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   }
 
   Future<void> _saveLocal({bool showStatus = true}) async {
+    if (widget.adminSession != null) return;
     if (!_sameDraftAccount || _draftOwner.isEmpty || _submitted) return;
     if (_draftOwner != 'local-demo' &&
         (!FirebaseBootstrap.initialized ||
@@ -632,6 +688,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
             progress: _draftProgress);
         if (!_sameDraftAccount) return;
         _draftId = result.id;
+        _draft.serverRevision = result.draftData?.serverRevision;
         // A failed local recovery copy must not overwrite a successful cloud save.
         if (!_submitted) await _saveLocal(showStatus: false);
         if (mounted) {
@@ -659,6 +716,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
 
   Future<void> _offerRecovery() async {
     if (!mounted) return;
+    if (widget.adminSession != null) return;
     _accountController = AppScope.of(context, listen: false);
     _draftSessionEpoch = _accountController!.sessionEpoch;
     _draftOwner = FirebaseBootstrap.initialized
@@ -687,6 +745,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
       if (recovered == null) return;
       setState(() {
         _draft = recovered;
+        _syncPaymentPeriod();
         _draftId = '${stored['draftId'] ?? ''}';
         _currentStep = (stored['step'] as int? ?? 0).clamp(0, 6);
       });
@@ -715,7 +774,22 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
               representative.authorizationNumber, 'رقم الوكالة أو التفويض') !=
           null)
         'رقم الوكالة أو التفويض',
+      if (_optionalDateError(representative.authorizationDate) != null)
+        'تاريخ الوكالة',
+      if (_optionalDateError(representative.expiryDate) != null)
+        'تاريخ انتهاء الوكالة',
+      if (ContractCalculationEngine.date(representative.authorizationDate)
+          case final issued?)
+        if (ContractCalculationEngine.date(representative.expiryDate)
+            case final expiry?)
+          if (expiry.isBefore(issued)) 'تاريخ الانتهاء بعد تاريخ الوكالة',
     ];
+  }
+
+  void _syncPaymentPeriod() {
+    _draft.rentPeriod = _draft.paymentScheduleType == 'دوري'
+        ? _draft.paymentFrequency
+        : _draft.paymentScheduleType;
   }
 
   bool _validatePartiesStep() {
@@ -752,7 +826,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
 
   bool _isPositiveNumber(String value) {
     final amount = double.tryParse(value.replaceAll(',', '').trim());
-    return amount != null && amount > 0;
+    return amount != null && amount.isFinite && amount > 0;
   }
 
   List<String> _missingPropertyFields() {
@@ -767,6 +841,9 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
         'تاريخ وثيقة الملكية بصيغة صحيحة',
       if (ownershipDate != null && ownershipDate.isAfter(DateTime.now()))
         'تاريخ وثيقة الملكية غير مستقبلي',
+      if (ownershipDate != null && ownershipDate.year < 1900)
+        'تاريخ وثيقة الملكية بصيغة ميلادية صحيحة',
+      if (_requiredValue(property.city) != null) 'المدينة',
       if (_requiredPositiveInt(property.floorsCount, min: 1, max: 200) != null)
         'عدد الأدوار',
       if (property.unitsPerFloor.trim().isNotEmpty &&
@@ -797,12 +874,29 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
         'دورات المياه',
       if (_requiredPositiveInt(property.hallsCount, min: 0, max: 50) != null)
         'الصالات',
-      if (!property.acWindow && !property.acSplit && !property.acCentral)
-        'نوع التكييف',
-      if (_requiredPositiveInt(property.electricityMeter, min: 1) != null)
+      if (_requiredPositiveInt(property.acWindowCount, min: 0, max: 50) != null)
+        'عدد مكيفات الشباك',
+      if (_requiredPositiveInt(property.acSplitCount, min: 0, max: 50) != null)
+        'عدد مكيفات السبليت',
+      if (_requiredPositiveInt(property.acCentralCount, min: 0, max: 50) !=
+          null)
+        'عدد أجهزة التكييف المركزي',
+      if (_requiredPositiveInt(property.kitchenCount, min: 0, max: 50) != null)
+        'عدد المطابخ',
+      if (_requiredPositiveInt(property.majlisCount, min: 0, max: 50) != null)
+        'عدد المجالس',
+      if (_requiredPositiveInt(property.storageCount, min: 0, max: 50) != null)
+        'عدد المخازن',
+      if ((int.tryParse(property.acWindowCount) ?? 0) +
+              (int.tryParse(property.acSplitCount) ?? 0) +
+              (int.tryParse(property.acCentralCount) ?? 0) ==
+          0)
+        'حدد عدد جهاز تكييف واحد على الأقل',
+      if (validateUnitMeterNumber(property.electricityMeter) != null)
         'رقم عداد الكهرباء',
-      if (_requiredPositiveInt(property.waterMeter, min: 1) != null)
+      if (validateUnitMeterNumber(property.waterMeter) != null)
         'رقم عداد المياه',
+      if (validateUnitMeterNumber(property.gasMeter) != null) 'رقم عداد الغاز',
     ];
   }
 
@@ -848,9 +942,12 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     final startDate = _parseAppDate(_draft.startDate);
     final endDate = _parseAppDate(_draft.endDate);
     final firstPaymentDate = _parseAppDate(_draft.firstPaymentDate);
+    final calculation = _draft.rentalCalculation;
     return <String>[
       if (_isBlank(_draft.startDate)) 'تاريخ بداية العقد',
       if (_isBlank(_draft.endDate)) 'تاريخ نهاية العقد',
+      if (startDate == null || startDate.year < 1900) 'تاريخ بداية صحيح',
+      if (endDate == null || endDate.year > 2200) 'تاريخ نهاية صحيح',
       if (startDate != null && endDate != null && endDate.isBefore(startDate))
         'تاريخ نهاية العقد بعد تاريخ البداية',
       if (startDate != null &&
@@ -858,18 +955,30 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
           _draft.endDate != _contractEndDate(_draft))
         'تاريخ نهاية العقد مطابق للمدة المحددة',
       if (years <= 0 && months <= 0 && days <= 0) 'مدة العقد',
+      if (_requiredPositiveInt(_draft.durationYears, min: 0, max: 50) != null)
+        'عدد السنوات من 0 إلى 50',
+      if (int.tryParse(_draft.durationMonths) == null) 'عدد الأشهر',
+      if (int.tryParse(_draft.durationDays) == null) 'عدد الأيام',
       if (months < 0 || months > 11) 'عدد الأشهر من 0 إلى 11',
       if (days < 0 || days > 30) 'عدد الأيام من 0 إلى 30',
-      if (!_isPositiveNumber(_draft.rentValue)) 'مبلغ الإيجار السنوي',
+      if (_requiredPositiveAmount(_draft.rentValue) != null)
+        'مبلغ الإيجار السنوي',
+      if (calculation == null ||
+          calculation.installments.any((amount) => amount <= 0))
+        'جدول دفعات صالح بمبالغ أكبر من صفر',
       if (_draft.hasSecurityDeposit &&
-          !_isPositiveNumber(_draft.securityDeposit))
+          _requiredPositiveAmount(_draft.securityDeposit) != null)
         'قيمة الضمان',
       if (_optionalPositiveAmount(_draft.brokerageFee) != null) 'عمولة السعي',
       if (_optionalPositiveAmount(_draft.otherAmounts) != null) 'مبالغ أخرى',
-      if (_draft.ownerSubjectToVat && !_isPositiveNumber(_draft.vatValue))
+      if (_draft.ownerSubjectToVat &&
+          _requiredPositiveAmount(_draft.vatValue) != null)
         'قيمة ضريبة القيمة المضافة',
-      if (_draft.paymentCount <= 0) 'عدد الدفعات',
+      if (_draft.paymentScheduleType == 'مخصص' &&
+          (_draft.paymentCount <= 0 || _draft.paymentCount > 1200))
+        'عدد الدفعات',
       if (_isBlank(_draft.firstPaymentDate)) 'تاريخ أول دفعة',
+      if (firstPaymentDate == null) 'تاريخ أول دفعة صحيح',
       if (startDate != null &&
           firstPaymentDate != null &&
           firstPaymentDate.isBefore(startDate))
@@ -878,16 +987,31 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
           firstPaymentDate != null &&
           firstPaymentDate.isAfter(endDate))
         'تاريخ أول دفعة قبل نهاية العقد',
+      if (_draft.paymentScheduleType == 'دوري' &&
+          calculation != null &&
+          firstPaymentDate != null &&
+          endDate != null &&
+          ContractCalculationEngine.addMonths(
+                  firstPaymentDate,
+                  ContractCalculationEngine.frequencyMonths(
+                          _draft.paymentFrequency) *
+                      (calculation.installments.length - 1))
+              .isAfter(ContractCalculationEngine.date(_draft.endDate)!))
+        'جدول الدفعات ينتهي داخل مدة العقد؛ عدّل تاريخ أول دفعة أو تكرار الدفع',
       if (!_draft.electricity.enabled) 'الكهرباء',
       if (!_draft.water.enabled) 'المياه',
-      if (_draft.electricity.enabled &&
-          _draft.electricity.calculationMethod == 'مبلغ مقطوع' &&
-          !_isPositiveNumber(_draft.electricity.fixedAmount))
-        'قيمة مبلغ الكهرباء',
-      if (_draft.water.enabled &&
-          _draft.water.calculationMethod == 'مبلغ مقطوع' &&
-          !_isPositiveNumber(_draft.water.fixedAmount))
-        'قيمة مبلغ المياه',
+      for (final service in {
+        'الكهرباء': _draft.electricity,
+        'المياه': _draft.water,
+        'الغاز': _draft.gas
+      }.entries)
+        if (service.value.enabled) ...[
+          if (service.value.calculationMethod == 'مبلغ مقطوع' &&
+              _requiredPositiveAmount(service.value.fixedAmount) != null)
+            'قيمة مبلغ ${service.key}',
+          if (_optionalPositiveNumber(service.value.currentReading) != null)
+            'قراءة عداد ${service.key}',
+        ],
     ];
   }
 
@@ -928,7 +1052,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     }
     if (_currentStep == 5) {
       final missing = _requiredAttachments
-          .where((attachment) => !attachment.uploaded)
+          .where((attachment) => !_attachmentReady(attachment))
           .map((attachment) => attachment.title)
           .toList();
       if (missing.isNotEmpty) {
@@ -944,14 +1068,42 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
 
     if (_currentStep < _steps.length - 1) {
       setState(() => _currentStep += 1);
-      AppTelemetry.record('contract_step', 'create_contract',
-          step: _currentStep, flowId: _flowId);
+      if (widget.adminSession == null) {
+        AppTelemetry.record('contract_step', 'create_contract',
+            step: _currentStep, flowId: _flowId);
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollTop());
     }
   }
 
+  Future<void> _cancelAdminEditor() async {
+    if (_submitting) return;
+    if (_hasEdits) {
+      final leave = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+                  title: const Text('تعديلات غير محفوظة'),
+                  content: const Text(
+                      'احفظ المسودة قبل المغادرة للحفاظ على تعديلاتك.'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('متابعة التحرير')),
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('مغادرة دون حفظ'))
+                  ]));
+      if (leave != true) return;
+    }
+    cancelAdminEditor();
+  }
+
   void _previous() {
     if (_currentStep == 0) {
+      if (widget.adminSession != null) {
+        _cancelAdminEditor();
+        return;
+      }
       Navigator.of(context).maybePop();
       return;
     }
@@ -977,14 +1129,37 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   }
 
   bool _validateAllRequiredFields() {
-    if (!_validatePartiesStep()) return false;
-    if (!_validatePropertyStep()) return false;
-    if (!_validateFinancialStep()) return false;
+    if (_requiredOwnershipDocumentNumber(
+                _draft.property.ownershipDocumentNumber) !=
+            null ||
+        _ownershipDateError(_draft.property.ownershipDocumentDate) != null) {
+      setState(() => _currentStep = 1);
+      _scrollTop();
+      showAppSnackBar(context, 'راجع رقم وثيقة الملكية وتاريخها');
+      return false;
+    }
+    if (!_validatePartiesStep()) {
+      setState(() => _currentStep = 2);
+      _scrollTop();
+      return false;
+    }
+    if (!_validatePropertyStep()) {
+      setState(() => _currentStep = 3);
+      _scrollTop();
+      return false;
+    }
+    if (!_validateFinancialStep()) {
+      setState(() => _currentStep = 4);
+      _scrollTop();
+      return false;
+    }
     final missingAttachments = _requiredAttachments
-        .where((attachment) => !attachment.uploaded)
+        .where((attachment) => !_attachmentReady(attachment))
         .map((attachment) => attachment.title)
         .toList();
     if (missingAttachments.isNotEmpty) {
+      setState(() => _currentStep = 5);
+      _scrollTop();
       showAppSnackBar(
         context,
         'توجد مرفقات مطلوبة: ${missingAttachments.join('، ')}',
@@ -996,6 +1171,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   }
 
   Future<void> _submit() async {
+    if (_submitting) return;
     if (_assistant.pending.isNotEmpty) {
       showAppSnackBar(
           context, 'أكّد القيم التي أدخلها المساعد قبل إرسال الطلب');
@@ -1003,9 +1179,10 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
       return;
     }
     if (!_validateAllRequiredFields()) return;
-    if (!_draft.acceptAccuracyDeclaration ||
-        !_draft.acceptDataSharing ||
-        !_draft.acceptTerms) {
+    if (widget.adminSession == null &&
+        (!_draft.acceptAccuracyDeclaration ||
+            !_draft.acceptDataSharing ||
+            !_draft.acceptTerms)) {
       showAppSnackBar(context, 'يجب الموافقة على الإقرارات والشروط');
       return;
     }
@@ -1034,17 +1211,24 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
             context,
             error is FirebaseFunctionsException
                 ? error.message ?? 'تعذر إرسال العقد.'
-                : 'تعذر إرسال العقد. راجع البيانات والإعدادات.');
+                : widget.adminSession != null
+                    ? '$error'
+                    : 'تعذر إرسال العقد. راجع البيانات والإعدادات.');
       }
       return;
     }
-    if (!record.pendingSync) {
+    if (!record.pendingSync && widget.adminSession == null) {
       AppTelemetry.record('contract_submit', 'create_contract',
           step: _currentStep, flowId: _flowId);
     }
     final waitsForConnection = record.pendingSync;
     // The controller owns offline submissions too; don't restore a second copy.
     _submitted = true;
+    if (widget.adminSession != null) {
+      setState(() => _submitting = false);
+      completeAdminEditor(record.id);
+      return;
+    }
     try {
       if (_draftOwner.isNotEmpty) await _recoveryStore.clear(_draftOwner);
     } catch (_) {/* A storage error must not undo a successful submission. */}
@@ -1105,6 +1289,29 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   }
 
   Future<void> _saveDraft() async {
+    if (widget.adminSession != null) {
+      if (_submitting) return;
+      setState(() => _submitting = true);
+      try {
+        final record = await widget.adminSession!
+            .saveDraft(_draft, progress: _draftProgress);
+        _draftId = record.id;
+        _hasEdits = false;
+        setAdminEditorDirty(false);
+        if (mounted) showAppSnackBar(context, 'تم حفظ المسودة في حساب العميل');
+      } catch (error) {
+        if (mounted) {
+          showAppSnackBar(
+              context,
+              error is FirebaseFunctionsException
+                  ? error.message ?? 'تعذر حفظ المسودة'
+                  : '$error');
+        }
+      } finally {
+        if (mounted) setState(() => _submitting = false);
+      }
+      return;
+    }
     _localSaveTimer?.cancel();
     _cloudSaveTimer?.cancel();
     await _saveLocal();
@@ -1112,13 +1319,23 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     if (!mounted) return;
     _touchedSections.add(draftSectionForStep(_currentStep));
     final controller = AppScope.of(context, listen: false);
-    final record = await controller.saveDraft(
-      _draft,
-      draftId: _draftId,
-      progress: _draftProgress,
-    );
+    late final ContractRecord record;
+    try {
+      record = await controller.saveDraft(_draft,
+          draftId: _draftId, progress: _draftProgress);
+    } catch (error) {
+      if (mounted) {
+        showAppSnackBar(
+            context,
+            error is FirebaseFunctionsException
+                ? error.message ?? 'تعذر حفظ المسودة'
+                : 'تعذر حفظ المسودة. احتفظ بتعديلاتك وأعد المحاولة.');
+      }
+      return;
+    }
     if (!mounted) return;
     _draftId = record.id;
+    _draft.serverRevision = record.draftData?.serverRevision;
     await _saveLocal(showStatus: false);
     if (!mounted) return;
     showAppSnackBar(
@@ -1142,11 +1359,13 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.renewalMode
-              ? 'تجديد عقد'
-              : _draftId.isEmpty
-                  ? 'إنشاء عقد جديد'
-                  : 'استكمال المسودة',
+          widget.adminSession != null
+              ? 'عقد للعميل ${widget.adminSession!.userName}'
+              : widget.renewalMode
+                  ? 'تجديد عقد'
+                  : _draftId.isEmpty
+                      ? 'إنشاء عقد جديد'
+                      : 'استكمال المسودة',
         ),
         leading: IconButton(
           onPressed: _previous,
@@ -1225,7 +1444,9 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
                       ),
                     )),
               ),
-              if (!_submitting && AppRuntime.assistantEnabled)
+              if (widget.adminSession == null &&
+                  !_submitting &&
+                  AppRuntime.assistantEnabled)
                 SaudiVoiceAssistant(controller: _assistant),
               Container(
                 padding: const EdgeInsets.fromLTRB(14, 7, 14, 8),
@@ -1311,14 +1532,22 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
         ),
       5 => _AttachmentsStep(
           draft: _draft,
+          adminSession: widget.adminSession,
           requiredAttachments: _requiredAttachments,
           onChanged: _markChanged,
         ),
-      6 => _ReviewStep(
-          draft: _draft,
-          requiredAttachments: _requiredAttachments,
-          onChanged: _markChanged,
-        ),
+      6 => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (widget.adminSession != null)
+            AdminContractFeePanel(
+                session: widget.adminSession!,
+                draft: _draft,
+                onChanged: _markChanged),
+          _ReviewStep(
+              draft: _draft,
+              requiredAttachments: _requiredAttachments,
+              onChanged: _markChanged,
+              administrative: widget.adminSession != null),
+        ]),
       _ => const SizedBox.shrink(),
     };
   }
@@ -1584,6 +1813,9 @@ class _OwnershipStep extends StatelessWidget {
               label: 'تاريخ الوثيقة',
               value: property.ownershipDocumentDate,
               required: true,
+              firstDate: DateTime(1900),
+              lastDate: DateTime.now(),
+              validator: _ownershipDateError,
               onChanged: (value) {
                 property.ownershipDocumentDate = value;
                 onChanged();
@@ -1625,8 +1857,7 @@ class _PropertyStep extends StatelessWidget {
         .where((p) => p.id == property.savedPropertyId)
         .firstOrNull;
     return Column(
-      key: ValueKey<String>(
-          'property-step-$selectedSource-${property.unitNumber}'),
+      key: ValueKey<String>('property-step-$selectedSource'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         const AppPageHeader(
@@ -1777,6 +2008,12 @@ class _PropertyStep extends StatelessWidget {
             ),
             SaudiLocationFields(
               city: property.city,
+              cityReferenceId: property.cityReferenceId,
+              districtReferenceId: property.districtReferenceId,
+              onReferencesChanged: (cityId, districtId) {
+                property.cityReferenceId = cityId;
+                property.districtReferenceId = districtId;
+              },
               district: property.district,
               onCityChanged: (value) {
                 property.city = value;
@@ -1913,8 +2150,9 @@ class _PropertyStep extends StatelessWidget {
             ),
             AppTextField(
               label: 'رقم الدور',
-              hint: 'مثال: 3',
+              hint: 'مثال: 3، أو 0 للأرضي',
               initialValue: property.floor,
+              keyboardType: TextInputType.number,
               icon: Icons.layers_outlined,
               inputFormatters: <TextInputFormatter>[
                 LengthLimitingTextInputFormatter(12),
@@ -1999,7 +2237,7 @@ class _PropertyStep extends StatelessWidget {
             ),
             AppTextField(
               label: 'رقم عداد الكهرباء',
-              hint: 'أدخل رقم العداد',
+              hint: 'اختياري، إن وجد',
               initialValue: property.electricityMeter,
               icon: Icons.bolt_outlined,
               keyboardType: TextInputType.number,
@@ -2007,13 +2245,12 @@ class _PropertyStep extends StatelessWidget {
                 FilteringTextInputFormatter.digitsOnly,
                 LengthLimitingTextInputFormatter(20),
               ],
-              required: true,
               onChanged: (value) => property.electricityMeter = value,
-              validator: (value) => _requiredPositiveInt(value, min: 1),
+              validator: validateUnitMeterNumber,
             ),
             AppTextField(
               label: 'رقم عداد المياه',
-              hint: 'أدخل رقم العداد',
+              hint: 'إن وجد',
               initialValue: property.waterMeter,
               icon: Icons.water_drop_outlined,
               keyboardType: TextInputType.number,
@@ -2021,9 +2258,8 @@ class _PropertyStep extends StatelessWidget {
                 FilteringTextInputFormatter.digitsOnly,
                 LengthLimitingTextInputFormatter(20),
               ],
-              required: true,
               onChanged: (value) => property.waterMeter = value,
-              validator: (value) => _requiredPositiveInt(value, min: 1),
+              validator: validateUnitMeterNumber,
             ),
             AppTextField(
               label: 'رقم عداد الغاز',
@@ -2036,6 +2272,7 @@ class _PropertyStep extends StatelessWidget {
                 LengthLimitingTextInputFormatter(20),
               ],
               onChanged: (value) => property.gasMeter = value,
+              validator: validateUnitMeterNumber,
             ),
           ],
         ),
@@ -2054,65 +2291,78 @@ class _PropertyStep extends StatelessWidget {
                 onChanged();
               },
             ),
-            _FeatureToggle(
-              label: 'مطبخ',
-              selected: property.kitchen,
-              onSelected: (value) {
-                property.kitchen = value;
-                onChanged();
-              },
-            ),
-            _FeatureToggle(
-              label: 'مخزن',
-              selected: property.storage,
-              onSelected: (value) {
-                property.storage = value;
-                onChanged();
-              },
-            ),
-            _FeatureToggle(
-              label: 'مجلس',
-              selected: property.majlis,
-              onSelected: (value) {
-                property.majlis = value;
-                onChanged();
-              },
-            ),
           ],
         ),
         const SizedBox(height: 14),
+        FieldGrid(children: [
+          UnitCountField(
+              label: 'المطبخ',
+              value: property.kitchenCount,
+              icon: Icons.countertops_outlined,
+              onChanged: (value) {
+                property.kitchenCount = value;
+                onChanged();
+              }),
+          UnitCountField(
+              label: 'المجلس',
+              value: property.majlisCount,
+              icon: Icons.weekend_outlined,
+              onChanged: (value) {
+                property.majlisCount = value;
+                onChanged();
+              }),
+          UnitCountField(
+              label: 'المخزن',
+              value: property.storageCount,
+              icon: Icons.inventory_2_outlined,
+              onChanged: (value) {
+                property.storageCount = value;
+                onChanged();
+              }),
+        ]),
+        const SizedBox(height: 14),
         const SectionTitle(title: 'التكييف', icon: Icons.ac_unit_outlined),
         const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: <Widget>[
-            _FeatureToggle(
-              label: 'شباك',
-              selected: property.acWindow,
-              onSelected: (value) {
-                property.acWindow = value;
+        FieldGrid(children: [
+          for (final item
+              in <(String, String, IconData, void Function(String))>[
+            (
+              'عدد مكيفات الشباك',
+              property.acWindowCount,
+              Icons.window_outlined,
+              (value) {
+                property.acWindowCount = value;
+                property.acWindow = (int.tryParse(value) ?? 0) > 0;
                 onChanged();
-              },
+              }
             ),
-            _FeatureToggle(
-              label: 'سبليت',
-              selected: property.acSplit,
-              onSelected: (value) {
-                property.acSplit = value;
+            (
+              'عدد مكيفات السبليت',
+              property.acSplitCount,
+              Icons.ac_unit_outlined,
+              (value) {
+                property.acSplitCount = value;
+                property.acSplit = (int.tryParse(value) ?? 0) > 0;
                 onChanged();
-              },
+              }
             ),
-            _FeatureToggle(
-              label: 'مركزي',
-              selected: property.acCentral,
-              onSelected: (value) {
-                property.acCentral = value;
+            (
+              'عدد أجهزة التكييف المركزي',
+              property.acCentralCount,
+              Icons.air_outlined,
+              (value) {
+                property.acCentralCount = value;
+                property.acCentral = (int.tryParse(value) ?? 0) > 0;
                 onChanged();
-              },
+              }
             ),
-          ],
-        ),
+          ])
+            UnitCountField(
+                label: item.$1,
+                value: item.$2,
+                icon: item.$3,
+                onChanged: item.$4),
+        ]),
         const SizedBox(height: 14),
         ToggleCard(
           title: 'يوجد موقف خاص',
@@ -2529,6 +2779,12 @@ class _PartyForm extends StatelessWidget {
         const SizedBox(height: 12),
         SaudiLocationFields(
           city: data.city,
+          cityReferenceId: data.cityReferenceId,
+          districtReferenceId: data.districtReferenceId,
+          onReferencesChanged: (cityId, districtId) {
+            data.cityReferenceId = cityId;
+            data.districtReferenceId = districtId;
+          },
           district: data.district,
           onCityChanged: (value) {
             data.city = value;
@@ -2728,12 +2984,16 @@ class _RepresentativeForm extends StatelessWidget {
                 validator: (value) =>
                     _requiredReferenceNumber(value, 'رقم الوكالة أو التفويض'),
               ),
-              AppTextField(
+              DateField(
                 label: 'تاريخ الوكالة',
-                hint: 'YYYY/MM/DD',
-                initialValue: data.authorizationDate,
-                icon: Icons.calendar_month_outlined,
-                onChanged: (value) => data.authorizationDate = value,
+                value: data.authorizationDate,
+                firstDate: DateTime(1900),
+                lastDate: DateTime(2200),
+                validator: _optionalDateError,
+                onChanged: (value) {
+                  data.authorizationDate = value;
+                  onChanged();
+                },
               ),
               AppTextField(
                 label: 'جهة الإصدار',
@@ -2742,12 +3002,17 @@ class _RepresentativeForm extends StatelessWidget {
                 icon: Icons.account_balance_outlined,
                 onChanged: (value) => data.issuer = value,
               ),
-              AppTextField(
+              DateField(
                 label: 'تاريخ الانتهاء',
-                hint: 'إن وجد',
-                initialValue: data.expiryDate,
-                icon: Icons.event_busy_outlined,
-                onChanged: (value) => data.expiryDate = value,
+                value: data.expiryDate,
+                firstDate:
+                    _parseAppDate(data.authorizationDate) ?? DateTime(1900),
+                lastDate: DateTime(2200),
+                validator: _optionalDateError,
+                onChanged: (value) {
+                  data.expiryDate = value;
+                  onChanged();
+                },
               ),
             ],
           ),
@@ -2770,7 +3035,7 @@ class _FinancialStep extends StatelessWidget {
 
   void _updatePaymentCount(String value) {
     final parsed = int.tryParse(value);
-    draft.paymentCount = parsed == null || parsed < 1 ? 1 : parsed;
+    draft.paymentCount = parsed ?? 0;
     onChanged();
   }
 
@@ -2803,7 +3068,7 @@ class _FinancialStep extends StatelessWidget {
     final targetMonth = ((totalMonth - 1) % 12) + 1;
     final targetDay =
         start.day.clamp(1, _daysInMonth(targetYear, targetMonth)).toInt();
-    final end = DateTime(targetYear, targetMonth, targetDay)
+    final end = DateTime.utc(targetYear, targetMonth, targetDay)
         .add(Duration(days: days))
         .subtract(const Duration(days: 1));
     draft.endDate = _formatDate(end);
@@ -2836,6 +3101,9 @@ class _FinancialStep extends StatelessWidget {
               onChanged: (value) {
                 draft.startDate = value;
                 _recalculateEndDate();
+                if (draft.firstPaymentDate.isEmpty) {
+                  draft.firstPaymentDate = value;
+                }
                 onChanged();
               },
             ),
@@ -2914,13 +3182,17 @@ class _FinancialStep extends StatelessWidget {
                 'نصف سنوي',
                 'سنوي',
                 'دفعة واحدة',
+                'مخصص',
               ],
               icon: Icons.repeat_rounded,
               onChanged: (value) {
                 draft.rentPeriod = value!;
-                draft.paymentFrequency = value == 'دفعة واحدة' ? 'سنوي' : value;
-                draft.paymentScheduleType =
-                    value == 'دفعة واحدة' ? 'دفعة واحدة' : 'دوري';
+                if (value == 'دفعة واحدة' || value == 'مخصص') {
+                  draft.paymentScheduleType = value;
+                } else {
+                  draft.paymentFrequency = value;
+                  draft.paymentScheduleType = 'دوري';
+                }
                 onChanged();
               },
             ),
@@ -3058,19 +3330,23 @@ class _FinancialStep extends StatelessWidget {
               icon: Icons.timeline_outlined,
               onChanged: (value) {
                 draft.paymentScheduleType = value!;
+                draft.rentPeriod =
+                    value == 'دوري' ? draft.paymentFrequency : value;
                 onChanged();
               },
             ),
-            AppDropdownField(
-              label: 'تكرار الدفع',
-              value: draft.paymentFrequency,
-              items: const <String>['شهري', 'ربع سنوي', 'نصف سنوي', 'سنوي'],
-              icon: Icons.repeat_on_rounded,
-              onChanged: (value) {
-                draft.paymentFrequency = value!;
-                onChanged();
-              },
-            ),
+            if (draft.paymentScheduleType == 'دوري')
+              AppDropdownField(
+                label: 'تكرار الدفع',
+                value: draft.paymentFrequency,
+                items: const <String>['شهري', 'ربع سنوي', 'نصف سنوي', 'سنوي'],
+                icon: Icons.repeat_on_rounded,
+                onChanged: (value) {
+                  draft.paymentFrequency = value!;
+                  draft.rentPeriod = value;
+                  onChanged();
+                },
+              ),
             AppTextField(
               label: 'عدد الدفعات',
               hint: 'مثال: 4',
@@ -3096,6 +3372,12 @@ class _FinancialStep extends StatelessWidget {
               label: 'تاريخ أول دفعة',
               value: draft.firstPaymentDate,
               required: true,
+              firstDate: _parseAppDate(draft.startDate),
+              lastDate: _parseAppDate(draft.endDate)?.isBefore(
+                          _parseAppDate(draft.startDate) ?? DateTime(1900)) ==
+                      true
+                  ? _parseAppDate(draft.startDate)
+                  : _parseAppDate(draft.endDate),
               onChanged: (value) {
                 draft.firstPaymentDate = value;
                 onChanged();
@@ -3138,6 +3420,14 @@ class _FinancialStep extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 14),
+        if (draft.paymentScheduleType == 'مخصص') ...[
+          const InfoBanner(
+            text:
+                'حدد عدد الدفعات؛ تُوزع المبالغ والتواريخ بالتساوي بين تاريخ أول دفعة ونهاية العقد، وتُضبط الدفعة الأخيرة لفارق التقريب.',
+            icon: Icons.event_note_outlined,
+          ),
+          const SizedBox(height: 10),
+        ],
         InfoBanner(
           text: calculation == null
               ? 'أكمل المدة والإيجار لإنشاء جدول الدفعات.'
@@ -3258,25 +3548,28 @@ class _ServiceChargePanel extends StatelessWidget {
       shadows: const <BoxShadow>[],
       child: Column(
         children: <Widget>[
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            value: data.enabled,
-            activeThumbColor: AppColors.primary,
-            secondary: Icon(icon, color: AppColors.primary),
-            title: Text(title,
-                style: const TextStyle(fontWeight: FontWeight.w800)),
-            subtitle: Text(
-              data.enabled
-                  ? 'سيتم تضمين بيانات الخدمة في العقد'
-                  : 'الخدمة غير مضافة',
-              style: TextStyle(
-                  color: context.ejarzTheme.muted, fontSize: context.sp(11.5)),
-            ),
-            onChanged: (value) {
-              data.enabled = value;
-              onChanged();
-            },
-          ),
+          Material(
+              color: Colors.transparent,
+              child: SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                value: data.enabled,
+                activeThumbColor: AppColors.primary,
+                secondary: Icon(icon, color: AppColors.primary),
+                title: Text(title,
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text(
+                  data.enabled
+                      ? 'سيتم تضمين بيانات الخدمة في العقد'
+                      : 'الخدمة غير مضافة',
+                  style: TextStyle(
+                      color: context.ejarzTheme.muted,
+                      fontSize: context.sp(11.5)),
+                ),
+                onChanged: (value) {
+                  data.enabled = value;
+                  onChanged();
+                },
+              )),
           if (data.enabled) ...<Widget>[
             const SizedBox(height: 12),
             FieldGrid(
@@ -3422,11 +3715,13 @@ class _AmountRow extends StatelessWidget {
 }
 
 class _AttachmentsStep extends StatelessWidget {
+  final AdminContractSession? adminSession;
   final ContractDraft draft;
   final List<AttachmentData> requiredAttachments;
   final VoidCallback onChanged;
 
   const _AttachmentsStep({
+    this.adminSession,
     required this.draft,
     required this.requiredAttachments,
     required this.onChanged,
@@ -3434,8 +3729,9 @@ class _AttachmentsStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final missingCount =
-        requiredAttachments.where((attachment) => !attachment.uploaded).length;
+    final missingCount = requiredAttachments
+        .where((attachment) => !_attachmentReady(attachment))
+        .length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3459,6 +3755,10 @@ class _AttachmentsStep extends StatelessWidget {
         const SizedBox(height: 16),
         for (final attachment in draft.attachments) ...<Widget>[
           _AttachmentTile(
+            uploader: adminSession == null
+                ? null
+                : (name, bytes) =>
+                    adminSession!.upload(name, bytes, draft: draft),
             attachment: attachment,
             requiredAttachment: requiredAttachments.contains(attachment),
             onChanged: onChanged,
@@ -3471,11 +3771,13 @@ class _AttachmentsStep extends StatelessWidget {
 }
 
 class _AttachmentTile extends StatefulWidget {
+  final Future<String> Function(String, Uint8List)? uploader;
   final AttachmentData attachment;
   final bool requiredAttachment;
   final VoidCallback onChanged;
 
   const _AttachmentTile({
+    this.uploader,
     required this.attachment,
     required this.requiredAttachment,
     required this.onChanged,
@@ -3507,7 +3809,8 @@ class _AttachmentTileState extends State<_AttachmentTile> {
         throw const FormatException(
             'تعذر قراءة الملف أو أن حجمه أكبر من 10 ميجابايت.');
       }
-      final url = await ContractFiles.upload(file.name, file.bytes!);
+      final url = await (widget.uploader ?? ContractFiles.upload)(
+          file.name, file.bytes!);
       if (!mounted) return;
       attachment
         ..uploaded = true
@@ -3531,7 +3834,7 @@ class _AttachmentTileState extends State<_AttachmentTile> {
 
   @override
   Widget build(BuildContext context) {
-    final uploaded = attachment.uploaded;
+    final uploaded = _attachmentReady(attachment);
     return AppCard(
       padding: const EdgeInsets.all(14),
       shadows: const <BoxShadow>[],
@@ -3670,11 +3973,13 @@ class _AttachmentBadge extends StatelessWidget {
 }
 
 class _ReviewStep extends StatelessWidget {
+  final bool administrative;
   final ContractDraft draft;
   final List<AttachmentData> requiredAttachments;
   final VoidCallback onChanged;
 
   const _ReviewStep({
+    this.administrative = false,
     required this.draft,
     required this.requiredAttachments,
     required this.onChanged,
@@ -3682,8 +3987,7 @@ class _ReviewStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final uploadedRequired =
-        requiredAttachments.where((attachment) => attachment.uploaded).length;
+    final uploadedRequired = requiredAttachments.where(_attachmentReady).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3787,6 +4091,17 @@ class _ReviewStep extends StatelessWidget {
                 label: 'مبلغ الإيجار السنوي',
                 value: _money(draft.rentValueNumber)),
             _ReviewLine(label: 'دورة السداد', value: draft.rentPeriod),
+            _ReviewLine(
+                label: 'بداية العقد', value: _valueOrDash(draft.startDate)),
+            _ReviewLine(
+                label: 'نهاية العقد', value: _valueOrDash(draft.endDate)),
+            _ReviewLine(
+                label: 'تاريخ أول دفعة',
+                value: _valueOrDash(draft.firstPaymentDate)),
+            if (draft.installments.isNotEmpty)
+              _ReviewLine(
+                  label: 'تاريخ آخر دفعة',
+                  value: _valueOrDash(draft.installments.last.dueDate)),
             if (draft.rentalCalculation case final rental?)
               _ReviewLine(
                   label: 'إجمالي الإيجار طوال العقد',
@@ -3842,44 +4157,46 @@ class _ReviewStep extends StatelessWidget {
                     '$uploadedRequired / ${requiredAttachments.length} مكتملة'),
             _ReviewLine(
               label: 'إجمالي المرفقات المرفوعة',
-              value:
-                  '${draft.attachments.where((attachment) => attachment.uploaded).length}',
+              value: '${draft.attachments.where(_attachmentReady).length}',
             ),
           ],
         ),
         const SizedBox(height: 12),
-        ToggleCard(
-          title: 'أقر بصحة البيانات والمستندات',
-          subtitle: 'أتحمل مسؤولية دقة المعلومات المدخلة في الطلب',
-          value: draft.acceptAccuracyDeclaration,
-          icon: Icons.verified_user_outlined,
-          onChanged: (value) {
-            draft.acceptAccuracyDeclaration = value;
-            onChanged();
-          },
-        ),
+        if (!administrative)
+          ToggleCard(
+            title: 'أقر بصحة البيانات والمستندات',
+            subtitle: 'أتحمل مسؤولية دقة المعلومات المدخلة في الطلب',
+            value: draft.acceptAccuracyDeclaration,
+            icon: Icons.verified_user_outlined,
+            onChanged: (value) {
+              draft.acceptAccuracyDeclaration = value;
+              onChanged();
+            },
+          ),
         const SizedBox(height: 10),
-        ToggleCard(
-          title: 'أوافق على مشاركة البيانات اللازمة',
-          subtitle: 'تستخدم البيانات لإتمام إصدار العقد ومراجعته',
-          value: draft.acceptDataSharing,
-          icon: Icons.shield_outlined,
-          onChanged: (value) {
-            draft.acceptDataSharing = value;
-            onChanged();
-          },
-        ),
+        if (!administrative)
+          ToggleCard(
+            title: 'أوافق على مشاركة البيانات اللازمة',
+            subtitle: 'تستخدم البيانات لإتمام إصدار العقد ومراجعته',
+            value: draft.acceptDataSharing,
+            icon: Icons.shield_outlined,
+            onChanged: (value) {
+              draft.acceptDataSharing = value;
+              onChanged();
+            },
+          ),
         const SizedBox(height: 10),
-        ToggleCard(
-          title: 'أوافق على الشروط والأحكام',
-          subtitle: 'لن يتم رفع الطلب قبل قبول الشروط',
-          value: draft.acceptTerms,
-          icon: Icons.policy_outlined,
-          onChanged: (value) {
-            draft.acceptTerms = value;
-            onChanged();
-          },
-        ),
+        if (!administrative)
+          ToggleCard(
+            title: 'أوافق على الشروط والأحكام',
+            subtitle: 'لن يتم رفع الطلب قبل قبول الشروط',
+            value: draft.acceptTerms,
+            icon: Icons.policy_outlined,
+            onChanged: (value) {
+              draft.acceptTerms = value;
+              onChanged();
+            },
+          ),
         const SizedBox(height: 14),
         const InfoBanner(
           text:

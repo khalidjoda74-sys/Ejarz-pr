@@ -124,6 +124,8 @@ class PartyData {
   String email;
   String city;
   String district;
+  String cityReferenceId;
+  String districtReferenceId;
   String nationalAddress;
   bool mobileRegisteredInAbsher;
   String commercialRegistration;
@@ -142,6 +144,8 @@ class PartyData {
     this.birthDate = '',
     this.mobile = '',
     this.email = '',
+    this.cityReferenceId = '',
+    this.districtReferenceId = '',
     this.city = 'الرياض',
     this.district = '',
     this.nationalAddress = '',
@@ -203,6 +207,8 @@ class PropertyData {
   String totalUnits;
   String city;
   String district;
+  String cityReferenceId;
+  String districtReferenceId;
   String street;
   String buildingNumber;
   String additionalNumber;
@@ -220,10 +226,36 @@ class PropertyData {
   bool kitchen;
   bool storage;
   bool majlis;
+  String? _kitchenCount;
+  String? _storageCount;
+  String? _majlisCount;
+
+  // Legacy yes/no records become 1/0 until an explicit count is saved.
+  String get kitchenCount => _kitchenCount ?? (kitchen ? '1' : '0');
+  String get storageCount => _storageCount ?? (storage ? '1' : '0');
+  String get majlisCount => _majlisCount ?? (majlis ? '1' : '0');
+  set kitchenCount(String value) {
+    _kitchenCount = value;
+    kitchen = (int.tryParse(value) ?? 0) > 0;
+  }
+
+  set storageCount(String value) {
+    _storageCount = value;
+    storage = (int.tryParse(value) ?? 0) > 0;
+  }
+
+  set majlisCount(String value) {
+    _majlisCount = value;
+    majlis = (int.tryParse(value) ?? 0) > 0;
+  }
+
   String furnishingStatus;
   bool acWindow;
   bool acSplit;
   bool acCentral;
+  String acWindowCount;
+  String acSplitCount;
+  String acCentralCount;
   bool privateParking;
   String electricityMeter;
   String waterMeter;
@@ -242,6 +274,8 @@ class PropertyData {
     this.floorsCount = '',
     this.unitsPerFloor = '',
     this.totalUnits = '',
+    this.cityReferenceId = '',
+    this.districtReferenceId = '',
     this.city = 'الرياض',
     this.district = '',
     this.street = '',
@@ -261,16 +295,26 @@ class PropertyData {
     this.kitchen = true,
     this.storage = false,
     this.majlis = false,
+    String? kitchenCount,
+    String? storageCount,
+    String? majlisCount,
     this.furnishingStatus = 'غير مؤثثة',
     this.acWindow = false,
     this.acSplit = true,
     this.acCentral = false,
+    this.acWindowCount = '0',
+    this.acSplitCount = '1',
+    this.acCentralCount = '0',
     this.privateParking = false,
     this.electricityMeter = '',
     this.waterMeter = '',
     this.gasMeter = '',
     this.notes = '',
-  });
+  }) {
+    if (kitchenCount != null) this.kitchenCount = kitchenCount;
+    if (storageCount != null) this.storageCount = storageCount;
+    if (majlisCount != null) this.majlisCount = majlisCount;
+  }
 
   String get displayAddress {
     final parts = <String>[
@@ -293,6 +337,8 @@ class PropertyData {
         floorsCount: source.floorsCount,
         unitsPerFloor: source.unitsPerFloor,
         totalUnits: source.totalUnits,
+        cityReferenceId: source.cityReferenceId,
+        districtReferenceId: source.districtReferenceId,
         city: source.city,
         district: source.district,
         street: source.street,
@@ -312,10 +358,16 @@ class PropertyData {
         kitchen: source.kitchen,
         storage: source.storage,
         majlis: source.majlis,
+        kitchenCount: source.kitchenCount,
+        storageCount: source.storageCount,
+        majlisCount: source.majlisCount,
         furnishingStatus: source.furnishingStatus,
         acWindow: source.acWindow,
         acSplit: source.acSplit,
         acCentral: source.acCentral,
+        acWindowCount: source.acWindowCount,
+        acSplitCount: source.acSplitCount,
+        acCentralCount: source.acCentralCount,
         privateParking: source.privateParking,
         electricityMeter: source.electricityMeter,
         waterMeter: source.waterMeter,
@@ -487,6 +539,7 @@ class ContractDraft {
   bool renewal = false;
   double? frozenTotal;
   ContractPrice? frozenPrice;
+  int? serverRevision;
   Map<String, Map<String, Object?>> assistantFields = {};
   ContractType type;
   UserRole role;
@@ -546,7 +599,7 @@ class ContractDraft {
         durationDays = '0',
         endDate = '',
         rentValue = '',
-        rentPeriod = 'سنوي',
+        rentPeriod = 'ربع سنوي',
         hasSecurityDeposit = false,
         securityDeposit = '',
         brokerageFee = '',
@@ -597,6 +650,7 @@ class ContractDraft {
 
   factory ContractDraft.copyOf(ContractDraft source) {
     final copy = ContractDraft()
+      ..serverRevision = source.serverRevision
       ..type = source.type
       ..assistantFields = {
         for (final e in source.assistantFields.entries)
@@ -615,6 +669,8 @@ class ContractDraft {
         floorsCount: source.property.floorsCount,
         unitsPerFloor: source.property.unitsPerFloor,
         totalUnits: source.property.totalUnits,
+        cityReferenceId: source.property.cityReferenceId,
+        districtReferenceId: source.property.districtReferenceId,
         city: source.property.city,
         district: source.property.district,
         street: source.property.street,
@@ -634,10 +690,16 @@ class ContractDraft {
         kitchen: source.property.kitchen,
         storage: source.property.storage,
         majlis: source.property.majlis,
+        kitchenCount: source.property.kitchenCount,
+        storageCount: source.property.storageCount,
+        majlisCount: source.property.majlisCount,
         furnishingStatus: source.property.furnishingStatus,
         acWindow: source.property.acWindow,
         acSplit: source.property.acSplit,
         acCentral: source.property.acCentral,
+        acWindowCount: source.property.acWindowCount,
+        acSplitCount: source.property.acSplitCount,
+        acCentralCount: source.property.acCentralCount,
         privateParking: source.property.privateParking,
         electricityMeter: source.property.electricityMeter,
         waterMeter: source.property.waterMeter,
@@ -730,6 +792,8 @@ class ContractDraft {
         birthDate: source.birthDate,
         mobile: source.mobile,
         email: source.email,
+        cityReferenceId: source.cityReferenceId,
+        districtReferenceId: source.districtReferenceId,
         city: source.city,
         district: source.district,
         nationalAddress: source.nationalAddress,
@@ -756,7 +820,9 @@ class ContractDraft {
   double get depositNumber =>
       double.tryParse(securityDeposit.replaceAll(',', '')) ?? 0;
 
-  ContractPrice get price => frozenPrice ?? ContractPrice.calculate(
+  ContractPrice get price =>
+      frozenPrice ??
+      ContractPrice.calculate(
         commercial: type == ContractType.commercial,
         years: int.tryParse(durationYears) ?? 0,
         months: int.tryParse(durationMonths) ?? 0,
@@ -777,6 +843,7 @@ class ContractDraft {
     if (calculation == null) return;
     paymentCount = calculation.installments.length;
     final first = ContractCalculationEngine.date(firstPaymentDate);
+    final end = ContractCalculationEngine.date(endDate);
     final interval =
         ContractCalculationEngine.frequencyMonths(paymentFrequency);
     installments = List<InstallmentData>.generate(
@@ -787,11 +854,19 @@ class ContractDraft {
             ContractCalculationEngine.amount(calculation.installments[index]),
         dueDate: index == 0
             ? firstPaymentDate
-            : first == null || paymentScheduleType == 'مخصص'
+            : first == null
                 ? ''
-                : ContractCalculationEngine.formatDate(
-                    ContractCalculationEngine.addMonths(
-                        first, interval * index)),
+                : paymentScheduleType == 'مخصص'
+                    ? end == null || end.isBefore(first)
+                        ? ''
+                        : ContractCalculationEngine.formatDate(first.add(
+                            Duration(
+                                days: ((end.difference(first).inDays + 1) *
+                                        index) ~/
+                                    paymentCount)))
+                    : ContractCalculationEngine.formatDate(
+                        ContractCalculationEngine.addMonths(
+                            first, interval * index)),
         note: index == 0 ? 'دفعة مقدمة' : 'دفعة دورية',
       ),
     );
@@ -828,6 +903,12 @@ class DraftProgress {
 }
 
 class ContractRecord {
+  final String requestKind;
+  final Map<String, String> renewalRequest;
+  bool get isExternalRenewal => requestKind == 'externalRenewal';
+  bool get awaitingRenewalQuote =>
+      isExternalRenewal && paymentStatus == 'notRequested';
+  String get typeLabel => awaitingRenewalQuote ? 'تجديد عقد سابق' : type.label;
   final String id;
   final String requestNumber;
   final String uid;
@@ -869,6 +950,8 @@ class ContractRecord {
   final DraftProgress draftProgress;
 
   ContractRecord({
+    this.requestKind = '',
+    this.renewalRequest = const <String, String>{},
     required this.id,
     required this.requestNumber,
     this.uid = '',
@@ -942,6 +1025,8 @@ class ContractRecord {
     DraftProgress? draftProgress,
   }) {
     return ContractRecord(
+      requestKind: requestKind,
+      renewalRequest: renewalRequest,
       id: id,
       requestNumber: requestNumber,
       uid: uid,

@@ -1,12 +1,13 @@
 name: aqdak
 description: تطبيق عقدك لإدارة وتجهيز ومتابعة عقود الإيجار.
 publish_to: 'none'
-version: 1.0.1+2
+version: 1.0.2+3
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
 
 dependencies:
+  shared_preferences: ^2.5.3
   cloud_firestore: ^5.6.12
   cloud_functions: ^5.6.0
   file_picker: ^8.3.7

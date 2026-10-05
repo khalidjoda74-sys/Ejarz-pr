@@ -6,6 +6,14 @@ import 'package:aqdak/core/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('assistant accepts omitted utility meters and property notes', () {
+    for (final key in ['electricityMeter', 'waterMeter', 'gasMeter', 'notes']) {
+      final field = ContractFieldCatalog.byPath['property.$key']!;
+      expect(field.required, isFalse, reason: key);
+      expect(ContractFieldCatalog.validate(field, '', {}), isNull);
+      expect(ContractFieldCatalog.validate(field, null, {}), isNull);
+    }
+  });
   group('deterministic rental calculation', () {
     test('five years, 1000 monthly, quarterly = 20 x 3000', () {
       final result =

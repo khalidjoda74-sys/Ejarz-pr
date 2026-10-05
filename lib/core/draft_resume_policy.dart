@@ -112,8 +112,6 @@ int firstIncompleteDraftStep(ContractDraft draft) {
         property.area,
         property.bathroomsCount,
         property.hallsCount,
-        property.electricityMeter,
-        property.waterMeter,
       ]) ||
       (draft.type == ContractType.residential &&
           !_hasText(property.roomsCount)) ||

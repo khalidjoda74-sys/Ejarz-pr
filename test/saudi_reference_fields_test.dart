@@ -10,8 +10,8 @@ void main() {
   test('bundled Saudi reference catalog is complete and linked', () async {
     final catalog = await SaudiReferenceCatalog.load();
 
-    expect(catalog.cities, hasLength(4581));
-    expect(catalog.districts, hasLength(3732));
+    expect(catalog.cities, hasLength(15513));
+    expect(catalog.districts, hasLength(21235));
 
     final riyadh = catalog.resolveCity(
       'الرياض',
@@ -20,7 +20,7 @@ void main() {
     expect(riyadh, isNotNull);
     expect(
       catalog.districtsForCity(riyadh!.id).map((item) => item.name),
-      contains('حي العمل'),
+      contains('العمل'),
     );
     expect(saudiLicensedBanks, contains('مصرف الراجحي'));
   });
@@ -93,14 +93,14 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.enterText(find.byType(TextField), 'الزمرد');
     await tester.pump();
-    final districtResult = find.widgetWithText(ListTile, 'حي الزمرد');
+    final districtResult = find.widgetWithText(ListTile, 'الزمرد');
     await tester.ensureVisible(districtResult);
     await tester.pump();
     await tester.tap(districtResult);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(district, 'حي الزمرد');
+    expect(district, 'الزمرد');
 
     await tester.tap(find.text('اختر البنك'));
     await tester.pump();
@@ -115,5 +115,74 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(bank, 'مصرف الراجحي');
+  });
+
+  testWidgets(
+      'region is inferred on edit and cascades city district and reference ids',
+      (tester) async {
+    final catalog = (await tester.runAsync(SaudiReferenceCatalog.load))!;
+    var city = 'الرياض', district = 'النرجس';
+    final riyadh = catalog.resolveCity(city, districtName: district)!;
+    var cityId = riyadh.referenceId;
+    var districtId = catalog
+        .districtsForCity(riyadh.id)
+        .firstWhere((d) => d.name == district)
+        .referenceId;
+    final form = GlobalKey<FormState>();
+    await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+            body: StatefulBuilder(
+                builder: (context, setState) => Form(
+                    key: form,
+                    child: SaudiLocationFields(
+                      showRegionSelector: true,
+                      catalog: catalog,
+                      city: city,
+                      district: district,
+                      cityReferenceId: cityId,
+                      districtReferenceId: districtId,
+                      onCityChanged: (v) => setState(() => city = v),
+                      onDistrictChanged: (v) => setState(() => district = v),
+                      onReferencesChanged: (c, d) {
+                        cityId = c;
+                        districtId = d;
+                      },
+                    ))))));
+    await tester.pumpAndSettle();
+    expect(find.text('منطقة الرياض'), findsOneWidget);
+    expect(form.currentState!.validate(), isTrue);
+    await tester.tap(find.text('منطقة الرياض'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ListTile, 'منطقة مكة المكرمة'));
+    await tester.pumpAndSettle();
+    expect([city, district, cityId, districtId], ['', '', '', '']);
+    expect(form.currentState!.validate(), isFalse);
+    await tester.tap(find.text('اختر المدينة'));
+    await tester.pumpAndSettle();
+    expect(find.text('منطقة الرياض'), findsNothing);
+    await tester.enterText(find.byType(TextField).last, 'جدة');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ListTile, 'جدة').first);
+    await tester.pumpAndSettle();
+    expect(city, 'جدة');
+    expect(
+        catalog.cities.firstWhere((c) => c.referenceId == cityId).regionId, 2);
+    expect(district, isEmpty);
+    await tester.tap(find.text('اختر الحي'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'الزمرد');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ListTile, 'الزمرد').first);
+    await tester.pumpAndSettle();
+    expect(district, 'الزمرد');
+    expect(districtId, isNotEmpty);
+    expect(form.currentState!.validate(), isTrue);
+    await tester.tap(find.text('منطقة مكة المكرمة'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ListTile, 'منطقة مكة المكرمة'));
+    await tester.pumpAndSettle();
+    expect([city, district], ['جدة', 'الزمرد']);
+    expect(tester.takeException(), isNull);
   });
 }

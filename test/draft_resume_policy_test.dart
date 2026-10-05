@@ -5,6 +5,45 @@ import 'package:aqdak/core/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('empty meters and notes do not block resuming past the property step', () {
+    final draft = ContractDraft();
+    for (final party in [draft.lessor, draft.tenant]) {
+      party
+        ..fullName = 'خالد أحمد'
+        ..idNumber = '1000000000'
+        ..birthDate = '1990/01/01'
+        ..mobile = '0500000000'
+        ..district = 'العليا'
+        ..nationalAddress = 'عنوان'
+        ..mobileRegisteredInAbsher = true
+        ..iban = 'SA0000000000000000000000'
+        ..bankName = 'بنك'
+        ..accountOwner = 'خالد أحمد';
+    }
+    draft.property
+      ..ownershipDocumentNumber = '123'
+      ..ownershipDocumentDate = '2026/01/01'
+      ..floorsCount = '1'
+      ..totalUnits = '1'
+      ..district = 'العليا'
+      ..street = 'شارع'
+      ..buildingNumber = '1'
+      ..additionalNumber = '1'
+      ..postalCode = '12345'
+      ..unitNumber = '1'
+      ..unitName = 'شقة'
+      ..floor = '0'
+      ..area = '100'
+      ..roomsCount = '2'
+      ..bathroomsCount = '1'
+      ..hallsCount = '0'
+      ..acSplit = true
+      ..electricityMeter = ''
+      ..waterMeter = ''
+      ..gasMeter = ''
+      ..notes = '';
+    expect(firstIncompleteDraftStep(draft), 4);
+  });
   test('draft serialization restores every editable field', () {
     final source = ContractDraft()
       ..type = ContractType.commercial
@@ -24,7 +63,13 @@ void main() {
       ..acceptTerms = true;
     source.property
       ..ownershipDocumentNumber = '310123456789'
-      ..district = 'العليا';
+      ..district = 'العليا'
+      ..acWindow = true
+      ..acWindowCount = '2'
+      ..acSplit = true
+      ..acSplitCount = '2'
+      ..acCentral = true
+      ..acCentralCount = '3';
     source.attachments.first
       ..uploaded = true
       ..fileName = 'identity.pdf';
@@ -48,6 +93,25 @@ void main() {
     expect(restored.acceptTerms, isTrue);
     expect(restored.attachments.first.uploaded, isTrue);
     expect(restored.attachments.first.fileName, 'identity.pdf');
+    expect(restored.property.acWindowCount, '2');
+    expect(restored.property.acSplitCount, '2');
+    expect(restored.property.acCentralCount, '3');
+  });
+
+  test('older drafts with yes/no air conditioning remain readable', () {
+    final saved = FirebaseRepository.draftToMap(ContractDraft());
+    final property = Map<String, Object?>.from(saved['property'] as Map);
+    property.remove('acWindowCount');
+    property.remove('acSplitCount');
+    property.remove('acCentralCount');
+    property['acWindow'] = true;
+    property['acSplit'] = false;
+    property['acCentral'] = false;
+    saved['property'] = property;
+    final restored = FirebaseRepository.draftFromMap(saved)!.property;
+    expect(restored.acWindowCount, '1');
+    expect(restored.acSplitCount, '0');
+    expect(restored.acCentralCount, '0');
   });
 
   test('resume starts at the first incomplete step', () {

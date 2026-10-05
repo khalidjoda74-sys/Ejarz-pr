@@ -3,6 +3,7 @@ import 'assistant_field_scope.dart';
 import 'package:flutter/services.dart';
 
 import '../core/app_controller.dart';
+import '../core/contract_calculation_engine.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
 import 'illustrations.dart';
@@ -704,31 +705,102 @@ class AppTextField extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 5),
-            TextFormField(
-              controller: controller,
-              focusNode: focusNode,
-              initialValue: controller == null ? initialValue : null,
-              onChanged: onChanged,
-              validator: validator,
-              keyboardType: keyboardType,
-              textInputAction: textInputAction,
-              obscureText: obscureText,
-              enabled: enabled,
-              readOnly: readOnly,
-              onTap: onTap,
-              maxLines: obscureText ? 1 : maxLines,
-              maxLength: maxLength,
-              inputFormatters: inputFormatters,
-              textAlign: TextAlign.right,
-              decoration: InputDecoration(
-                hintText: hint,
-                counterText: '',
-                suffixIcon:
-                    suffix ?? (icon == null ? null : Icon(icon, size: 19)),
-              ),
-            ),
+            _SyncedAppTextInput(field: this),
           ],
         ));
+  }
+}
+
+/// Keeps externally selected values in sync even when an assistant anchor
+/// reparents the form field. Manual edits retain their selection and composing
+/// range because identical values never replace the controller's value.
+class _SyncedAppTextInput extends StatefulWidget {
+  final AppTextField field;
+  const _SyncedAppTextInput({required this.field});
+  @override
+  State<_SyncedAppTextInput> createState() => _SyncedAppTextInputState();
+}
+
+class _SyncedAppTextInputState extends State<_SyncedAppTextInput> {
+  TextEditingController? _owned;
+  TextEditingController get _controller => widget.field.controller ?? _owned!;
+  @override
+  void initState() {
+    super.initState();
+    if (widget.field.controller == null) {
+      _owned = TextEditingController(text: widget.field.initialValue);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_SyncedAppTextInput oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final field = widget.field;
+    if (field.controller != null) {
+      _owned?.dispose();
+      _owned = null;
+    } else {
+      _owned ??= TextEditingController(text: field.initialValue);
+      if (oldWidget.field.initialValue != field.initialValue ||
+          oldWidget.field.label != field.label) {
+        final value = field.initialValue ?? '';
+        if (_owned!.text != value) {
+          final previousText = _owned!.text;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted ||
+                _owned == null ||
+                widget.field.initialValue != field.initialValue ||
+                _owned!.text != previousText) {
+              return;
+            }
+            _owned!.value = TextEditingValue(
+                text: value,
+                selection: TextSelection.collapsed(offset: value.length));
+          });
+        }
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _owned?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final f = widget.field;
+    final numeric = f.keyboardType?.index == TextInputType.number.index ||
+        f.keyboardType == TextInputType.phone;
+    return TextFormField(
+      controller: _controller,
+      focusNode: f.focusNode,
+      onChanged: f.onChanged,
+      validator: f.validator,
+      keyboardType: f.keyboardType,
+      textInputAction: f.textInputAction,
+      obscureText: f.obscureText,
+      enabled: f.enabled,
+      readOnly: f.readOnly,
+      onTap: f.onTap,
+      maxLines: f.obscureText ? 1 : f.maxLines,
+      maxLength: f.maxLength,
+      inputFormatters: [
+        if (numeric)
+          TextInputFormatter.withFunction((oldValue, newValue) =>
+              newValue.copyWith(
+                  text: ContractCalculationEngine.normalizeDigits(
+                      newValue.text))),
+        ...?f.inputFormatters,
+      ],
+      textAlign: TextAlign.right,
+      decoration: InputDecoration(
+          hintText: f.hint,
+          counterText: '',
+          suffixIcon:
+              f.suffix ?? (f.icon == null ? null : Icon(f.icon, size: 19))),
+    );
   }
 }
 
@@ -776,6 +848,7 @@ class AppDropdownField extends StatelessWidget {
             ),
             const SizedBox(height: 5),
             DropdownButtonFormField<String>(
+              key: ValueKey('$label:$value'),
               initialValue: value,
               isExpanded: true,
               icon: const Icon(Icons.keyboard_arrow_down_rounded),
@@ -821,8 +894,11 @@ class DateField extends StatelessWidget {
   });
 
   Future<void> _pick(BuildContext context) async {
-    final resolvedFirstDate = firstDate ?? DateTime(1950);
     final resolvedLastDate = lastDate ?? DateTime(2100);
+    final proposedFirstDate = firstDate ?? DateTime(1950);
+    final resolvedFirstDate = proposedFirstDate.isAfter(resolvedLastDate)
+        ? resolvedLastDate
+        : proposedFirstDate;
     final parts = value.split(RegExp(r'[/\-]'));
     DateTime initialDate = DateTime.now();
     if (parts.length == 3) {
@@ -851,7 +927,7 @@ class DateField extends StatelessWidget {
         child: child!,
       ),
     );
-    if (result != null) {
+    if (result != null && context.mounted) {
       onChanged(
         '${result.year}/${result.month.toString().padLeft(2, '0')}/${result.day.toString().padLeft(2, '0')}',
       );
@@ -861,13 +937,19 @@ class DateField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppTextField(
-      key: ValueKey<String>('date-$label-$value'),
       label: label,
       hint: 'اختر التاريخ',
       initialValue: value,
       readOnly: true,
       onTap: () => _pick(context),
       icon: Icons.calendar_month_outlined,
+      suffix: !required && value.isNotEmpty
+          ? IconButton(
+              tooltip: 'مسح التاريخ',
+              onPressed: () => onChanged(''),
+              icon: const Icon(Icons.close_rounded, size: 19),
+            )
+          : null,
       required: required,
       validator: validator ??
           (required

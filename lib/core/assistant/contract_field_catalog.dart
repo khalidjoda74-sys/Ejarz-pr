@@ -76,8 +76,14 @@ class ContractFieldCatalog {
     for (final pair in _propertyLabels.entries)
       ContractFieldSpec('property.${pair.key}', pair.value,
           pair.key.startsWith('ownership') ? 1 : 3,
-          required: !['buildingName', 'notes', 'unitsPerFloor', 'gasMeter']
-              .contains(pair.key)),
+          required: ![
+            'buildingName',
+            'notes',
+            'unitsPerFloor',
+            'electricityMeter',
+            'waterMeter',
+            'gasMeter'
+          ].contains(pair.key)),
     for (final entry in {
       'electricity': 'الكهرباء',
       'water': 'المياه',

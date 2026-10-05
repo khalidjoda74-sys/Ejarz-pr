@@ -17,6 +17,7 @@ import 'firebase_options.dart';
 import 'screens/auth.dart';
 import 'screens/contracts.dart';
 import 'screens/create_contract.dart';
+import 'screens/admin_contract_app.dart';
 import 'screens/home.dart';
 import 'screens/pricing.dart';
 import 'screens/wallet_profile.dart';
@@ -32,6 +33,11 @@ Future<void> main() async {
   // plugin must never be allowed to hold the iOS launch screen indefinitely.
   unawaited(_initializePlatformServices());
 
+  if (kIsWeb && Uri.base.queryParameters['adminContract'] == '1') {
+    runApp(AdminContractApp(uid: Uri.base.queryParameters['uid'] ?? '',
+        draftId: Uri.base.queryParameters['draftId'] ?? ''));
+    return;
+  }
   runApp(const AqdakApp());
   if (kIsWeb && Uri.base.queryParameters['notifications'] == '1') {
     AppNotificationService.deferNotificationTap({
@@ -150,8 +156,11 @@ class _AqdakAppState extends State<AqdakApp> {
     }
     final actionType = data['actionType']?.toString();
     if (actionType == 'notifications') {
-      navigator.push(
-          MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()));
+      navigator.push(MaterialPageRoute<void>(
+        builder: (_) => NotificationsScreen(
+          initialNotificationId: notificationId,
+        ),
+      ));
       return;
     }
     final contractId = data['contractId']?.toString() ??
@@ -187,9 +196,15 @@ class _AqdakAppState extends State<AqdakApp> {
     if (actionType != 'contractDetails' && contractId == null) return;
     if (contractId == null || contractId.isEmpty) return;
     final contract = await _controller.contractById(contractId);
-    if (contract == null ||
-        !context.mounted ||
-        !_controller.isCurrentAccount(generation)) {
+    if (!context.mounted || !_controller.isCurrentAccount(generation)) {
+      return;
+    }
+    if (contract == null) {
+      navigator.push(MaterialPageRoute<void>(
+        builder: (_) => NotificationsScreen(
+          initialNotificationId: notificationId,
+        ),
+      ));
       return;
     }
     navigator.push(

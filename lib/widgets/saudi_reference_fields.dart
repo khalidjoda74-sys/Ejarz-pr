@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import '../core/saudi_reference_data.dart';
 import '../core/theme.dart';
@@ -11,6 +12,10 @@ class SaudiLocationFields extends StatefulWidget {
   final ValueChanged<String> onCityChanged;
   final ValueChanged<String> onDistrictChanged;
   final SaudiReferenceCatalog? catalog;
+  final String cityReferenceId;
+  final String districtReferenceId;
+  final void Function(String cityId, String districtId)? onReferencesChanged;
+  final bool showRegionSelector;
 
   const SaudiLocationFields({
     super.key,
@@ -19,6 +24,10 @@ class SaudiLocationFields extends StatefulWidget {
     required this.onCityChanged,
     required this.onDistrictChanged,
     this.catalog,
+    this.cityReferenceId = '',
+    this.districtReferenceId = '',
+    this.onReferencesChanged,
+    this.showRegionSelector = false,
   });
 
   @override
@@ -26,11 +35,45 @@ class SaudiLocationFields extends StatefulWidget {
 }
 
 class _SaudiLocationFieldsState extends State<SaudiLocationFields> {
-  late final Future<SaudiReferenceCatalog> _catalogFuture =
-      SaudiReferenceCatalog.load();
+  late Future<SaudiReferenceCatalog> _catalogFuture =
+      SaudiReferenceCatalog.current();
   int? _selectedCityId;
+  int? _selectedRegionId;
+  String _districtCatalogKey = '';
+  Future<List<SaudiDistrict>>? _districtFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    SaudiReferenceCatalog.changes.addListener(_catalogChanged);
+  }
+
+  void _catalogChanged() {
+    if (mounted && widget.catalog == null) {
+      setState(() {
+        _catalogFuture = SaudiReferenceCatalog.current();
+        _districtCatalogKey = '';
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    SaudiReferenceCatalog.changes.removeListener(_catalogChanged);
+    super.dispose();
+  }
 
   SaudiCity? _selectedCity(SaudiReferenceCatalog catalog) {
+    if (widget.cityReferenceId.isNotEmpty) {
+      for (final city in catalog.cities) {
+        if (city.referenceId == widget.cityReferenceId &&
+            normalizeSaudiLocation(city.name) ==
+                normalizeSaudiLocation(widget.city)) {
+          return city;
+        }
+      }
+      return null;
+    }
     final selected = catalog.cityById(_selectedCityId);
     if (selected != null &&
         normalizeSaudiLocation(selected.name) ==
@@ -51,49 +94,176 @@ class _SaudiLocationFieldsState extends State<SaudiLocationFields> {
       builder: (context, snapshot) {
         final catalog = snapshot.data;
         final city = catalog == null ? null : _selectedCity(catalog);
-        final districts = city == null
-            ? const <SaudiDistrict>[]
-            : catalog!.districtsForCity(city.id);
-        return FieldGrid(
-          children: <Widget>[
-            _LookupFormField(
-              label: 'المدينة',
-              value: widget.city,
-              hint: snapshot.hasError ? 'تعذر تحميل المدن' : 'اختر المدينة',
-              icon: Icons.location_city_outlined,
-              loading: catalog == null && !snapshot.hasError,
-              required: true,
-              onTap: catalog == null ? null : () => _pickCity(catalog),
-            ),
-            _LookupFormField(
-              label: 'الحي',
-              value: widget.district,
-              hint: city == null
-                  ? 'اختر المدينة أولًا'
-                  : districts.isEmpty
-                      ? 'أدخل اسم الحي'
-                      : 'اختر الحي',
-              icon: Icons.location_on_outlined,
-              loading: catalog == null && !snapshot.hasError,
-              required: true,
-              onTap: catalog == null || city == null
-                  ? null
-                  : () => _pickDistrict(city, districts),
-            ),
-          ],
-        );
+        final regionId = city?.regionId ?? _selectedRegionId;
+        final districtKey = '${identityHashCode(catalog)}:${city?.id}';
+        if (districtKey != _districtCatalogKey) {
+          _districtCatalogKey = districtKey;
+          _districtFuture = city == null
+              ? Future.value(<SaudiDistrict>[])
+              : catalog!.fetchDistricts(city.id);
+        }
+        return FutureBuilder<List<SaudiDistrict>>(
+            future: _districtFuture,
+            initialData:
+                city == null ? const [] : catalog!.districtsForCity(city.id),
+            builder: (context, districtSnapshot) {
+              final districts =
+                  districtSnapshot.data ?? const <SaudiDistrict>[];
+              final districtReady =
+                  districtSnapshot.connectionState == ConnectionState.done &&
+                      !districtSnapshot.hasError;
+              final selectedDistrict = districts
+                  .where((d) =>
+                      normalizeSaudiLocation(d.name) ==
+                          normalizeSaudiLocation(widget.district) &&
+                      (widget.districtReferenceId.isEmpty ||
+                          d.referenceId == widget.districtReferenceId))
+                  .toList();
+              if (city != null &&
+                  selectedDistrict.length == 1 &&
+                  (widget.cityReferenceId != city.referenceId ||
+                      widget.districtReferenceId !=
+                          selectedDistrict.first.referenceId)) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    widget.onReferencesChanged?.call(
+                        city.referenceId, selectedDistrict.first.referenceId);
+                  }
+                });
+              }
+              return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    FieldGrid(
+                      children: <Widget>[
+                        if (widget.showRegionSelector)
+                          _LookupFormField(
+                            label: 'المنطقة',
+                            value: saudiRegionNames[regionId] ?? '',
+                            hint: 'اختر المنطقة',
+                            icon: Icons.map_outlined,
+                            required: true,
+                            loading: catalog == null && !snapshot.hasError,
+                            onTap: catalog == null
+                                ? null
+                                : () => _pickRegion(catalog, regionId),
+                          ),
+                        _LookupFormField(
+                          label: 'المدينة',
+                          value: widget.city,
+                          hint: snapshot.hasError
+                              ? 'تعذر تحميل المدن'
+                              : widget.showRegionSelector && regionId == null
+                                  ? 'اختر المنطقة أولًا'
+                                  : 'اختر المدينة',
+                          icon: Icons.location_city_outlined,
+                          loading: catalog == null && !snapshot.hasError,
+                          required: true,
+                          validationError: catalog == null
+                              ? 'انتظر تحميل المدن أو أعد المحاولة'
+                              : city == null && widget.city.isNotEmpty
+                                  ? 'اختر المدينة من القائمة'
+                                  : null,
+                          onTap: catalog == null ||
+                                  (widget.showRegionSelector &&
+                                      regionId == null)
+                              ? null
+                              : () => _pickCity(catalog, regionId: regionId),
+                        ),
+                        _LookupFormField(
+                          label: 'الحي',
+                          value: widget.district,
+                          hint: city == null
+                              ? 'اختر المدينة أولًا'
+                              : districtSnapshot.hasError
+                                  ? 'تعذر تحميل الأحياء'
+                                  : !districtReady
+                                      ? 'جارٍ تحميل الأحياء'
+                                      : districts.isEmpty
+                                          ? 'لا توجد أحياء معتمدة'
+                                          : 'اختر الحي',
+                          icon: Icons.location_on_outlined,
+                          loading: (catalog == null && !snapshot.hasError) ||
+                              !districtReady && !districtSnapshot.hasError,
+                          required: true,
+                          validationError: !districtReady
+                              ? 'انتظر تحميل الأحياء أو أعد المحاولة'
+                              : selectedDistrict.length != 1 &&
+                                      widget.district.isNotEmpty
+                                  ? 'اختر الحي من القائمة'
+                                  : null,
+                          onTap: catalog == null ||
+                                  city == null ||
+                                  !districtReady ||
+                                  districts.isEmpty
+                              ? null
+                              : () => _pickDistrict(city, districts),
+                        ),
+                      ],
+                    ),
+                    if (snapshot.hasError || districtSnapshot.hasError)
+                      TextButton.icon(
+                          onPressed: () => setState(() {
+                                _catalogFuture = SaudiReferenceCatalog.current(
+                                    refresh: true);
+                                _districtCatalogKey = '';
+                              }),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('إعادة تحميل المدن والأحياء')),
+                    if (city != null && districtReady && districts.isEmpty)
+                      Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Column(children: [
+                            const Text(
+                                'لم تُضف أحياء لهذه المدينة بعد. يمكنك طلب استكمالها من الإدارة.'),
+                            TextButton.icon(
+                                onPressed: () => _requestDistricts(city),
+                                icon: const Icon(Icons.support_agent),
+                                label: const Text('طلب استكمال الأحياء'))
+                          ])),
+                  ]);
+            });
       },
     );
   }
 
-  Future<void> _pickCity(SaudiReferenceCatalog catalog) async {
+  Future<void> _pickRegion(SaudiReferenceCatalog catalog, int? current) async {
+    final result = await _showSearchPicker<int>(
+      context: context,
+      title: 'اختر المنطقة',
+      searchHint: 'ابحث باسم المنطقة',
+      currentValue: current,
+      options: saudiRegionNames.entries
+          .where((entry) =>
+              catalog.cities.any((city) => city.regionId == entry.key))
+          .map((entry) => _SearchOption<int>(
+              value: entry.key, title: entry.value, searchText: entry.value))
+          .toList(growable: false),
+    );
+    final selected = result?.value;
+    if (!mounted || selected == null || selected == current) return;
+    setState(() {
+      _selectedRegionId = selected;
+      _selectedCityId = null;
+      _districtCatalogKey = '';
+    });
+    widget.onCityChanged('');
+    widget.onDistrictChanged('');
+    widget.onReferencesChanged?.call('', '');
+  }
+
+  Future<void> _pickCity(SaudiReferenceCatalog catalog, {int? regionId}) async {
     final currentCity = _selectedCity(catalog);
     final result = await _showSearchPicker<SaudiCity>(
       context: context,
       title: 'اختر المدينة',
-      searchHint: 'ابحث باسم المدينة أو المنطقة',
+      searchHint: widget.showRegionSelector
+          ? 'ابحث باسم المدينة'
+          : 'ابحث باسم المدينة أو المنطقة',
       currentValue: currentCity,
       options: catalog.cities
+          .where(
+              (city) => !widget.showRegionSelector || city.regionId == regionId)
           .map(
             (city) => _SearchOption<SaudiCity>(
               value: city,
@@ -108,14 +278,10 @@ class _SaudiLocationFieldsState extends State<SaudiLocationFields> {
     final selected = result?.value;
     if (!mounted || selected == null) return;
 
-    final districtStillMatches = catalog.districtsForCity(selected.id).any(
-          (district) =>
-              normalizeSaudiLocation(district.name) ==
-              normalizeSaudiLocation(widget.district),
-        );
     setState(() => _selectedCityId = selected.id);
     widget.onCityChanged(selected.name);
-    if (!districtStillMatches && widget.district.trim().isNotEmpty) {
+    widget.onReferencesChanged?.call(selected.referenceId, '');
+    if (currentCity?.id != selected.id && widget.district.trim().isNotEmpty) {
       widget.onDistrictChanged('');
     }
   }
@@ -124,15 +290,7 @@ class _SaudiLocationFieldsState extends State<SaudiLocationFields> {
     SaudiCity city,
     List<SaudiDistrict> districts,
   ) async {
-    if (districts.isEmpty) {
-      final manual = await _showManualValueDialog(
-        context,
-        title: 'إدخال الحي',
-        initialValue: widget.district,
-      );
-      if (manual != null) widget.onDistrictChanged(manual);
-      return;
-    }
+    if (districts.isEmpty) return;
 
     SaudiDistrict? current;
     for (final district in districts) {
@@ -147,12 +305,16 @@ class _SaudiLocationFieldsState extends State<SaudiLocationFields> {
       title: 'أحياء ${city.name}',
       searchHint: 'ابح باسم الحي',
       currentValue: current,
-      allowManual: true,
+      allowManual: false,
       options: districts
           .map(
             (district) => _SearchOption<SaudiDistrict>(
               value: district,
               title: district.name,
+              subtitle:
+                  districts.where((d) => d.name == district.name).length > 1
+                      ? 'رمز الحي ${district.id}'
+                      : null,
               searchText: district.name,
             ),
           )
@@ -170,6 +332,25 @@ class _SaudiLocationFieldsState extends State<SaudiLocationFields> {
     }
     if (result.value != null) {
       widget.onDistrictChanged(result.value!.name);
+      widget.onReferencesChanged
+          ?.call(city.referenceId, result.value!.referenceId);
+    }
+  }
+
+  Future<void> _requestDistricts(SaudiCity city) async {
+    try {
+      await FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('requestGeographyDistrict')
+          .call({'cityKey': city.referenceId});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('تم إرسال طلب استكمال الأحياء للإدارة')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('تعذر إرسال الطلب. تحقق من الاتصال وأعد المحاولة.')));
+      }
     }
   }
 }
@@ -233,6 +414,7 @@ class _LookupFormField extends StatelessWidget {
   final VoidCallback? onTap;
   final bool required;
   final bool loading;
+  final String? validationError;
 
   const _LookupFormField({
     required this.label,
@@ -242,6 +424,7 @@ class _LookupFormField extends StatelessWidget {
     required this.onTap,
     this.required = false,
     this.loading = false,
+    this.validationError,
   });
 
   @override
@@ -251,9 +434,9 @@ class _LookupFormField extends StatelessWidget {
         child: FormField<String>(
           key: ValueKey<String>('$label::$value::$loading'),
           initialValue: value,
-          validator: required && value.trim().isEmpty
-              ? (_) => 'هذا الحقل مطلوب'
-              : null,
+          validator: (_) =>
+              validationError ??
+              (required && value.trim().isEmpty ? 'هذا الحقل مطلوب' : null),
           builder: (field) => Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -358,6 +541,22 @@ Future<_PickerResult<T>?> _showSearchPicker<T>({
   T? currentValue,
   bool allowManual = false,
 }) {
+  if (MediaQuery.sizeOf(context).width >= 700) {
+    return showDialog<_PickerResult<T>>(
+        context: context,
+        builder: (context) => Dialog(
+              clipBehavior: Clip.antiAlias,
+              child: SizedBox(
+                  width: 560,
+                  height: MediaQuery.sizeOf(context).height * .8,
+                  child: _SearchPickerSheet<T>(
+                      title: title,
+                      searchHint: searchHint,
+                      options: options,
+                      currentValue: currentValue,
+                      allowManual: allowManual)),
+            ));
+  }
   return showModalBottomSheet<_PickerResult<T>>(
     context: context,
     useSafeArea: true,
@@ -416,6 +615,11 @@ class _SearchPickerSheetState<T> extends State<_SearchPickerSheet<T>> {
                   normalizeSaudiLocation(option.searchText).contains(query),
             )
             .toList(growable: false);
+    if (query.isNotEmpty) {
+      filtered.sort((a, b) =>
+          (normalizeSaudiLocation(b.title) == query ? 1 : 0) -
+          (normalizeSaudiLocation(a.title) == query ? 1 : 0));
+    }
     return Material(
       color: context.ejarzTheme.background,
       borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),

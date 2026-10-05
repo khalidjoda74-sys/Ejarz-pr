@@ -1,0 +1,17 @@
+{
+  "source": "https://github.com/yasseralsamman/saudi-municipal-coding",
+  "commit": "eb8a280f89fe2f7e529908796c062707ca36074a",
+  "license": "CC0-1.0",
+  "retrievedAt": "2026-10-04T12:37:18.512Z",
+  "counts": {
+    "regions": 13,
+    "cities": 15513,
+    "districts": 21235,
+    "citiesWithDistricts": 15513
+  },
+  "sha256": {
+    "regions": "8829811be35ce06f81269747f318d5dc47ba0164020061c716ce938bb9764983",
+    "cities": "e0170e50775f983d7ff2a34ba2a3d038f59da23275c190b098c08e57a6e23885",
+    "districts": "2cb5cd5d6de0edf829cddc0537bff0144bcbf53458681917d8b13339c0936cd3"
+  }
+}

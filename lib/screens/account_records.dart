@@ -504,10 +504,31 @@ class _ServicePaymentState extends State<ServicePaymentScreen> {
   final reference = TextEditingController();
   bool busy = false, submitted = false;
   String? neoleapPaymentId;
+  String? neoleapCheckoutUrl;
   @override
   void initState() {
     super.initState();
     AppTelemetry.record('checkout_start', 'contract_details');
+    _restorePaymentAttempt();
+  }
+
+  Future<void> _restorePaymentAttempt() async {
+    try {
+      final response = await FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('getContractPaymentAttempt')
+          .call({'contractId': widget.contract.id});
+      final data = Map<String, dynamic>.from(response.data as Map);
+      if (!mounted || data['paymentId'] is! String ||
+          !['pending', 'initializing', 'initUncertain'].contains(data['status'])) {
+        return;
+      }
+      setState(() {
+        neoleapPaymentId = data['paymentId'] as String;
+        neoleapCheckoutUrl = data['checkoutUrl'] as String?;
+      });
+    } catch (_) {
+      // The create call will still show the server's actionable error.
+    }
   }
 
   @override
@@ -543,20 +564,41 @@ class _ServicePaymentState extends State<ServicePaymentScreen> {
                     final data = Map<String, dynamic>.from(response.data as Map);
                     final paymentId = data['paymentId'] as String?;
                     final checkoutUrl = data['checkoutUrl'] as String?;
-                    if (paymentId == null || checkoutUrl == null ||
-                        !await launchUrl(Uri.parse(checkoutUrl), mode: LaunchMode.externalApplication)) {
+                    if (paymentId == null || checkoutUrl == null) {
+                      throw StateError('تعذر إنشاء صفحة الدفع.');
+                    }
+                    if (mounted) {
+                      setState(() {
+                        neoleapPaymentId = paymentId;
+                        neoleapCheckoutUrl = checkoutUrl;
+                      });
+                    }
+                    if (!await launchUrl(Uri.parse(checkoutUrl), mode: LaunchMode.externalApplication)) {
                       throw StateError('تعذر فتح صفحة الدفع.');
                     }
-                    if (mounted) setState(() => neoleapPaymentId = paymentId);
                   } else {
                     final response = await FirebaseFunctions.instanceFor(region: 'us-central1')
                         .httpsCallable('checkNeoleapPayment')
                         .call({'paymentId': neoleapPaymentId});
                     final data = Map<String, dynamic>.from(response.data as Map);
                     if (context.mounted) {
-                      showAppSnackBar(context, data['status'] == 'paid'
-                          ? 'تم تأكيد الدفع من البنك.'
-                          : 'لم يؤكد البنك اكتمال الدفع بعد. يمكنك التحقق لاحقًا.');
+                      if (data['status'] == 'paid') {
+                        final updated = await FirebaseRepository().fetchContract(widget.contract.id);
+                        if (!context.mounted) return;
+                        if (updated != null) {
+                          Navigator.of(context).pop(updated);
+                          return;
+                        }
+                        showAppSnackBar(context, 'تم تأكيد الدفع من البنك.');
+                      } else if (data['status'] == 'failed') {
+                        setState(() {
+                          neoleapPaymentId = null;
+                          neoleapCheckoutUrl = null;
+                        });
+                        showAppSnackBar(context, 'لم تكتمل العملية. يمكنك إعادة محاولة الدفع.');
+                      } else {
+                        showAppSnackBar(context, 'لم يؤكد البنك اكتمال الدفع بعد. يمكنك التحقق لاحقًا.');
+                      }
                     }
                   }
                 } catch (e) {
@@ -569,6 +611,15 @@ class _ServicePaymentState extends State<ServicePaymentScreen> {
                   if (mounted) setState(() => busy = false);
                 }
               }),
+          if (neoleapCheckoutUrl != null) ...[
+            const SizedBox(height: 8),
+            TextButton(
+                onPressed: () async {
+                  final url = neoleapCheckoutUrl;
+                  if (url != null) await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                },
+                child: const Text('إعادة فتح صفحة البنك')),
+          ],
           if (p['manualTransferEnabled'] == true) ...[
             const SizedBox(height: 18),
             const SectionTitle(title: 'تحويل بنكي'),

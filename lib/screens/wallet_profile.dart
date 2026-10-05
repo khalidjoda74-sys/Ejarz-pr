@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import '../widgets/load_more_records.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_controller.dart';
+import '../core/contract_calculation_engine.dart';
 import '../core/phone_session.dart';
 import 'phone_auth_screens.dart';
 import '../core/demo_config.dart';
@@ -12,6 +14,8 @@ import '../core/models.dart';
 import '../core/property_management.dart';
 import '../core/theme.dart';
 import '../widgets/common.dart';
+import '../widgets/unit_count_field.dart';
+import '../widgets/saudi_reference_fields.dart';
 import '../widgets/account_confirmation_dialog.dart';
 import '../widgets/workspace.dart';
 import 'about_aqdak.dart';
@@ -173,6 +177,8 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
   final _buildingNumberKey = GlobalKey();
   final _additionalNumberKey = GlobalKey();
   final _postalCodeKey = GlobalKey();
+  String _cityReferenceId = '';
+  String _districtReferenceId = '';
   final _cityKey = GlobalKey();
   final _districtKey = GlobalKey();
   final _floorsKey = GlobalKey();
@@ -187,7 +193,6 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
   final _hallsCountKey = GlobalKey();
   final _electricityMeterKey = GlobalKey();
   final _waterMeterKey = GlobalKey();
-  final _acKey = GlobalKey<FormFieldState<bool>>();
   late final TextEditingController _title;
   late final TextEditingController _city;
   late final TextEditingController _district;
@@ -220,9 +225,15 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
   bool _kitchen = true;
   bool _storage = false;
   bool _majlis = false;
+  String _kitchenCount = '0';
+  String _storageCount = '0';
+  String _majlisCount = '0';
   bool _acWindow = false;
   bool _acSplit = true;
   bool _acCentral = false;
+  String _acWindowCount = '0';
+  String _acSplitCount = '1';
+  String _acCentralCount = '0';
   bool _privateParking = false;
   bool _saving = false;
   String _rentalMode = 'whole';
@@ -250,8 +261,10 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
     _title = TextEditingController(
       text: _prefer(data?.buildingName, existing?.title ?? ''),
     );
+    _cityReferenceId = data?.cityReferenceId ?? '';
+    _districtReferenceId = data?.districtReferenceId ?? '';
     _city = TextEditingController(
-      text: _prefer(data?.city, existing?.city ?? 'الرياض'),
+      text: _prefer(data?.city, existing?.city ?? ''),
     );
     _district = TextEditingController(
       text: _prefer(data?.district, existing?.district ?? ''),
@@ -304,11 +317,23 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
     _kitchen = data?.kitchen ?? true;
     _storage = data?.storage ?? false;
     _majlis = data?.majlis ?? false;
+    _kitchenCount = data?.kitchenCount ?? '0';
+    _storageCount = data?.storageCount ?? '0';
+    _majlisCount = data?.majlisCount ?? '0';
     _acWindow = data?.acWindow ?? false;
     _acSplit = data?.acSplit ?? true;
     _acCentral = data?.acCentral ?? false;
+    _acWindowCount = data?.acWindowCount ?? (_acWindow ? '1' : '0');
+    _acSplitCount = data?.acSplitCount ?? (_acSplit ? '1' : '0');
+    _acCentralCount = data?.acCentralCount ?? (_acCentral ? '1' : '0');
     _privateParking = data?.privateParking ?? false;
     _rentalMode = existing?.managesUnits == true ? 'units' : 'whole';
+    if (widget.unit == null && widget.existing == null) {
+      _kitchenCount = _storageCount = _majlisCount = '0';
+      _acWindowCount = _acSplitCount = _acCentralCount = '0';
+      _kitchen = _storage = _majlis = false;
+      _acWindow = _acSplit = _acCentral = false;
+    }
     if (_editingUnit && widget.unit == null) {
       _unitNumber.text = _nextUnitNumber(1);
       _unitName.text = '$_unitType ${_unitNumber.text}';
@@ -529,13 +554,14 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                                   required: true,
                                   validator: _ownershipNumberValidator,
                                 ),
-                                AppTextField(
+                                DateField(
                                   key: _ownershipDateKey,
                                   label: 'تاريخ الوثيقة',
-                                  hint: 'YYYY/MM/DD',
-                                  controller: _ownershipDate,
-                                  keyboardType: TextInputType.datetime,
-                                  icon: Icons.date_range_outlined,
+                                  value: _ownershipDate.text,
+                                  firstDate: DateTime(1900),
+                                  lastDate: DateTime.now(),
+                                  onChanged: (value) => setState(
+                                      () => _ownershipDate.text = value),
                                   required: true,
                                   validator: _ownershipDateValidator,
                                 ),
@@ -601,32 +627,21 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                               ],
                             ),
                             const SizedBox(height: 10),
-                            Row(
-                              children: <Widget>[
-                                Expanded(
-                                  child: AppTextField(
-                                    key: _cityKey,
-                                    label: 'المدينة',
-                                    hint: 'الرياض',
-                                    controller: _city,
-                                    icon: Icons.location_city_outlined,
-                                    required: true,
-                                    validator: _requiredValidator,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: AppTextField(
-                                    key: _districtKey,
-                                    label: 'الحي',
-                                    hint: 'العليا',
-                                    controller: _district,
-                                    icon: Icons.location_on_outlined,
-                                    required: true,
-                                    validator: _requiredValidator,
-                                  ),
-                                ),
-                              ],
+                            SaudiLocationFields(
+                              key: _cityKey,
+                              showRegionSelector: true,
+                              city: _city.text,
+                              district: _district.text,
+                              cityReferenceId: _cityReferenceId,
+                              districtReferenceId: _districtReferenceId,
+                              onCityChanged: (value) =>
+                                  setState(() => _city.text = value),
+                              onDistrictChanged: (value) =>
+                                  setState(() => _district.text = value),
+                              onReferencesChanged: (cityId, districtId) {
+                                _cityReferenceId = cityId;
+                                _districtReferenceId = districtId;
+                              },
                             ),
                             const SizedBox(height: 10),
                             Row(
@@ -773,8 +788,11 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                                   AppTextField(
                                     key: _floorKey,
                                     label: 'رقم الدور',
-                                    hint: '1',
+                                    hint: _editingUnit
+                                        ? _unitFloorHint
+                                        : 'مثال: 1، أو 0 للأرضي',
                                     controller: _floor,
+                                    keyboardType: TextInputType.number,
                                     icon: Icons.layers_outlined,
                                     required: true,
                                     validator: _editingUnit
@@ -854,42 +872,6 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                                     max: 50,
                                   ),
                                 ),
-                                if (!_multiple)
-                                  AppTextField(
-                                    key: _electricityMeterKey,
-                                    label: 'رقم عداد الكهرباء',
-                                    hint: 'أدخل رقم العداد',
-                                    controller: _electricityMeter,
-                                    keyboardType: TextInputType.number,
-                                    icon: Icons.bolt_outlined,
-                                    required: !_editingUnit,
-                                    validator: (value) => _editingUnit &&
-                                            (value?.trim().isEmpty ?? true)
-                                        ? null
-                                        : _integerValidator(value, min: 1),
-                                  ),
-                                if (!_multiple)
-                                  AppTextField(
-                                    key: _waterMeterKey,
-                                    label: 'رقم عداد المياه',
-                                    hint: 'أدخل رقم العداد',
-                                    controller: _waterMeter,
-                                    keyboardType: TextInputType.number,
-                                    icon: Icons.water_drop_outlined,
-                                    required: !_editingUnit,
-                                    validator: (value) => _editingUnit &&
-                                            (value?.trim().isEmpty ?? true)
-                                        ? null
-                                        : _integerValidator(value, min: 1),
-                                  ),
-                                if (!_multiple)
-                                  AppTextField(
-                                    label: 'رقم عداد الغاز',
-                                    hint: 'إن وجد',
-                                    controller: _gasMeter,
-                                    keyboardType: TextInputType.number,
-                                    icon: Icons.local_fire_department_outlined,
-                                  ),
                               ],
                             ),
                             const SizedBox(height: 14),
@@ -908,18 +890,6 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                                     (value) =>
                                         setState(() => _maidRoom = value)),
                                 _featureChip(
-                                    'مطبخ',
-                                    _kitchen,
-                                    (value) =>
-                                        setState(() => _kitchen = value)),
-                                _featureChip(
-                                    'مخزن',
-                                    _storage,
-                                    (value) =>
-                                        setState(() => _storage = value)),
-                                _featureChip('مجلس', _majlis,
-                                    (value) => setState(() => _majlis = value)),
-                                _featureChip(
                                     'موقف خاص',
                                     _privateParking,
                                     (value) => setState(
@@ -927,51 +897,123 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                               ],
                             ),
                             const SizedBox(height: 14),
-                            const SectionTitle(
-                              title: 'التكييف',
-                              icon: Icons.ac_unit_rounded,
-                            ),
-                            const SizedBox(height: 8),
-                            FormField<bool>(
-                              key: _acKey,
-                              initialValue: _hasAirConditioning,
-                              builder: (field) => Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: <Widget>[
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: <Widget>[
-                                      _featureChip('شباك', _acWindow, (value) {
-                                        setState(() => _acWindow = value);
-                                        field.didChange(_hasAirConditioning);
-                                      }),
-                                      _featureChip('سبليت', _acSplit, (value) {
-                                        setState(() => _acSplit = value);
-                                        field.didChange(_hasAirConditioning);
-                                      }),
-                                      _featureChip('مركزي', _acCentral,
-                                          (value) {
-                                        setState(() => _acCentral = value);
-                                        field.didChange(_hasAirConditioning);
-                                      }),
-                                    ],
-                                  ),
-                                  if (field.hasError) ...<Widget>[
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      field.errorText!,
-                                      style: TextStyle(
-                                        color:
-                                            Theme.of(context).colorScheme.error,
-                                        fontSize: context.sp(11.5),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
+                            FieldGrid(children: [
+                              UnitCountField(
+                                  label: 'المطبخ',
+                                  value: _kitchenCount,
+                                  icon: Icons.countertops_outlined,
+                                  onChanged: (value) => setState(() {
+                                        _kitchenCount = value;
+                                        _kitchen =
+                                            (int.tryParse(value) ?? 0) > 0;
+                                      })),
+                              UnitCountField(
+                                  label: 'المجلس',
+                                  value: _majlisCount,
+                                  icon: Icons.weekend_outlined,
+                                  onChanged: (value) => setState(() {
+                                        _majlisCount = value;
+                                        _majlis =
+                                            (int.tryParse(value) ?? 0) > 0;
+                                      })),
+                              UnitCountField(
+                                  label: 'المخزن',
+                                  value: _storageCount,
+                                  icon: Icons.inventory_2_outlined,
+                                  onChanged: (value) => setState(() {
+                                        _storageCount = value;
+                                        _storage =
+                                            (int.tryParse(value) ?? 0) > 0;
+                                      })),
+                            ]),
                             const SizedBox(height: 14),
+                            const SectionTitle(
+                                title: 'المكيفات', icon: Icons.ac_unit_rounded),
+                            const SizedBox(height: 8),
+                            FieldGrid(children: [
+                              UnitCountField(
+                                  label: 'مكيفات الشباك',
+                                  value: _acWindowCount,
+                                  icon: Icons.window_outlined,
+                                  onChanged: (value) => setState(() {
+                                        _acWindowCount = value;
+                                        _acWindow =
+                                            (int.tryParse(value) ?? 0) > 0;
+                                      })),
+                              UnitCountField(
+                                  label: 'مكيفات السبليت',
+                                  value: _acSplitCount,
+                                  icon: Icons.ac_unit_outlined,
+                                  onChanged: (value) => setState(() {
+                                        _acSplitCount = value;
+                                        _acSplit =
+                                            (int.tryParse(value) ?? 0) > 0;
+                                      })),
+                              UnitCountField(
+                                  label: 'التكييف المركزي',
+                                  value: _acCentralCount,
+                                  icon: Icons.air_outlined,
+                                  onChanged: (value) => setState(() {
+                                        _acCentralCount = value;
+                                        _acCentral =
+                                            (int.tryParse(value) ?? 0) > 0;
+                                      })),
+                            ]),
+                            const SizedBox(height: 14),
+                            if (!_multiple) ...[
+                              const SectionTitle(
+                                  title: 'عدادات الخدمات',
+                                  icon: Icons.speed_outlined),
+                              const SizedBox(height: 8),
+                              FieldGrid(children: [
+                                if (!_multiple)
+                                  AppTextField(
+                                    key: _electricityMeterKey,
+                                    label: 'رقم عداد الكهرباء',
+                                    hint: 'اختياري، إن وجد',
+                                    controller: _electricityMeter,
+                                    keyboardType: TextInputType.number,
+                                    icon: Icons.bolt_outlined,
+                                    required: false,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                      LengthLimitingTextInputFormatter(20)
+                                    ],
+                                    validator: validateUnitMeterNumber,
+                                  ),
+                                if (!_multiple)
+                                  AppTextField(
+                                    key: _waterMeterKey,
+                                    label: 'رقم عداد المياه',
+                                    hint: 'إن وجد',
+                                    controller: _waterMeter,
+                                    keyboardType: TextInputType.number,
+                                    icon: Icons.water_drop_outlined,
+                                    required: false,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                      LengthLimitingTextInputFormatter(20)
+                                    ],
+                                    validator: (value) =>
+                                        validateUnitMeterNumber(value,
+                                            required: false),
+                                  ),
+                                if (!_multiple)
+                                  AppTextField(
+                                    label: 'رقم عداد الغاز',
+                                    hint: 'إن وجد',
+                                    controller: _gasMeter,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                      LengthLimitingTextInputFormatter(20)
+                                    ],
+                                    validator: validateUnitMeterNumber,
+                                    keyboardType: TextInputType.number,
+                                    icon: Icons.local_fire_department_outlined,
+                                  ),
+                              ]),
+                              const SizedBox(height: 14),
+                            ],
                             AppTextField(
                               label: 'ملاحظات على الوحدة',
                               hint: 'أي تفاصيل إضافية مهمة',
@@ -1105,6 +1147,10 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
     });
   }
 
+  String get _unitFloorHint => widget.parent!.floors == 1
+      ? '0 للأرضي (العمارة من دور واحد)'
+      : 'من 0 للأرضي إلى ${widget.parent!.floors - 1}';
+
   Widget _identityCard(_UnitIdentity identity, int index) => Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: AppCard(
@@ -1131,7 +1177,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                     icon: Icons.home_outlined),
                 AppTextField(
                     label: 'رقم الدور',
-                    hint: '0 للأرضي',
+                    hint: _unitFloorHint,
                     controller: identity.floor,
                     required: true,
                     keyboardType: TextInputType.number,
@@ -1142,18 +1188,33 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                     label: 'عداد الكهرباء (اختياري)',
                     hint: 'إن وجد',
                     controller: identity.electricity,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(20)
+                    ],
+                    validator: validateUnitMeterNumber,
                     keyboardType: TextInputType.number,
                     icon: Icons.bolt_outlined),
                 AppTextField(
                     label: 'عداد المياه (اختياري)',
                     hint: 'إن وجد',
                     controller: identity.water,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(20)
+                    ],
+                    validator: validateUnitMeterNumber,
                     keyboardType: TextInputType.number,
                     icon: Icons.water_drop_outlined),
                 AppTextField(
                     label: 'عداد الغاز (اختياري)',
                     hint: 'إن وجد',
                     controller: identity.gas,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(20)
+                    ],
+                    validator: validateUnitMeterNumber,
                     keyboardType: TextInputType.number,
                     icon: Icons.local_fire_department_outlined),
               ]),
@@ -1161,6 +1222,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       );
 
   Future<void> _save() async {
+    if (_saving) return;
     final valid = _formKey.currentState?.validate() ?? false;
     if (!valid) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1179,6 +1241,8 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       ..ownershipDocumentNumber = _ownershipNumber.text.trim()
       ..ownershipDocumentDate = _ownershipDate.text.trim()
       ..buildingName = _title.text.trim()
+      ..cityReferenceId = _cityReferenceId
+      ..districtReferenceId = _districtReferenceId
       ..city = _city.text.trim()
       ..district = _district.text.trim()
       ..street = _street.text.trim()
@@ -1194,7 +1258,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       ..unitNumber = _unitNumber.text.trim()
       ..unitName = _unitName.text.trim()
       ..unitType = _unitType
-      ..floor = _floor.text.trim()
+      ..floor = ContractCalculationEngine.normalizeDigits(_floor.text.trim())
       ..area = _unitArea.text.trim()
       ..roomsCount = _roomsCount.text.trim()
       ..bathroomsCount = _bathroomsCount.text.trim()
@@ -1204,10 +1268,16 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       ..kitchen = _kitchen
       ..storage = _storage
       ..majlis = _majlis
+      ..kitchenCount = _kitchenCount
+      ..storageCount = _storageCount
+      ..majlisCount = _majlisCount
       ..privateParking = _privateParking
       ..acWindow = _acWindow
       ..acSplit = _acSplit
       ..acCentral = _acCentral
+      ..acWindowCount = _acWindowCount
+      ..acSplitCount = _acSplitCount
+      ..acCentralCount = _acCentralCount
       ..electricityMeter = _electricityMeter.text.trim()
       ..waterMeter = _waterMeter.text.trim()
       ..gasMeter = _gasMeter.text.trim()
@@ -1236,7 +1306,8 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                 final unit = PropertyData.copyOf(data)
                   ..unitNumber = identity.number.text.trim()
                   ..unitName = identity.name.text.trim()
-                  ..floor = identity.floor.text.trim()
+                  ..floor = ContractCalculationEngine.normalizeDigits(
+                      identity.floor.text.trim())
                   ..electricityMeter = identity.electricity.text.trim()
                   ..waterMeter = identity.water.text.trim()
                   ..gasMeter = identity.gas.text.trim();
@@ -1272,14 +1343,14 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
             context,
             error is StateError
                 ? error.message.toString()
-                : 'تعذر حفظ العقار الآن');
+                : error is FirebaseFunctionsException
+                    ? error.message ?? 'تعذر حفظ العقار الآن. حاول مرة أخرى.'
+                    : 'تعذر حفظ العقار الآن');
       }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
-
-  bool get _hasAirConditioning => _acWindow || _acSplit || _acCentral;
 
   String? _requiredValidator(String? value) {
     return (value?.trim().isEmpty ?? true) ? 'هذا الحقل مطلوب' : null;
@@ -1296,7 +1367,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
     final text = value?.trim() ?? '';
     if (text.isEmpty) return 'هذا الحقل مطلوب';
     final date = _parsePropertyDate(text);
-    if (date == null) return 'أدخل التاريخ بالصيغة YYYY/MM/DD';
+    if (date == null || date.year < 1900) return 'اختر تاريخ وثيقة صحيحًا';
     if (date.isAfter(DateTime.now())) {
       return 'لا يمكن أن يكون التاريخ مستقبليًا';
     }
@@ -1345,7 +1416,6 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
   }
 
   GlobalKey? _firstInvalidFieldKey() {
-    final ownershipDate = _parsePropertyDate(_ownershipDate.text);
     final fields = <MapEntry<GlobalKey, bool>>[
       MapEntry(
         _ownershipNumberKey,
@@ -1353,9 +1423,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       ),
       MapEntry(
         _ownershipDateKey,
-        _ownershipDate.text.trim().isEmpty ||
-            ownershipDate == null ||
-            ownershipDate.isAfter(DateTime.now()),
+        _ownershipDateValidator(_ownershipDate.text) != null,
       ),
       MapEntry(_streetKey, _street.text.trim().isEmpty),
       MapEntry(
@@ -1365,7 +1433,8 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
         _fixedDigits(_additionalNumber.text, 4) == null,
       ),
       MapEntry(_postalCodeKey, _fixedDigits(_postalCode.text, 5) == null),
-      MapEntry(_cityKey, _city.text.trim().isEmpty),
+      MapEntry(
+          _cityKey, _city.text.trim().isEmpty || _district.text.trim().isEmpty),
       MapEntry(_districtKey, _district.text.trim().isEmpty),
       MapEntry(
           _floorsKey, _positiveInt(_floors.text, min: 1, max: 200) == null),
@@ -1380,7 +1449,14 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       ),
       MapEntry(_unitNumberKey, _unitNumber.text.trim().isEmpty),
       MapEntry(_unitNameKey, _unitName.text.trim().isEmpty),
-      MapEntry(_floorKey, _floor.text.trim().isEmpty),
+      MapEntry(
+        _floorKey,
+        _editingUnit
+            ? _positiveInt(_floor.text,
+                    min: 0, max: widget.parent!.floors - 1) ==
+                null
+            : _floor.text.trim().isEmpty,
+      ),
       MapEntry(_unitAreaKey, _positiveNumber(_unitArea.text) == null),
       MapEntry(
         _roomsCountKey,
@@ -1396,13 +1472,12 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       ),
       MapEntry(
         _electricityMeterKey,
-        _positiveInt(_electricityMeter.text, min: 1) == null,
+        validateUnitMeterNumber(_electricityMeter.text) != null,
       ),
       MapEntry(
         _waterMeterKey,
-        _positiveInt(_waterMeter.text, min: 1) == null,
+        validateUnitMeterNumber(_waterMeter.text) != null,
       ),
-      MapEntry(_acKey, !_hasAirConditioning),
     ];
     for (final field in fields) {
       if (field.value && field.key.currentContext != null) return field.key;
@@ -1411,7 +1486,8 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
   }
 
   int? _positiveInt(String value, {required int min, int? max}) {
-    final parsed = int.tryParse(value.trim());
+    final parsed =
+        int.tryParse(ContractCalculationEngine.normalizeDigits(value.trim()));
     if (parsed == null || parsed < min || (max != null && parsed > max)) {
       return null;
     }
@@ -1425,7 +1501,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
 
   double? _positiveNumber(String value) {
     final parsed = double.tryParse(value.trim().replaceAll(',', ''));
-    return parsed != null && parsed > 0 ? parsed : null;
+    return parsed != null && parsed.isFinite && parsed > 0 ? parsed : null;
   }
 
   DateTime? _parsePropertyDate(String value) {
@@ -1772,7 +1848,7 @@ class _PropertyDetailsScreen extends StatelessWidget {
                 _propertyDetailsCard(<Widget>[
                   _PropertyDetailLine(
                     label: 'المطبخ',
-                    value: details == null ? '-' : _yesNo(details.kitchen),
+                    value: details == null ? '-' : details.kitchenCount,
                   ),
                   _PropertyDetailLine(
                     label: 'غرفة خادمة',
@@ -1780,11 +1856,11 @@ class _PropertyDetailsScreen extends StatelessWidget {
                   ),
                   _PropertyDetailLine(
                     label: 'مخزن',
-                    value: details == null ? '-' : _yesNo(details.storage),
+                    value: details == null ? '-' : details.storageCount,
                   ),
                   _PropertyDetailLine(
                     label: 'مجلس',
-                    value: details == null ? '-' : _yesNo(details.majlis),
+                    value: details == null ? '-' : details.majlisCount,
                   ),
                   _PropertyDetailLine(
                     label: 'موقف خاص',
@@ -1793,15 +1869,15 @@ class _PropertyDetailsScreen extends StatelessWidget {
                   ),
                   _PropertyDetailLine(
                     label: 'تكييف شباك',
-                    value: details == null ? '-' : _yesNo(details.acWindow),
+                    value: details == null ? '-' : details.acWindowCount,
                   ),
                   _PropertyDetailLine(
                     label: 'تكييف سبليت',
-                    value: details == null ? '-' : _yesNo(details.acSplit),
+                    value: details == null ? '-' : details.acSplitCount,
                   ),
                   _PropertyDetailLine(
                     label: 'تكييف مركزي',
-                    value: details == null ? '-' : _yesNo(details.acCentral),
+                    value: details == null ? '-' : details.acCentralCount,
                   ),
                   _PropertyDetailLine(
                     label: 'عداد الكهرباء',
@@ -1878,14 +1954,8 @@ class _UnitDetailsScreen extends StatelessWidget {
         orElse: () => initialUnit);
     final data = unit.detailsFor(property);
     final features = <String, bool>{
-      'مطبخ': data.kitchen,
-      'مجلس': data.majlis,
       'غرفة خادمة': data.maidRoom,
-      'مخزن': data.storage,
       'موقف خاص': data.privateParking,
-      'تكييف شباك': data.acWindow,
-      'تكييف سبليت': data.acSplit,
-      'تكييف مركزي': data.acCentral,
     };
     final values = <String, String>{
       'العمارة': property.title,
@@ -1899,6 +1969,12 @@ class _UnitDetailsScreen extends StatelessWidget {
       'الصالات': data.hallsCount,
       'دورات المياه': data.bathroomsCount,
       'التأثيث': data.furnishingStatus,
+      'عدد المطابخ': data.kitchenCount,
+      'عدد المجالس': data.majlisCount,
+      'عدد المخازن': data.storageCount,
+      'مكيفات الشباك': data.acWindowCount,
+      'مكيفات السبليت': data.acSplitCount,
+      'التكييف المركزي': data.acCentralCount,
       for (final feature in features.entries)
         feature.key: feature.value ? 'نعم' : 'لا',
       'عداد الكهرباء': data.electricityMeter,
@@ -2572,12 +2648,35 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 }
 
-class NotificationsScreen extends StatelessWidget {
-  const NotificationsScreen({super.key});
+class NotificationsScreen extends StatefulWidget {
+  final String initialNotificationId;
+
+  const NotificationsScreen({super.key, this.initialNotificationId = ''});
+
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  bool _openedInitial = false;
 
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
+    if (!_openedInitial && widget.initialNotificationId.isNotEmpty) {
+      for (final item in controller.notifications) {
+        if (item.id != widget.initialNotificationId) continue;
+        _openedInitial = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).push(MaterialPageRoute<void>(
+            settings: const RouteSettings(name: 'notification_details'),
+            builder: (_) => NotificationDetailsScreen(item: item),
+          ));
+        });
+        break;
+      }
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('الإشعارات'),
@@ -2655,12 +2754,21 @@ class _NotificationTile extends StatelessWidget {
         }
         if (item.actionType != 'contractDetails' ||
             item.contractId.trim().isEmpty) {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              settings: const RouteSettings(name: 'notification_details'),
+              builder: (_) => NotificationDetailsScreen(item: item),
+            ),
+          );
           return;
         }
         final contract = await controller.contractById(item.contractId);
         if (!context.mounted) return;
         if (contract == null) {
-          showAppSnackBar(context, 'تعذر فتح تفاصيل العقد الآن');
+          Navigator.of(context).push(MaterialPageRoute<void>(
+            settings: const RouteSettings(name: 'notification_details'),
+            builder: (_) => NotificationDetailsScreen(item: item),
+          ));
           return;
         }
         Navigator.of(context).push(
@@ -2699,6 +2807,8 @@ class _NotificationTile extends StatelessWidget {
                     Expanded(
                       child: Text(
                         item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w900),
                       ),
                     ),
@@ -2716,6 +2826,8 @@ class _NotificationTile extends StatelessWidget {
                 const SizedBox(height: 5),
                 Text(
                   item.body,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: context.ejarzTheme.muted,
                     fontSize: context.sp(12),
@@ -2734,6 +2846,39 @@ class _NotificationTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class NotificationDetailsScreen extends StatelessWidget {
+  final NotificationItem item;
+
+  const NotificationDetailsScreen({super.key, required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('تفاصيل الإشعار')),
+      bottomNavigationBar: _accountBottomNavigation(context),
+      body: SafeArea(
+        child: ResponsiveContent(
+          maxWidth: 700,
+          child: AppCard(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(item.title, style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 8),
+                Text(item.time,
+                    style: TextStyle(color: context.ejarzTheme.muted)),
+                const SizedBox(height: 20),
+                SelectableText(item.body),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

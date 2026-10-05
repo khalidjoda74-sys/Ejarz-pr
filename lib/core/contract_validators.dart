@@ -16,7 +16,7 @@ String? validateContractIdentityNumber(String? value, String idType) {
     if (digits.length >= 8 && digits.length <= 15) return null;
     return 'أدخل رقم هوية خليجية صحيحًا';
   }
-  if (cleaned.length >= 6 && cleaned.length <= 15) return null;
+  if (RegExp(r'^[A-Za-z0-9]{6,15}$').hasMatch(cleaned)) return null;
   return 'أدخل رقم جواز صحيحًا من 6 إلى 15 خانة';
 }
 

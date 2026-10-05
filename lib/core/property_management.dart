@@ -1,4 +1,14 @@
 import 'models.dart';
+import 'contract_calculation_engine.dart';
+
+String? validateUnitMeterNumber(String? value, {bool required = false}) {
+  final number = value?.trim() ?? '';
+  if (number.isEmpty) return required ? 'أدخل رقم العداد' : null;
+  return RegExp(r'^\d{1,20}$').hasMatch(number) &&
+          number.replaceAll('0', '').isNotEmpty
+      ? null
+      : 'أدخل رقم عداد صحيحًا حتى 20 رقمًا';
+}
 
 String normalizedUnitNumber(String value) {
   const arabic = '٠١٢٣٤٥٦٧٨٩';
@@ -59,10 +69,13 @@ PropertyRecord managedPropertyRecord(
     throw StateError(
         'لا يمكن تقليل السعة عن عدد الوحدات المسجلة (${units.length}).');
   }
-  final floors = int.tryParse(data.floorsCount) ?? 1;
+  final floors = int.tryParse(
+          ContractCalculationEngine.normalizeDigits(data.floorsCount.trim())) ??
+      1;
   if (data.rentalMode == 'units' &&
       units.any((unit) {
-        final floor = int.tryParse(unit.floor);
+        final floor = int.tryParse(
+            ContractCalculationEngine.normalizeDigits(unit.floor.trim()));
         return floor != null && (floor < 0 || floor >= floors);
       })) {
     throw StateError('رقم دور إحدى الوحدات خارج أدوار العمارة. الأرضي رقمه 0.');

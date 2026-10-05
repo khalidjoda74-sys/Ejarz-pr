@@ -251,8 +251,6 @@ class AuthReferencePanel extends StatelessWidget {
                                     AuthSupportLink(onPressed: onSupport),
                                   ],
                                   const SizedBox(height: 16),
-                                  _AuthTrustRow(green: green, muted: muted),
-                                  const SizedBox(height: 16),
                                   Row(
                                       mainAxisAlignment:
                                           MainAxisAlignment.center,
@@ -356,49 +354,4 @@ class AuthReferenceButton extends StatelessWidget {
                     ],
                   ]),
       ));
-}
-
-class _AuthTrustRow extends StatelessWidget {
-  final Color green, muted;
-  const _AuthTrustRow({required this.green, required this.muted});
-  @override
-  Widget build(BuildContext context) => IntrinsicHeight(
-          child: Row(children: [
-        _item(Icons.description_outlined, 'مصمم لك', 'لإدارة عقودك بكل سهولة'),
-        VerticalDivider(
-            width: 12,
-            indent: 18,
-            endIndent: 4,
-            color: green.withValues(alpha: .13)),
-        _item(Icons.bolt_outlined, 'سريع وسهل', 'دخول في ثوانٍ'),
-        VerticalDivider(
-            width: 12,
-            indent: 18,
-            endIndent: 4,
-            color: green.withValues(alpha: .13)),
-        _item(Icons.shield_outlined, 'آمن وموثوق', 'بياناتك في أمان'),
-      ]));
-  Widget _item(IconData icon, String title, String detail) => Expanded(
-          child: Column(children: [
-        Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-                color: green.withValues(alpha: .09), shape: BoxShape.circle),
-            child: Icon(icon, color: green, size: 21)),
-        const SizedBox(height: 4),
-        Text(title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                color: muted,
-                fontFamily: 'Dubai',
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                height: 1.4)),
-        const SizedBox(height: 2),
-        Text(detail,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                color: muted, fontFamily: 'Dubai', fontSize: 11, height: 1.4)),
-      ]));
 }

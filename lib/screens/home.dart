@@ -4,6 +4,7 @@ import '../core/app_controller.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
 import '../core/runtime_config.dart';
+import '../core/renewal_request.dart';
 import '../widgets/service_unavailable.dart';
 import '../widgets/load_more_records.dart';
 import '../widgets/common.dart';
@@ -11,6 +12,7 @@ import '../widgets/illustrations.dart';
 import '../widgets/workspace.dart';
 import 'contracts.dart';
 import 'create_contract.dart';
+import 'external_renewal.dart';
 
 class HomeScreen extends StatelessWidget {
   final VoidCallback onNotifications;
@@ -253,25 +255,45 @@ class RenewContractSelectionScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               const AppPageHeader(
-                title: 'اختر العقد المراد تجديده',
+                title: 'جدّد عقدك بكل سهولة',
                 subtitle:
-                    'سننسخ بيانات العقد ونوعه إلى طلب جديد لتراجعها قبل الإرسال.',
+                    'اختر عقدًا سابقًا من عقودك، أو أرسل عقد منصة إيجار الموجود لديك.',
                 icon: Icons.refresh_rounded,
               ),
               const SizedBox(height: 14),
+              AppCard(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Icon(Icons.upload_file_rounded,
+                            size: 36, color: AppColors.primary),
+                        const SizedBox(height: 12),
+                        Text('لديك عقد سابق خارج عقدك؟',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.titleLarge),
+                        const SizedBox(height: 8),
+                        const Text(
+                            'أرفق عقد إيجار PDF وأدخل بيانات المستأجر لإرسال طلب التجديد.',
+                            textAlign: TextAlign.center),
+                        const SizedBox(height: 16),
+                        PrimaryButton(
+                            label: 'إضافة تجديد عقد سابق',
+                            onPressed: () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                    builder: (_) =>
+                                        const ExternalRenewalScreen()))),
+                      ])),
+              const SizedBox(height: 24),
+              Text('عقودك السابقة',
+                  style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 12),
               if (renewableContracts.isEmpty)
-                EmptyState(
+                const EmptyState(
                   icon: Icons.event_busy_outlined,
-                  title: 'لا توجد عقود متاحة للتجديد',
+                  title: 'لا توجد عقود مكتملة هنا بعد',
                   subtitle:
-                      'يظهر هنا العقد المكتمل بعد صدوره. يمكنك إنشاء عقد جديد الآن.',
-                  actionLabel: 'إنشاء عقد جديد',
-                  onAction: () => Navigator.of(context).pushReplacement(
-                    MaterialPageRoute<void>(
-                      settings: const RouteSettings(name: 'create_contract'),
-                      builder: (_) => const CreateContractScreen(),
-                    ),
-                  ),
+                      'ستظهر عقودك المكتملة لتختار منها. ويمكنك تجديد عقد خارجي باستخدام الخيار أعلاه.',
                 )
               else ...<Widget>[
                 const InfoBanner(
@@ -300,6 +322,22 @@ class RenewContractSelectionScreen extends StatelessWidget {
   }
 
   void _renew(BuildContext context, ContractRecord contract) {
+    if (contract.isExternalRenewal) {
+      Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => ExternalRenewalScreen(
+                initialRequest: RenewalRequest(
+                  idNumber: contract.renewalRequest['idNumber'] ?? '',
+                  birthDate: contract.renewalRequest['birthDate'] ?? '',
+                  mobile: contract.renewalRequest['mobile'] ?? '',
+                  fileName: contract.finalPdfFileName.isNotEmpty
+                      ? contract.finalPdfFileName
+                      : 'عقد إيجار.pdf',
+                  fileUrl: contract.finalPdfUrl,
+                  sourceContractId: contract.id,
+                ),
+              )));
+      return;
+    }
     final draft = _renewalDraft(contract);
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(

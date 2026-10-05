@@ -6,6 +6,8 @@ import 'package:aqdak/screens/create_contract.dart';
 import 'package:aqdak/screens/pricing.dart';
 import 'package:aqdak/screens/wallet_profile.dart';
 import 'package:aqdak/widgets/common.dart';
+import 'package:aqdak/widgets/unit_count_field.dart';
+import 'package:aqdak/widgets/saudi_reference_fields.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,6 +23,8 @@ Future<void> mount(WidgetTester tester, AppController controller, Widget home,
   await tester.pumpWidget(AppScope(
       controller: controller,
       child: MaterialApp(
+        builder: (context, child) => RepaintBoundary(
+            key: const ValueKey('unit-counts-qa-screen'), child: child!),
         locale: const Locale('ar'),
         supportedLocales: const [Locale('ar'), Locale('en')],
         localizationsDelegates: const [
@@ -39,6 +43,43 @@ Finder field(String label) => find.descendant(
     matching: find.byType(TextFormField));
 
 Future<void> fill(WidgetTester tester, String label, String value) async {
+  if (label == 'تاريخ الوثيقة') {
+    await tester.ensureVisible(field(label));
+    expect(
+        tester
+            .widget<EditableText>(find.descendant(
+                of: field(label), matching: find.byType(EditableText)))
+            .readOnly,
+        isTrue);
+    await tester.tap(field(label));
+    await tester.pumpAndSettle();
+    final picker =
+        tester.widget<DatePickerDialog>(find.byType(DatePickerDialog));
+    final expected =
+        '${picker.initialDate!.year}/${picker.initialDate!.month.toString().padLeft(2, '0')}/${picker.initialDate!.day.toString().padLeft(2, '0')}';
+    await tester.tap(find.text('حسنًا'));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<EditableText>(find.descendant(
+                of: field(label), matching: find.byType(EditableText)))
+            .controller
+            .text,
+        expected);
+    return;
+  }
+  if (label == 'الحي' || label == 'المنطقة' || label == 'المدينة') {
+    final location = find.byType(SaudiLocationFields);
+    await tester.ensureVisible(location);
+    await tester
+        .tap(find.descendant(of: location, matching: find.text('اختر $label')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, value);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ListTile, value).first);
+    await tester.pumpAndSettle();
+    return;
+  }
   await tester.ensureVisible(field(label).first);
   await tester.enterText(field(label).first, value);
   await tester.pumpAndSettle();
@@ -79,6 +120,8 @@ void main() {
       await fill(tester, 'رقم المبنى', '1234');
       await fill(tester, 'الرقم الإضافي', '5678');
       await fill(tester, 'الرمز البريدي', '12345');
+      await fill(tester, 'المنطقة', 'منطقة الرياض');
+      await fill(tester, 'المدينة', 'الرياض');
       await fill(tester, 'الحي', 'النرجس');
       await fill(tester, 'عدد الأدوار', '3');
       await fill(tester, 'إجمالي الوحدات', '10');
@@ -87,14 +130,42 @@ void main() {
       await tester.tap(find.text('حفظ العقار'));
       await tester.pumpAndSettle();
       expect(controller.properties.single.units, isEmpty);
+      expect(
+          controller.properties.single.data!.ownershipDocumentDate, isNotEmpty);
+      expect(controller.properties.single.data!.cityReferenceId, isNotEmpty);
+      expect(
+          controller.properties.single.data!.districtReferenceId, isNotEmpty);
       expect(find.text('إضافة وحدات للعمارة'), findsOneWidget);
       await tester.tap(find.text('إضافة وحدات للعمارة'));
       await tester.pumpAndSettle();
       await fill(tester, 'عدد الوحدات المراد إضافتها', '5');
+      for (var i = 0; i < 5; i++) {
+        final input = field('رقم الدور').at(i);
+        await tester.ensureVisible(input);
+        await tester.enterText(input, ['٠', '١', '۲', '1', '٢'][i]);
+        await tester.pumpAndSettle();
+      }
       await fill(tester, 'مساحة الوحدة (م²)', '135.5');
       await fill(tester, 'عدد الغرف', '4');
       await fill(tester, 'الصالات', '2');
       await fill(tester, 'دورات المياه', '3');
+      for (final entry in {
+        'المطبخ': '2',
+        'المجلس': '3',
+        'المخزن': '1',
+        'مكيفات السبليت': '4'
+      }.entries) {
+        final counter = find.descendant(
+            of: find.byWidgetPredicate((widget) =>
+                widget is UnitCountField && widget.label == entry.key),
+            matching: find.byType(TextFormField));
+        await tester.ensureVisible(counter);
+        await tester.enterText(counter, entry.value);
+        await tester.pumpAndSettle();
+      }
+      tester.testTextInput.hide();
+      await tester.ensureVisible(find.text('المطبخ'));
+      await tester.pumpAndSettle();
       tester.testTextInput.hide();
       await tester.pumpAndSettle();
       expect(find.byType(SingleChildScrollView), findsOneWidget);
@@ -106,7 +177,16 @@ void main() {
       await tester.pumpAndSettle();
       final saved = controller.properties.single;
       expect(saved.units.length, 5);
+      expect(
+          saved.units.map((u) => u.floor).toList(), ['0', '1', '2', '1', '2']);
       expect(saved.units.map((u) => u.number).toSet().length, 5);
+      expect(
+          saved.units.every((unit) =>
+              unit.data!.kitchenCount == '2' &&
+              unit.data!.majlisCount == '3' &&
+              unit.data!.storageCount == '1' &&
+              unit.data!.acSplitCount == '4'),
+          isTrue);
       expect(
           saved.units.every((u) =>
               u.data!.roomsCount == '4' &&
@@ -144,13 +224,37 @@ void main() {
     await tester.tap(find.text('تعديل العقار'));
     await tester.pumpAndSettle();
     expect(find.text('عمارة كاملة'), findsOneWidget);
+    expect(find.text('منطقة الرياض'), findsOneWidget);
+    expect(
+        tester
+            .widget<EditableText>(find.descendant(
+                of: field('تاريخ الوثيقة'),
+                matching: find.byType(EditableText)))
+            .controller
+            .text,
+        data.ownershipDocumentDate);
     await fill(tester, 'عدد الغرف', '8');
+    await fill(tester, 'رقم الدور', '١٢');
     tester.testTextInput.hide();
     await tester.pumpAndSettle();
     await tester.tap(find.text('حفظ العقار'));
     await tester.pumpAndSettle();
     expect(controller.properties.single.managesUnits, isFalse);
     expect(controller.properties.single.units.single.data!.roomsCount, '8');
+    expect(controller.properties.single.data!.floor, '12');
+    expect(controller.properties.single.units.single.floor, '12');
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('تعديل العقار'));
+    await tester.tap(find.text('تعديل العقار'));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<EditableText>(find.descendant(
+                of: field('رقم الدور'), matching: find.byType(EditableText)))
+            .controller
+            .text,
+        '12');
     expect(tester.takeException(), isNull);
   });
 
