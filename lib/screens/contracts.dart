@@ -19,7 +19,7 @@ import '../widgets/illustrations.dart';
 import '../widgets/workspace.dart';
 import 'create_contract.dart';
 import 'payment_demo.dart';
-import 'account_records.dart';
+import 'service_payment.dart';
 import 'wallet_profile.dart';
 
 Widget _contractDetailsBottomNavigation(BuildContext context) {
@@ -428,7 +428,9 @@ class ContractDetailsScreen extends StatelessWidget {
                 ),
               ],
               if (contract.status != ContractStatus.rejected &&
-                  contract.missingRequirements.isNotEmpty) ...<Widget>[
+                  contract.status != ContractStatus.authenticated &&
+                  contract.missingRequirements
+                      .any((item) => !item.resolved)) ...<Widget>[
                 const SizedBox(height: 12),
                 _MissingRequirementsCard(contract: contract),
               ],
@@ -1881,7 +1883,8 @@ class _MissingRequirementsCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          for (final item in contract.missingRequirements) ...<Widget>[
+          for (final item in contract.missingRequirements
+              .where((item) => !item.resolved)) ...<Widget>[
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(10),
@@ -1909,6 +1912,14 @@ class _MissingRequirementsCard extends StatelessWidget {
                       height: 1.45,
                     ),
                   ),
+                  if (item.reviewNote.trim().isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 8),
+                    Text('سبب إعادة الاستكمال: ${item.reviewNote}',
+                        style: TextStyle(
+                            color: context.ejarzTheme.text,
+                            fontWeight: FontWeight.w700,
+                            height: 1.5)),
+                  ],
                 ],
               ),
             ),
@@ -1944,11 +1955,14 @@ class _MissingResponseSheetState extends State<_MissingResponseSheet> {
   String _fileName = '', _fileUrl = '';
   bool _uploading = false;
   bool _sending = false;
+  bool get _requiresFile =>
+      _selected.type == 'file' || _selected.issueCode == 'additionalDocument';
 
   @override
   void initState() {
     super.initState();
-    _selected = widget.contract.missingRequirements.first;
+    _selected = widget.contract.missingRequirements
+        .firstWhere((item) => !item.resolved);
   }
 
   @override
@@ -1962,8 +1976,8 @@ class _MissingResponseSheetState extends State<_MissingResponseSheet> {
     final unresolved = widget.contract.missingRequirements
         .where((item) => !item.resolved)
         .toList();
-    final items =
-        unresolved.isEmpty ? widget.contract.missingRequirements : unresolved;
+    final items = unresolved;
+    if (items.isEmpty) return const SizedBox.shrink();
     if (!items.contains(_selected)) _selected = items.first;
 
     return SafeArea(
@@ -1973,77 +1987,105 @@ class _MissingResponseSheetState extends State<_MissingResponseSheet> {
           right: 16,
           bottom: MediaQuery.of(context).viewInsets.bottom + 18,
         ),
-        child: ResponsiveContent(
-          maxWidth: 620,
-          padding: EdgeInsets.zero,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              const AppPageHeader(
-                title: 'استكمال النواقص',
-                subtitle:
-                    'أرسل البيانات أو المرفقات المطلوبة ليتم مراجعتها من الإدارة.',
-                icon: Icons.task_alt_outlined,
-              ),
-              const SizedBox(height: 12),
-              AppDropdownField(
-                label: 'النقص المطلوب',
-                value: _selected.title,
-                items: items.map((item) => item.title).toList(),
-                icon: Icons.error_outline_rounded,
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() {
-                    _selected = items.firstWhere((item) => item.title == value);
-                  });
-                },
-              ),
-              const SizedBox(height: 6),
-              Text(
-                _selected.title,
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
-              if (_selected.description.trim().isNotEmpty) ...<Widget>[
-                const SizedBox(height: 4),
-                Text(
-                  _selected.description,
-                  style: TextStyle(
-                    color: context.ejarzTheme.muted,
-                    fontSize: context.sp(12),
-                    height: 1.5,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 12),
-              AppTextField(
-                label: 'ملاحظات أو توضيح',
-                hint: 'اكتب ما تم تعديله أو أي ملاحظة مهمة',
-                controller: _message,
-                icon: Icons.edit_note_rounded,
-                maxLines: 4,
-                required: true,
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: _uploading || _sending ? null : _pickFile,
-                icon: const Icon(Icons.attach_file_rounded),
-                label: Text(_uploading
-                    ? 'جارٍ رفع المرفق…'
-                    : _fileName.isEmpty
-                        ? 'إرفاق PDF أو صورة (حتى 10 ميجابايت)'
-                        : _fileName),
-              ),
-              if (_fileUrl.isNotEmpty)
-                const Text('تم رفع المرفق، وسيُرسل مع التصحيح.'),
-              const SizedBox(height: 14),
-              PrimaryButton(
-                label: _sending ? 'جاري الإرسال...' : 'إرسال التصحيح',
-                icon: Icons.send_rounded,
-                loading: _sending,
-                onPressed: _send,
-              ),
-            ],
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+              maxHeight: (MediaQuery.sizeOf(context).height -
+                      MediaQuery.viewInsetsOf(context).bottom -
+                      80)
+                  .clamp(0, double.infinity)
+                  .toDouble()),
+          child: SingleChildScrollView(
+            child: ResponsiveContent(
+                maxWidth: 620,
+                padding: EdgeInsets.zero,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    const AppPageHeader(
+                      title: 'استكمال النواقص',
+                      subtitle:
+                          'أرسل البيانات أو المرفقات المطلوبة ليتم مراجعتها من الإدارة.',
+                      icon: Icons.task_alt_outlined,
+                    ),
+                    const SizedBox(height: 12),
+                    AppDropdownField(
+                      label: 'النقص المطلوب',
+                      value: _selected.id,
+                      items: items.map((item) => item.id).toList(),
+                      itemLabelBuilder: (id) {
+                        final index = items.indexWhere((item) => item.id == id);
+                        final item = items[index];
+                        return items
+                                    .where((other) => other.title == item.title)
+                                    .length >
+                                1
+                            ? '${item.title} (${index + 1})'
+                            : item.title;
+                      },
+                      icon: Icons.error_outline_rounded,
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() {
+                          _selected =
+                              items.firstWhere((item) => item.id == value);
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _selected.title,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    if (_selected.description.trim().isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 4),
+                      Text(
+                        _selected.description,
+                        style: TextStyle(
+                          color: context.ejarzTheme.muted,
+                          fontSize: context.sp(12),
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
+                    if (_selected.reviewNote.trim().isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 8),
+                      Text('سبب إعادة الاستكمال: ${_selected.reviewNote}',
+                          style: TextStyle(
+                              color: context.ejarzTheme.text,
+                              fontWeight: FontWeight.w700,
+                              height: 1.5)),
+                    ],
+                    const SizedBox(height: 12),
+                    AppTextField(
+                      label: 'ملاحظات أو توضيح',
+                      hint: 'اكتب ما تم تعديله أو أي ملاحظة مهمة',
+                      controller: _message,
+                      icon: Icons.edit_note_rounded,
+                      maxLines: 4,
+                      required: !_requiresFile,
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: _uploading || _sending ? null : _pickFile,
+                      icon: const Icon(Icons.attach_file_rounded),
+                      label: Text(_uploading
+                          ? 'جارٍ رفع المرفق…'
+                          : _fileName.isEmpty
+                              ? 'إرفاق PDF أو صورة (حتى 10 ميجابايت)'
+                              : _fileName),
+                    ),
+                    if (_fileUrl.isNotEmpty)
+                      const Text('تم رفع المرفق، وسيُرسل مع التصحيح.'),
+                    const SizedBox(height: 14),
+                    PrimaryButton(
+                      label: _sending ? 'جاري الإرسال...' : 'إرسال التصحيح',
+                      icon: Icons.send_rounded,
+                      loading: _sending,
+                      onPressed: _send,
+                    ),
+                  ],
+                )),
           ),
         ),
       ),
@@ -2082,6 +2124,10 @@ class _MissingResponseSheetState extends State<_MissingResponseSheet> {
   Future<void> _send() async {
     if (_sending || _uploading) return;
     final message = _message.text.trim();
+    if (_requiresFile && _fileUrl.isEmpty) {
+      showAppSnackBar(context, 'أرفق المستند المطلوب قبل إرسال التصحيح');
+      return;
+    }
     if (message.isEmpty && _fileUrl.isEmpty) {
       showAppSnackBar(context, 'أدخل توضيحًا أو ارفع المرفق المطلوب');
       return;

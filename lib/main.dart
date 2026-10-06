@@ -13,6 +13,8 @@ import 'core/notification_service.dart';
 import 'core/theme.dart';
 import 'core/runtime_config.dart';
 import 'core/app_telemetry.dart';
+import 'core/payment_return_context.dart';
+import 'core/models.dart';
 import 'firebase_options.dart';
 import 'screens/auth.dart';
 import 'screens/contracts.dart';
@@ -20,6 +22,7 @@ import 'screens/create_contract.dart';
 import 'screens/admin_contract_app.dart';
 import 'screens/home.dart';
 import 'screens/pricing.dart';
+import 'screens/service_payment.dart';
 import 'screens/wallet_profile.dart';
 import 'widgets/common.dart';
 import 'widgets/account_confirmation_dialog.dart';
@@ -34,11 +37,22 @@ Future<void> main() async {
   unawaited(_initializePlatformServices());
 
   if (kIsWeb && Uri.base.queryParameters['adminContract'] == '1') {
-    runApp(AdminContractApp(uid: Uri.base.queryParameters['uid'] ?? '',
+    runApp(AdminContractApp(
+        uid: Uri.base.queryParameters['uid'] ?? '',
         draftId: Uri.base.queryParameters['draftId'] ?? ''));
     return;
   }
   runApp(const AqdakApp());
+  if (kIsWeb && Uri.base.queryParameters['paymentReturn'] == '1') {
+    final contractId =
+        Uri.base.queryParameters['contractId'] ?? consumePaymentContract();
+    if (contractId != null && contractId.isNotEmpty) {
+      AppNotificationService.deferNotificationTap({
+        'actionType': 'paymentReturn',
+        'contractId': contractId,
+      });
+    }
+  }
   if (kIsWeb && Uri.base.queryParameters['notifications'] == '1') {
     AppNotificationService.deferNotificationTap({
       'actionType': Uri.base.queryParameters.containsKey('contractId')
@@ -204,6 +218,18 @@ class _AqdakAppState extends State<AqdakApp> {
         builder: (_) => NotificationsScreen(
           initialNotificationId: notificationId,
         ),
+      ));
+      return;
+    }
+    if (actionType == 'paymentReturn') {
+      final updated = await navigator
+          .push<ContractRecord>(MaterialPageRoute<ContractRecord>(
+        builder: (_) => ServicePaymentScreen(contract: contract),
+      ));
+      if (!context.mounted || !_controller.isCurrentAccount(generation)) return;
+      navigator.push(MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'contract_details'),
+        builder: (_) => ContractDetailsScreen(contract: updated ?? contract),
       ));
       return;
     }

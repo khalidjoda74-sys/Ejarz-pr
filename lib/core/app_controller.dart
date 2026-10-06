@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'firebase_bootstrap.dart';
 import 'demo_config.dart';
 import 'firebase_repository.dart';
+import 'draft_sync_policy.dart';
 import 'renewal_request.dart';
 import 'paged_feed.dart';
 import 'legal_links.dart';
@@ -2306,6 +2307,7 @@ class AppController extends ChangeNotifier {
       unitNumber: source.unitNumber,
       unitName: source.unitName,
       unitType: source.unitType,
+      residentialCategory: source.residentialCategory,
       floor: source.floor,
       area: source.area,
       roomsCount: source.roomsCount,
@@ -2796,6 +2798,9 @@ class AppController extends ChangeNotifier {
         if (!isCurrentAccount(generation)) {
           throw StateError("تغير الحساب، أعد المحاولة");
         }
+        // A revision conflict or rejected write is not an offline draft.
+        // Requeuing it repeats the same stale revision indefinitely.
+        if (!canQueueDraftSave(error)) rethrow;
         _handleServerOperationFailure(
           error,
           'تعذر حفظ المسودة على الخادم. تم حفظها محليًا وستتم مزامنتها لاحقًا.',
@@ -2821,6 +2826,14 @@ class AppController extends ChangeNotifier {
       existingDraftId: effectiveDraftId,
       progress: progress,
     );
+  }
+
+  void discardPendingDraftSync(String draftId) {
+    if (draftId.isEmpty) return;
+    _pendingContractSubmissions.removeWhere((pending) =>
+        pending.status == ContractStatus.draft &&
+        (pending.localId == draftId || pending.remoteDraftId == draftId));
+    notifyListeners();
   }
 
   ContractRecord _saveDraftLocally(

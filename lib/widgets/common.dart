@@ -811,6 +811,9 @@ class AppDropdownField extends StatelessWidget {
   final ValueChanged<String?>? onChanged;
   final IconData? icon;
   final bool required;
+  final String? hint;
+  final FormFieldValidator<String>? validator;
+  final String Function(String)? itemLabelBuilder;
 
   const AppDropdownField({
     super.key,
@@ -820,11 +823,15 @@ class AppDropdownField extends StatelessWidget {
     required this.onChanged,
     this.icon,
     this.required = false,
+    this.hint,
+    this.validator,
+    this.itemLabelBuilder,
   });
 
   @override
   Widget build(BuildContext context) {
     final safeItems = <String>{...items, value}.toList();
+    if (hint != null) safeItems.removeWhere((item) => item.isEmpty);
     return AssistantFieldDecoration(
         label: label,
         child: Column(
@@ -849,7 +856,9 @@ class AppDropdownField extends StatelessWidget {
             const SizedBox(height: 5),
             DropdownButtonFormField<String>(
               key: ValueKey('$label:$value'),
-              initialValue: value,
+              initialValue: hint != null && value.isEmpty ? null : value,
+              hint: hint == null ? null : Text(hint!),
+              validator: validator,
               isExpanded: true,
               icon: const Icon(Icons.keyboard_arrow_down_rounded),
               decoration: InputDecoration(
@@ -861,7 +870,8 @@ class AppDropdownField extends StatelessWidget {
                       value: item,
                       child: Align(
                         alignment: Alignment.centerRight,
-                        child: Text(item, overflow: TextOverflow.ellipsis),
+                        child: Text(itemLabelBuilder?.call(item) ?? item,
+                            overflow: TextOverflow.ellipsis),
                       ),
                     ),
                   )

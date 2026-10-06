@@ -7,6 +7,96 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets(
+      'returned instructions remain visible and long correction sheet scrolls',
+      (tester) async {
+    final note = List.filled(6, 'يرجى إعادة المستند مع توضيح التعديل المطلوب.')
+        .join(' ');
+    final contract = _richContract()
+        .copyWith(status: ContractStatus.missingData, missingRequirements: [
+      MissingRequirement(
+          id: 'returned',
+          title: 'وثيقة الملكية',
+          description: 'المستند غير واضح',
+          type: 'file',
+          reviewNote: note)
+    ]);
+    await _pumpContract(tester, const Size(360, 640), contract);
+    expect(find.text('سبب إعادة الاستكمال: $note'), findsOneWidget);
+    await tester.ensureVisible(find.text('استكمال النواقص'));
+    await tester.tap(find.text('استكمال النواقص'));
+    await tester.pumpAndSettle();
+    expect(find.text('سبب إعادة الاستكمال: $note'), findsWidgets);
+    await tester.ensureVisible(find.text('إرسال التصحيح'));
+    expect(tester.takeException(), isNull);
+  });
+  const resolvedRequirement = MissingRequirement(
+      id: 'done',
+      title: 'نقص محلول',
+      description: 'تمت المراجعة',
+      type: 'file',
+      resolved: true);
+  testWidgets('resolved requirements do not ask the customer to resubmit',
+      (tester) async {
+    for (final status in [
+      ContractStatus.processing,
+      ContractStatus.authenticated
+    ]) {
+      await _pumpContract(
+          tester,
+          const Size(390, 844),
+          _richContract().copyWith(
+              status: status, missingRequirements: [resolvedRequirement]));
+      expect(find.text('نواقص مطلوبة لاستكمال الطلب'), findsNothing);
+      expect(find.text('استكمال النواقص'), findsNothing);
+    }
+  });
+  testWidgets(
+      'open requirements exclude resolved entries and duplicate titles select by ID',
+      (tester) async {
+    final contract = _richContract().copyWith(
+        status: ContractStatus.missingData,
+        missingRequirements: const [
+          resolvedRequirement,
+          MissingRequirement(
+              id: 'first',
+              title: 'وثيقة الملكية',
+              description: 'سبب أول',
+              type: 'file',
+              issueCode: 'unclear'),
+          MissingRequirement(
+              id: 'second',
+              title: 'وثيقة الملكية',
+              description: 'سبب ثان',
+              type: 'file',
+              issueCode: 'expired'),
+        ]);
+    await _pumpContract(tester, const Size(390, 844), contract);
+    expect(find.text('نقص محلول'), findsNothing);
+    final trigger = find.text('استكمال النواقص');
+    await tester.ensureVisible(trigger);
+    await tester.tap(trigger);
+    await tester.pumpAndSettle();
+    expect(find.text('وثيقة الملكية (1)'), findsOneWidget);
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('وثيقة الملكية (2)').last);
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<DropdownButtonFormField<String>>(
+                find.byType(DropdownButtonFormField<String>))
+            .initialValue,
+        'second');
+    expect(find.text('سبب ثان'), findsWidgets);
+    final input = find.byType(TextFormField);
+    await tester.enterText(input, 'تصحيح تجريبي');
+    await tester.ensureVisible(find.text('إرسال التصحيح'));
+    await tester.tap(find.text('إرسال التصحيح'));
+    await tester.pumpAndSettle();
+    expect(find.text('أرفق المستند المطلوب قبل إرسال التصحيح'), findsOneWidget);
+    expect(find.text('تعذر إرسال التصحيح الآن'), findsNothing);
+  });
   testWidgets('final contract shows Ejar number beneath download action',
       (tester) async {
     final contract = _richContract().copyWith(
@@ -103,7 +193,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('empty attachment data does not offer a demo document in production',
+  testWidgets(
+      'empty attachment data does not offer a demo document in production',
       (tester) async {
     await _pumpContract(
       tester,
@@ -272,7 +363,8 @@ void main() {
     expect(find.byIcon(Icons.download_rounded), findsNothing);
   });
 
-  testWidgets('contract support opens the form and unauthenticated submission fails',
+  testWidgets(
+      'contract support opens the form and unauthenticated submission fails',
       (tester) async {
     final contract = _richContract();
     final controller = await _pumpContract(

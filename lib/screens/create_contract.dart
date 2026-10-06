@@ -27,9 +27,12 @@ import '../core/contract_validators.dart';
 import '../core/contract_calculation_engine.dart';
 import '../core/contract_pricing.dart';
 import '../core/draft_resume_policy.dart';
+import '../core/draft_sync_policy.dart';
+import '../widgets/account_confirmation_dialog.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
 import '../widgets/common.dart';
+import '../widgets/contract_review.dart';
 import '../widgets/unit_count_field.dart';
 import '../core/property_management.dart';
 import '../widgets/illustrations.dart';
@@ -247,6 +250,7 @@ List<_SavedPropertyOption> _savedPropertyOptions(
 bool _propertyMatchesContractType(PropertyRecord property, ContractType type) {
   final data = property.data;
   final usage = (data?.propertyUsage ?? property.usage).trim();
+  if (usage == 'سكني تجاري') return true;
   final unitType = (data?.unitType ??
           (property.units.isEmpty ? '' : property.units.first.type))
       .trim();
@@ -309,6 +313,7 @@ PropertyData _propertyDataFromRecord(
       unitNumber: property.managesUnits ? '' : data.unitNumber,
       unitName: property.managesUnits ? '' : data.unitName,
       unitType: data.unitType,
+      residentialCategory: data.residentialCategory,
       floor: data.floor,
       area: data.area,
       roomsCount: data.roomsCount,
@@ -463,6 +468,9 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   int _partyTab = 0;
   final String _flowId = DateTime.now().microsecondsSinceEpoch.toString();
   bool _submitting = false;
+  bool _draftConflict = false;
+  bool _savingDraft = false;
+  bool _recoveringDraft = false;
 
   @override
   void initState() {
@@ -617,7 +625,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   }
 
   void _scheduleAutosave() {
-    if (_submitted || _submitting) return;
+    if (_submitted || _submitting || _savingDraft) return;
     _hasEdits = true;
     if (widget.adminSession != null) {
       setAdminEditorDirty(true);
@@ -628,8 +636,10 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     _cloudSaveTimer?.cancel();
     _localSaveTimer =
         Timer(const Duration(milliseconds: 450), () => unawaited(_saveLocal()));
-    _cloudSaveTimer =
-        Timer(const Duration(seconds: 3), () => unawaited(_saveCloud()));
+    if (!_draftConflict) {
+      _cloudSaveTimer =
+          Timer(const Duration(seconds: 3), () => unawaited(_saveCloud()));
+    }
   }
 
   Future<void> _saveLocal({bool showStatus = true}) async {
@@ -700,10 +710,15 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
                   ? 'تمت مزامنة المسودة'
                   : 'تم الحفظ في حسابك • النسخة المحلية غير متاحة'));
         }
-      } catch (_) {
+      } catch (error) {
         if (mounted) {
-          setState(() =>
-              _saveStatus = 'تعذرت المزامنة؛ حاول مجددًا أو استخدم حفظ كمسودة');
+          setState(() {
+            _draftConflict =
+                error is FirebaseFunctionsException && error.code == 'aborted';
+            _saveStatus = _draftConflict
+                ? 'توجد نسخة أحدث؛ تعديلاتك محفوظة على الجهاز. اضغط حفظ التعديلات'
+                : 'تعذرت المزامنة؛ حاول مجددًا أو استخدم حفظ كمسودة';
+          });
         }
       }
     }();
@@ -726,20 +741,12 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     try {
       final stored = await _recoveryStore.read(_draftOwner);
       if (!mounted || !_sameDraftAccount || stored == null || _hasEdits) return;
-      final restore = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-                  title: const Text('لديك عقد غير مكتمل'),
-                  content: const Text(
-                      'هل تريد متابعة المسودة المحفوظة على هذا الجهاز؟'),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('عقد جديد')),
-                    FilledButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('متابعة العقد'))
-                  ]));
+      final restore = await showAccountConfirmation(context,
+          title: 'لديك عقد غير مكتمل',
+          message: 'هل تريد متابعة المسودة المحفوظة على هذا الجهاز؟',
+          confirmLabel: 'متابعة العقد',
+          cancelLabel: 'عقد جديد',
+          icon: Icons.edit_document);
       if (!mounted || !_sameDraftAccount || restore != true) return;
       final recovered = FirebaseRepository.draftFromMap(stored['draft']);
       if (recovered == null) return;
@@ -1172,6 +1179,10 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
 
   Future<void> _submit() async {
     if (_submitting) return;
+    if (_draftConflict) {
+      await _recoverDraftConflict();
+      return;
+    }
     if (_assistant.pending.isNotEmpty) {
       showAppSnackBar(
           context, 'أكّد القيم التي أدخلها المساعد قبل إرسال الطلب');
@@ -1207,6 +1218,10 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     } catch (error) {
       if (mounted) {
         setState(() => _submitting = false);
+        if (error is FirebaseFunctionsException && error.code == 'aborted') {
+          await _recoverDraftConflict();
+          return;
+        }
         showAppSnackBar(
             context,
             error is FirebaseFunctionsException
@@ -1289,6 +1304,11 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
   }
 
   Future<void> _saveDraft() async {
+    if (_savingDraft || _submitting) return;
+    if (widget.adminSession == null && _draftConflict) {
+      await _recoverDraftConflict();
+      return;
+    }
     if (widget.adminSession != null) {
       if (_submitting) return;
       setState(() => _submitting = true);
@@ -1314,6 +1334,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     }
     _localSaveTimer?.cancel();
     _cloudSaveTimer?.cancel();
+    _savingDraft = true;
     await _saveLocal();
     await _cloudSaveFuture;
     if (!mounted) return;
@@ -1324,6 +1345,13 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
       record = await controller.saveDraft(_draft,
           draftId: _draftId, progress: _draftProgress);
     } catch (error) {
+      _savingDraft = false;
+      if (mounted &&
+          error is FirebaseFunctionsException &&
+          error.code == 'aborted') {
+        await _recoverDraftConflict();
+        return;
+      }
       if (mounted) {
         showAppSnackBar(
             context,
@@ -1337,13 +1365,43 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
     _draftId = record.id;
     _draft.serverRevision = record.draftData?.serverRevision;
     await _saveLocal(showStatus: false);
+    _savingDraft = false;
     if (!mounted) return;
+    setState(() => _saveStatus = record.pendingSync
+        ? 'محفوظ على الجهاز • بانتظار المزامنة'
+        : 'تمت مزامنة المسودة');
     showAppSnackBar(
       context,
       record.pendingSync
           ? 'تم حفظ المسودة محليًا وستتم مزامنتها عند عودة الاتصال'
           : 'تم حفظ المسودة برقم ${record.requestNumber}',
     );
+  }
+
+  Future<void> _recoverDraftConflict() async {
+    if (!mounted || widget.adminSession != null || _recoveringDraft) return;
+    _recoveringDraft = true;
+    _draftConflict = true;
+    _cloudSaveTimer?.cancel();
+    await _saveLocal();
+    if (!mounted) return;
+    final keepEdits = await showAccountConfirmation(context,
+        title: 'احتفظ بتعديلاتك',
+        message:
+            'توجد نسخة أحدث من هذه المسودة في حسابك. يمكنك حفظ جميع بياناتك ومرفقاتك الحالية في مسودة جديدة، ثم مراجعتها وإرسالها.',
+        confirmLabel: 'حفظ تعديلاتي في مسودة جديدة',
+        cancelLabel: 'متابعة المراجعة',
+        icon: Icons.copy_all_rounded);
+    _recoveringDraft = false;
+    if (!mounted || !keepEdits || !_sameDraftAccount) return;
+    AppScope.of(context, listen: false).discardPendingDraftSync(_draftId);
+    setState(() {
+      _draft = forkConflictedDraft(_draft);
+      _draftId = '';
+      _draftConflict = false;
+    });
+    _assistant.resetObservation();
+    await _saveDraft();
   }
 
   @override
@@ -1542,7 +1600,7 @@ class _CreateContractScreenState extends State<CreateContractScreen> {
                 session: widget.adminSession!,
                 draft: _draft,
                 onChanged: _markChanged),
-          _ReviewStep(
+          ContractReview(
               draft: _draft,
               requiredAttachments: _requiredAttachments,
               onChanged: _markChanged,
@@ -3972,320 +4030,6 @@ class _AttachmentBadge extends StatelessWidget {
   }
 }
 
-class _ReviewStep extends StatelessWidget {
-  final bool administrative;
-  final ContractDraft draft;
-  final List<AttachmentData> requiredAttachments;
-  final VoidCallback onChanged;
-
-  const _ReviewStep({
-    this.administrative = false,
-    required this.draft,
-    required this.requiredAttachments,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final uploadedRequired = requiredAttachments.where(_attachmentReady).length;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        const AppPageHeader(
-          title: 'المراجعة النهائية',
-          subtitle: 'راجع ملخص بيانات العقد وأكد الإقرارات قبل رفع الطلب.',
-          icon: Icons.fact_check_outlined,
-        ),
-        const SizedBox(height: 14),
-        _ReviewSection(
-          title: 'ملخص العقد',
-          icon: Icons.article_outlined,
-          children: <Widget>[
-            _ReviewLine(label: 'نوع العقد', value: draft.type.label),
-            _ReviewLine(
-                label: 'العنوان',
-                value: _valueOrDash(draft.property.displayAddress)),
-            _ReviewLine(
-                label: 'الوحدة',
-                value: _valueOrDash(draft.property.unitNumber)),
-            _ReviewLine(
-                label: 'مدة العقد',
-                value:
-                    '${draft.durationYears} سنة / ${draft.durationMonths} شهر / ${draft.durationDays} يوم'),
-            _ReviewLine(
-                label: 'تاريخ البداية', value: _valueOrDash(draft.startDate)),
-            _ReviewLine(
-                label: 'تاريخ النهاية', value: _valueOrDash(draft.endDate)),
-          ],
-        ),
-        const SizedBox(height: 14),
-        _ReviewSection(
-          title: 'بيانات الملكية',
-          icon: Icons.verified_outlined,
-          children: <Widget>[
-            _ReviewLine(
-              label: 'نوع الإثبات',
-              value: draft.property.ownershipDocumentType,
-            ),
-            _ReviewLine(
-              label: 'رقم الوثيقة',
-              value: _valueOrDash(draft.property.ownershipDocumentNumber),
-            ),
-            _ReviewLine(
-              label: 'تاريخ الوثيقة',
-              value: _valueOrDash(draft.property.ownershipDocumentDate),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        _ReviewSection(
-          title: 'الأطراف',
-          icon: Icons.people_outline_rounded,
-          children: <Widget>[
-            _ReviewLine(
-                label: 'المؤجر', value: _valueOrDash(draft.lessor.displayName)),
-            _ReviewLine(
-                label: 'المستأجر',
-                value: _valueOrDash(draft.tenant.displayName)),
-            _ReviewLine(
-              label: 'الممثل القانوني',
-              value: draft.representative.enabled
-                  ? _valueOrDash(draft.representative.fullName)
-                  : 'لا يوجد',
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        _ReviewSection(
-          title: 'العقار والوحدة',
-          icon: Icons.apartment_outlined,
-          children: <Widget>[
-            _ReviewLine(
-                label: 'مصدر العقار', value: draft.property.propertySource),
-            _ReviewLine(
-                label: 'نوع العقار الرئيسي',
-                value: draft.property.propertyType),
-            _ReviewLine(
-                label: 'استخدام العقار', value: draft.property.propertyUsage),
-            _ReviewLine(
-                label: 'إجمالي الوحدات',
-                value: _valueOrDash(draft.property.totalUnits)),
-            _ReviewLine(
-                label: 'اسم الوحدة',
-                value: _valueOrDash(draft.property.unitName)),
-            _ReviewLine(label: 'نوع الوحدة', value: draft.property.unitType),
-            _ReviewLine(
-                label: 'حالة التأثيث', value: draft.property.furnishingStatus),
-            _ReviewLine(
-                label: 'موقف خاص',
-                value: draft.property.privateParking ? 'يوجد' : 'لا يوجد'),
-          ],
-        ),
-        const SizedBox(height: 14),
-        _ReviewSection(
-          title: 'البيانات المالية',
-          icon: Icons.payments_outlined,
-          children: <Widget>[
-            _ReviewLine(
-                label: 'مبلغ الإيجار السنوي',
-                value: _money(draft.rentValueNumber)),
-            _ReviewLine(label: 'دورة السداد', value: draft.rentPeriod),
-            _ReviewLine(
-                label: 'بداية العقد', value: _valueOrDash(draft.startDate)),
-            _ReviewLine(
-                label: 'نهاية العقد', value: _valueOrDash(draft.endDate)),
-            _ReviewLine(
-                label: 'تاريخ أول دفعة',
-                value: _valueOrDash(draft.firstPaymentDate)),
-            if (draft.installments.isNotEmpty)
-              _ReviewLine(
-                  label: 'تاريخ آخر دفعة',
-                  value: _valueOrDash(draft.installments.last.dueDate)),
-            if (draft.rentalCalculation case final rental?)
-              _ReviewLine(
-                  label: 'إجمالي الإيجار طوال العقد',
-                  value: _money(rental.totalHalalas / 100),
-                  strong: true),
-            _ReviewLine(
-              label: 'الضمان',
-              value: draft.hasSecurityDeposit
-                  ? _money(draft.depositNumber)
-                  : 'لا يوجد',
-            ),
-            _ReviewLine(label: 'عدد الدفعات', value: '${draft.paymentCount}'),
-            _ReviewLine(label: 'قناة الدفع', value: draft.paymentChannel),
-            _ReviewLine(
-                label: 'طريقة دفع رسوم الطلب',
-                value: _paymentMethodLabel(draft.paymentMethod)),
-            _ReviewLine(
-                label: 'الإجمالي المستحق الآن',
-                value: _money(draft.totalPayable),
-                strong: true),
-            _ReviewLine(
-                label: 'رسوم السنة الأولى',
-                value: _money(draft.price.firstYear)),
-            _ReviewLine(
-                label: 'رسوم المدة الإضافية',
-                value: _money(draft.price.additionalAmount)),
-            const Text(ContractPrice.inclusionNote),
-          ],
-        ),
-        const SizedBox(height: 14),
-        _ReviewSection(
-          title: 'الشروط',
-          icon: Icons.rule_folder_outlined,
-          children: <Widget>[
-            _ReviewLine(
-              label: 'التأجير من الباطن',
-              value: draft.allowSublease ? 'مسموح' : 'غير مسموح',
-            ),
-            _ReviewLine(
-              label: 'الشروط الإضافية',
-              value: _valueOrDash(draft.specialTerms),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        _ReviewSection(
-          title: 'المرفقات',
-          icon: Icons.attach_file_rounded,
-          children: <Widget>[
-            _ReviewLine(
-                label: 'المرفقات المطلوبة',
-                value:
-                    '$uploadedRequired / ${requiredAttachments.length} مكتملة'),
-            _ReviewLine(
-              label: 'إجمالي المرفقات المرفوعة',
-              value: '${draft.attachments.where(_attachmentReady).length}',
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (!administrative)
-          ToggleCard(
-            title: 'أقر بصحة البيانات والمستندات',
-            subtitle: 'أتحمل مسؤولية دقة المعلومات المدخلة في الطلب',
-            value: draft.acceptAccuracyDeclaration,
-            icon: Icons.verified_user_outlined,
-            onChanged: (value) {
-              draft.acceptAccuracyDeclaration = value;
-              onChanged();
-            },
-          ),
-        const SizedBox(height: 10),
-        if (!administrative)
-          ToggleCard(
-            title: 'أوافق على مشاركة البيانات اللازمة',
-            subtitle: 'تستخدم البيانات لإتمام إصدار العقد ومراجعته',
-            value: draft.acceptDataSharing,
-            icon: Icons.shield_outlined,
-            onChanged: (value) {
-              draft.acceptDataSharing = value;
-              onChanged();
-            },
-          ),
-        const SizedBox(height: 10),
-        if (!administrative)
-          ToggleCard(
-            title: 'أوافق على الشروط والأحكام',
-            subtitle: 'لن يتم رفع الطلب قبل قبول الشروط',
-            value: draft.acceptTerms,
-            icon: Icons.policy_outlined,
-            onChanged: (value) {
-              draft.acceptTerms = value;
-              onChanged();
-            },
-          ),
-        const SizedBox(height: 14),
-        const InfoBanner(
-          text:
-              'بعد التأكيد سيتم إنشاء طلب مراجعة جديد ويمكنك متابعة حالته من صفحة العقود.',
-          icon: Icons.info_outline_rounded,
-        ),
-      ],
-    );
-  }
-}
-
-class _ReviewSection extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final List<Widget> children;
-
-  const _ReviewSection({
-    required this.title,
-    required this.icon,
-    required this.children,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        SectionTitle(title: title, icon: icon),
-        const SizedBox(height: 10),
-        AppCard(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          shadows: const <BoxShadow>[],
-          child: Column(
-            children: <Widget>[
-              for (var i = 0; i < children.length; i++) ...<Widget>[
-                children[i],
-                if (i < children.length - 1)
-                  Divider(color: context.ejarzTheme.border, height: 1),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ReviewLine extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool strong;
-
-  const _ReviewLine(
-      {required this.label, required this.value, this.strong = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 11),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: context.ejarzTheme.muted,
-                fontSize: context.sp(12.5),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.left,
-              style: TextStyle(
-                color: strong ? AppColors.primary : context.ejarzTheme.text,
-                fontSize: context.sp(13),
-                fontWeight: strong ? FontWeight.w900 : FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 String _paymentMethodLabel(PaymentMethod method) {
   return switch (method) {
     PaymentMethod.mada => 'بطاقة مدى',
@@ -4303,5 +4047,3 @@ IconData _paymentMethodIcon(PaymentMethod method) {
 }
 
 String _money(num value) => '${value.toStringAsFixed(2)} ريال';
-
-String _valueOrDash(String value) => value.trim().isEmpty ? 'غير محدد' : value;

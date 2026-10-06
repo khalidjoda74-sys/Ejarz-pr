@@ -6,7 +6,7 @@ import 'package:aqdak/screens/wallet_profile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'building_units_flow_test.dart' show mount, field, fill;
+import 'building_units_flow_test.dart' show mount, field, fill, choose;
 import 'contract_complete_flow_test.dart' show completeDraft, activeDraft, next;
 import 'property_management_pricing_test.dart' show buildingData;
 
@@ -101,6 +101,7 @@ void main() {
           tester, app, PropertiesScreen(onMenu: () {}, onNotifications: () {}));
       await tapLabel(tester, 'عمارة الاختبار');
       await tapLabel(tester, 'إضافة وحدات للعمارة');
+      await choose(tester, 'الفئة السكنية', 'عوائل');
       expect(floorInput(tester).keyboardType, TextInputType.number);
       for (final value in ['${floors - 1}', arabic, persian]) {
         await fill(tester, 'رقم الدور', value);

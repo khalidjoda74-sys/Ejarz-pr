@@ -82,7 +82,7 @@ void main() {
       expect(timeline.last.subtitle, 'سبب الرفض: بيانات الملكية غير متطابقة');
     });
 
-    test('keeps non-rejected timeline unchanged', () {
+    test('preserves the current non-rejected event content', () {
       const items = <StatusTimelineItem>[
         StatusTimelineItem(
           title: 'قيد المعالجة',
@@ -92,13 +92,13 @@ void main() {
           current: true,
         ),
       ];
-      expect(
-        FirebaseRepository.normalizeTimelineForStatus(
-          status: ContractStatus.processing,
-          items: items,
-        ),
-        same(items),
+      final normalized = FirebaseRepository.normalizeTimelineForStatus(
+        status: ContractStatus.processing,
+        items: items,
       );
+      expect(normalized.single.title, items.single.title);
+      expect(normalized.single.subtitle, items.single.subtitle);
+      expect(normalized.single.current, isTrue);
     });
   });
 }

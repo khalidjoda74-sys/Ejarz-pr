@@ -1,5 +1,6 @@
 import 'package:aqdak/core/app_controller.dart';
 import 'package:aqdak/core/models.dart';
+import 'package:aqdak/core/property_management.dart';
 import 'package:aqdak/core/saudi_reference_data.dart';
 import 'package:aqdak/core/theme.dart';
 import 'package:aqdak/screens/create_contract.dart';
@@ -111,6 +112,11 @@ void main() {
       final dropdowns =
           tester.widgetList<AppDropdownField>(find.byType(AppDropdownField));
       expect(dropdowns.first.label, 'نوع العقار');
+      expect(dropdowns.singleWhere((field) => field.label == 'الاستخدام').value,
+          'سكني');
+      for (final usage in ['سكني', 'تجاري', 'سكني تجاري', 'سكن جماعي']) {
+        await choose(tester, 'الاستخدام', usage);
+      }
       await choose(tester, 'طريقة تأجير العمارة', 'وحدات مستقلة');
       expect(find.text('بيانات الوحدة'), findsNothing);
       await fill(tester, 'رقم الوثيقة', '1234567890');
@@ -130,6 +136,8 @@ void main() {
       await tester.tap(find.text('حفظ العقار'));
       await tester.pumpAndSettle();
       expect(controller.properties.single.units, isEmpty);
+      expect(controller.properties.single.usage, 'سكن جماعي');
+      expect(controller.properties.single.data!.propertyUsage, 'سكن جماعي');
       expect(
           controller.properties.single.data!.ownershipDocumentDate, isNotEmpty);
       expect(controller.properties.single.data!.cityReferenceId, isNotEmpty);
@@ -139,6 +147,7 @@ void main() {
       await tester.tap(find.text('إضافة وحدات للعمارة'));
       await tester.pumpAndSettle();
       await fill(tester, 'عدد الوحدات المراد إضافتها', '5');
+      await choose(tester, 'الفئة السكنية', 'عوائل');
       for (var i = 0; i < 5; i++) {
         final input = field('رقم الدور').at(i);
         await tester.ensureVisible(input);
@@ -178,6 +187,10 @@ void main() {
       final saved = controller.properties.single;
       expect(saved.units.length, 5);
       expect(
+          saved.units
+              .every((unit) => unit.data!.residentialCategory == 'عوائل'),
+          isTrue);
+      expect(
           saved.units.map((u) => u.floor).toList(), ['0', '1', '2', '1', '2']);
       expect(saved.units.map((u) => u.number).toSet().length, 5);
       expect(
@@ -196,6 +209,8 @@ void main() {
       await tester.tap(find.text('شقة 1 • شقة • 0'));
       await tester.pumpAndSettle();
       expect(find.text('تفاصيل شقة 1'), findsOneWidget);
+      expect(find.text('الفئة السكنية'), findsOneWidget);
+      expect(find.text('عوائل'), findsOneWidget);
       expect(find.text('135.5 م²'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -224,6 +239,14 @@ void main() {
     await tester.tap(find.text('تعديل العقار'));
     await tester.pumpAndSettle();
     expect(find.text('عمارة كاملة'), findsOneWidget);
+    expect(find.text('الفئة السكنية'), findsNothing);
+    expect(
+        tester
+            .widgetList<AppDropdownField>(find.byType(AppDropdownField))
+            .singleWhere((field) => field.label == 'الاستخدام')
+            .value,
+        'سكني');
+    await choose(tester, 'الاستخدام', 'سكني تجاري');
     expect(find.text('منطقة الرياض'), findsOneWidget);
     expect(
         tester
@@ -240,6 +263,8 @@ void main() {
     await tester.tap(find.text('حفظ العقار'));
     await tester.pumpAndSettle();
     expect(controller.properties.single.managesUnits, isFalse);
+    expect(controller.properties.single.usage, 'سكني تجاري');
+    expect(controller.properties.single.data!.propertyUsage, 'سكني تجاري');
     expect(controller.properties.single.units.single.data!.roomsCount, '8');
     expect(controller.properties.single.data!.floor, '12');
     expect(controller.properties.single.units.single.floor, '12');
@@ -255,6 +280,12 @@ void main() {
             .controller
             .text,
         '12');
+    expect(
+        tester
+            .widgetList<AppDropdownField>(find.byType(AppDropdownField))
+            .singleWhere((field) => field.label == 'الاستخدام')
+            .value,
+        'سكني تجاري');
     expect(tester.takeException(), isNull);
   });
 
@@ -280,6 +311,120 @@ void main() {
     final meter = tester.widget<AppTextField>(find.byWidgetPredicate(
         (w) => w is AppTextField && w.label == 'رقم عداد الكهرباء'));
     expect(meter.initialValue, '7002');
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final type in ContractType.values) {
+    testWidgets('saved usage options match ${type.name} contracts',
+        (tester) async {
+      final controller = AppController();
+      addTearDown(controller.dispose);
+      controller.properties.clear();
+      const usages = [
+        'سكني',
+        'تجاري',
+        'سكني تجاري',
+        'سكن جماعي',
+        'سكن عوائل',
+        'سكن أفراد'
+      ];
+      for (final usage in usages) {
+        controller.properties.add(managedPropertyRecord(
+            buildingData()
+              ..buildingName = 'عقار $usage'
+              ..propertyUsage = usage,
+            'usage-${usages.indexOf(usage)}',
+            []));
+      }
+      await mount(
+          tester,
+          controller,
+          CreateContractScreen(
+              initialDraft: ContractDraft()..type = type, initialStep: 3));
+      final sources = tester
+          .widgetList<AppDropdownField>(find.byType(AppDropdownField))
+          .singleWhere((field) => field.label == 'مصدر العقار')
+          .items;
+      for (final usage in usages) {
+        final expected = usage == 'سكني تجاري' ||
+            (type == ContractType.commercial
+                ? usage == 'تجاري'
+                : usage != 'تجاري');
+        expect(
+            sources.any((label) => label.startsWith('عقار $usage -')), expected,
+            reason: usage);
+      }
+      final mixed =
+          sources.singleWhere((label) => label.startsWith('عقار سكني تجاري -'));
+      await choose(tester, 'مصدر العقار', mixed);
+      expect(
+          tester
+              .widgetList<AppDropdownField>(find.byType(AppDropdownField))
+              .singleWhere((field) => field.label == 'استخدام العقار')
+              .value,
+          'سكني تجاري');
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('unit category is required, independent and cleared for commerce',
+      (tester) async {
+    final controller = AppController();
+    addTearDown(controller.dispose);
+    controller.properties.clear();
+    final building = await controller.saveProperty(buildingData());
+    await controller
+        .saveProperty(building.data!, existing: building, unitEdits: [
+      newUnit('1'),
+      UnitRecord.fromData(PropertyData.copyOf(newUnit('2').data!)
+        ..residentialCategory = 'عوائل')
+    ]);
+    await mount(tester, controller,
+        PropertiesScreen(onMenu: () {}, onNotifications: () {}));
+    await tester.tap(find.text('عمارة الاختبار'));
+    await tester.pumpAndSettle();
+    Future<void> editFirst() async {
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('شقة 1 • شقة • 1'));
+      await tester.tap(find.text('شقة 1 • شقة • 1'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('تعديل بيانات الوحدة'));
+      await tester.tap(find.text('تعديل بيانات الوحدة'));
+      await tester.pumpAndSettle();
+    }
+
+    await editFirst();
+    await tester.tap(find.text('حفظ الوحدة'));
+    await tester.pumpAndSettle();
+    expect(find.text('اختر الفئة السكنية'), findsOneWidget);
+    expect(controller.properties.single.units.first.data!.residentialCategory,
+        isEmpty);
+    await choose(tester, 'الفئة السكنية', 'أفراد');
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('حفظ الوحدة'));
+    await tester.pumpAndSettle();
+    expect(
+        controller.properties.single.units
+            .map((unit) => unit.data!.residentialCategory)
+            .toList(),
+        ['أفراد', 'عوائل']);
+    await editFirst();
+    expect(
+        tester
+            .widgetList<AppDropdownField>(find.byType(AppDropdownField))
+            .singleWhere((field) => field.label == 'الفئة السكنية')
+            .value,
+        'أفراد');
+    await choose(tester, 'نوع الوحدة', 'محل');
+    expect(find.text('الفئة السكنية'), findsNothing);
+    await tester.tap(find.text('حفظ الوحدة'));
+    await tester.pumpAndSettle();
+    expect(controller.properties.single.units.first.data!.residentialCategory,
+        isEmpty);
+    expect(controller.properties.single.units.last.data!.residentialCategory,
+        'عوائل');
     expect(tester.takeException(), isNull);
   });
 

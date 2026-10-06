@@ -56,7 +56,7 @@ void main() {
       isNotNull,
     );
 
-    await tester.tap(find.widgetWithText(TextButton, 'إلغاء'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'إلغاء'));
     await tester.pumpAndSettle();
     expect(find.text('حذف الحساب نهائيًا'), findsNothing);
   });

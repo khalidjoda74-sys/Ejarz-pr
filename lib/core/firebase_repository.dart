@@ -1073,6 +1073,42 @@ class FirebaseRepository {
     DraftProgress progress = const DraftProgress(),
   }) async {
     _assertAccount(uid);
+    if (status == ContractStatus.draft) {
+      final contractId = existingDraftId.trim().isNotEmpty
+          ? existingDraftId.trim()
+          : draft.submissionId.isNotEmpty
+              ? draft.submissionId
+              : firestore.collection('contracts').doc().id;
+      draft.submissionId = contractId;
+      final result = await FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('saveCustomerContractDraft')
+          .call({
+        'contractId': contractId,
+        'expectedUid': uid,
+        'expectedUpdatedAt': draft.serverRevision ?? 0,
+        'draft': draftToMap(draft),
+        'progress': draftProgressToMap(progress),
+        'presentation': {
+          'title': draft.title,
+          'propertySummary': draft.property.displayAddress,
+          'propertyTitle': draft.property.buildingName,
+          'city': draft.property.city,
+          'district': draft.property.district,
+          'lessorSummary': draft.lessor.displayName,
+          'tenantSummary': draft.tenant.displayName,
+          'contractDetails': contractDetailsFromDraft(draft),
+          'partyDetails': partyDetailsFromDraft(draft),
+          'propertyDetails': propertyDetailsFromDraft(draft),
+          'attachmentFiles': attachmentFilesFromDraft(draft),
+        },
+      });
+      _assertAccount(uid);
+      final record = contractFromMap(
+          contractId, Map<String, dynamic>.from(result.data['record'] as Map));
+      record.draftData?.serverRevision =
+          (result.data['revision'] as num).toInt();
+      return record;
+    }
     if (status == ContractStatus.awaitingPayment) {
       final contractId = existingDraftId.trim().isNotEmpty
           ? existingDraftId.trim()
@@ -1214,13 +1250,10 @@ class FirebaseRepository {
       );
     }
     await batch.commit();
-    // The acknowledged cache contains the server timestamp needed for the
-    // next optimistic edit; avoid an extra network request after the commit.
-    try {
-      final saved = await doc.get(const GetOptions(source: Source.cache));
-      if (saved.exists) return contractFromDoc(saved);
-    } catch (_) {/* Preserve the committed record if cache access fails. */}
-    return record;
+    // Optimistic edits must use the committed server revision. A cached
+    // snapshot can still contain an earlier or locally estimated timestamp.
+    final saved = await doc.get(const GetOptions(source: Source.server));
+    return contractFromDoc(saved);
   }
 
   Future<ContractRecord> _updateExistingDraft({
@@ -1317,7 +1350,8 @@ class FirebaseRepository {
         );
       }
     });
-    final updated = await contractRef.get();
+    final updated =
+        await contractRef.get(const GetOptions(source: Source.server));
     return contractFromDoc(updated);
   }
 
@@ -1559,6 +1593,11 @@ class FirebaseRepository {
       items: rawTimeline,
       rejectionReason: rejectionReason,
       rejectedAt: rejectedAt,
+      paymentStatus: data['isDemo'] == true
+          ? ''
+          : (data['paymentStatus'] as String?) ?? '',
+      paidAt: _dateTimeFromAny(data['paidAt']),
+      submittedAt: _dateTimeFromAny(data['submittedAt']),
     );
     final defaultTitle =
         type == ContractType.commercial ? 'طلب عقد تجاري' : 'طلب عقد سكني';
@@ -1673,6 +1712,7 @@ class FirebaseRepository {
       unitNumber: _readableText(firstUnit?['number'], ''),
       unitName: _readableText(firstUnit?['name'], ''),
       unitType: _readableText(firstUnit?['type'], 'شقة'),
+      residentialCategory: _readableText(firstUnit?['residentialCategory'], ''),
       floor: _readableText(firstUnit?['floor'], ''),
       area: _readableText(firstUnit?['area'], ''),
       roomsCount: _readableText(firstUnit?['roomsCount'], ''),
@@ -1729,11 +1769,14 @@ class FirebaseRepository {
       floor: _readableText(data['floor'], '1'),
       area: _readableText(data['area'], ''),
       status: _readableText(data['status'], 'متاحة'),
-      data: data.containsKey('roomsCount')
+      data: data.containsKey('roomsCount') ||
+              data.containsKey('residentialCategory')
           ? PropertyData(
               unitNumber: _readableText(data['number'], ''),
               unitName: _readableText(data['name'], ''),
               unitType: _readableText(data['type'], 'شقة'),
+              residentialCategory:
+                  _readableText(data['residentialCategory'], ''),
               floor: _readableText(data['floor'], ''),
               area: _readableText(data['area'], ''),
               roomsCount: _readableText(data['roomsCount'], ''),
@@ -1850,6 +1893,7 @@ class FirebaseRepository {
       'fieldPath': item.fieldPath,
       'required': item.required,
       'resolved': item.resolved,
+      'reviewNote': item.reviewNote,
     };
   }
 
@@ -2077,6 +2121,7 @@ class FirebaseRepository {
       unitNumber: _mapString(property, 'unitNumber'),
       unitName: _mapString(property, 'unitName'),
       unitType: _mapString(property, 'unitType', draft.property.unitType),
+      residentialCategory: _mapString(property, 'residentialCategory'),
       floor: _mapString(property, 'floor'),
       area: _mapString(property, 'area'),
       roomsCount: _mapString(property, 'roomsCount'),
@@ -2464,6 +2509,8 @@ class FirebaseRepository {
       'رقم الوحدة': _valueOrDash(property.unitNumber),
       'اسم الوحدة': _valueOrDash(property.unitName),
       'نوع الوحدة': _valueOrDash(property.unitType),
+      if (property.residentialCategory.isNotEmpty)
+        'الفئة السكنية': property.residentialCategory,
       'الدور': _valueOrDash(property.floor),
       'المساحة':
           property.area.trim().isEmpty ? '-' : '${property.area.trim()} م²',
@@ -2593,6 +2640,7 @@ class FirebaseRepository {
       'unitNumber': data.unitNumber,
       'unitName': data.unitName,
       'unitType': data.unitType,
+      'residentialCategory': data.residentialCategory,
       'floor': data.floor,
       'area': data.area,
       'roomsCount': data.roomsCount,
@@ -2678,6 +2726,7 @@ class FirebaseRepository {
       'number': data.unitNumber,
       'name': data.unitName,
       'type': data.unitType,
+      'residentialCategory': data.residentialCategory,
       'floor': data.floor,
       'area': data.area,
       'status': 'available',
@@ -2877,8 +2926,114 @@ class FirebaseRepository {
     required List<StatusTimelineItem> items,
     String rejectionReason = '',
     DateTime? rejectedAt,
+    String paymentStatus = '',
+    DateTime? paidAt,
+    DateTime? submittedAt,
   }) {
-    if (status != ContractStatus.rejected) return items;
+    // Recover missing display events in old records from recorded server
+    // payment state; never infer payment from a browser return or local choice.
+    if (paymentStatus == 'paid' &&
+        paidAt != null &&
+        status != ContractStatus.draft &&
+        status != ContractStatus.awaitingPayment &&
+        !items.any((item) => item.title == 'تم تأكيد سداد الرسوم')) {
+      items = List.of(items);
+      if (submittedAt != null &&
+          !items.any((item) => [
+                'تم إرسال الطلب',
+                'تم استلام الطلب',
+                'تم إنشاء الطلب'
+              ].contains(item.title))) {
+        final sent = submittedAt.toUtc().add(const Duration(hours: 3));
+        final first = items.indexWhere((item) =>
+            item.title != 'تم حفظ المسودة' &&
+            item.eventStatus != ContractStatus.draft);
+        items.insert(
+            first < 0 ? items.length : first,
+            StatusTimelineItem(
+                title: 'تم إرسال الطلب',
+                subtitle: 'تم استلام بيانات الطلب والمرفقات.',
+                date: _dateLabel(sent),
+                time: _timeLabel(sent),
+                completed: true));
+      }
+      final paid = paidAt.toUtc().add(const Duration(hours: 3));
+      final waiting = items.lastIndexWhere((item) =>
+          item.eventStatus == ContractStatus.awaitingPayment ||
+          item.title == 'بانتظار الدفع');
+      final processing = items.indexWhere((item) =>
+          [
+            ContractStatus.processing,
+            ContractStatus.missingData,
+            ContractStatus.authenticated,
+            ContractStatus.rejected
+          ].contains(item.eventStatus) ||
+          [
+            'قيد المعالجة',
+            'مطلوب استكمال',
+            'يوجد نقص مطلوب',
+            'مكتمل',
+            'تم إصدار العقد النهائي',
+            'تم رفض الطلب نهائيًا'
+          ].contains(item.title));
+      final index = waiting >= 0
+          ? waiting + 1
+          : processing >= 0
+              ? processing
+              : items.length;
+      items.insert(
+          index,
+          StatusTimelineItem(
+              title: 'تم تأكيد سداد الرسوم',
+              subtitle: 'تم تأكيد الدفع من بوابة الدفع.',
+              date: _dateLabel(paid),
+              time: _timeLabel(paid),
+              completed: true));
+      if (index + 1 >= items.length ||
+          (items[index + 1].eventStatus != ContractStatus.processing &&
+              items[index + 1].title != 'قيد المعالجة')) {
+        items.insert(
+            index + 1,
+            StatusTimelineItem(
+                title: 'قيد المعالجة',
+                subtitle: 'تم استلام الدفع، وجارٍ مراجعة طلبك.',
+                date: _dateLabel(paid),
+                time: _timeLabel(paid),
+                eventStatus: ContractStatus.processing));
+      }
+    }
+    if (status != ContractStatus.rejected) {
+      final visibleItems = items
+          .where((item) =>
+              status == ContractStatus.authenticated ||
+              !(item.eventStatus == ContractStatus.authenticated ||
+                  item.title == 'مكتمل' ||
+                  item.title.contains('العقد النهائي')))
+          .toList();
+      return [
+        for (var index = 0; index < visibleItems.length; index++)
+          StatusTimelineItem(
+            title: visibleItems[index].title,
+            subtitle: status != ContractStatus.draft &&
+                    (visibleItems[index].eventStatus == ContractStatus.draft ||
+                        visibleItems[index].title == 'تم حفظ المسودة')
+                ? 'حُفظت المسودة قبل إرسال الطلب.'
+                : status != ContractStatus.awaitingPayment &&
+                        (visibleItems[index].eventStatus ==
+                                ContractStatus.awaitingPayment ||
+                            visibleItems[index].title == 'بانتظار الدفع')
+                    ? 'كانت الرسوم بانتظار السداد.'
+                    : visibleItems[index].subtitle,
+            date: visibleItems[index].date,
+            time: visibleItems[index].time,
+            completed: index < visibleItems.length - 1 ||
+                status == ContractStatus.authenticated,
+            current: index == visibleItems.length - 1 &&
+                status != ContractStatus.authenticated,
+            eventStatus: visibleItems[index].eventStatus,
+          ),
+      ];
+    }
     final normalized = <StatusTimelineItem>[];
     StatusTimelineItem? rejectionEvent;
     for (final item in items) {
@@ -2991,7 +3146,8 @@ class FirebaseRepository {
       issueCode: issueCode,
       fieldPath: fieldPath,
       required: (data['required'] as bool?) ?? true,
-      resolved: (data['resolved'] as bool?) ?? false,
+      resolved: data['resolved'] == true || data['status'] == 'resolved',
+      reviewNote: _readableText(data['reviewNote'], ''),
     );
   }
 
@@ -3082,13 +3238,13 @@ class FirebaseRepository {
   }
 
   static String _dateFromAny(Object? value) {
-    if (value is Timestamp) return _dateLabel(value.toDate());
-    return _dateLabel(DateTime.now());
+    return _dateLabel(_dateTimeFromAny(value) ?? DateTime.now());
   }
 
   static DateTime? _dateTimeFromAny(Object? value) {
     if (value is Timestamp) return value.toDate();
     if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
     return null;
   }
 

@@ -186,6 +186,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
   final _unitsPerFloorKey = GlobalKey();
   final _unitNumberKey = GlobalKey();
   final _unitNameKey = GlobalKey();
+  final _residentialCategoryKey = GlobalKey();
   final _floorKey = GlobalKey();
   final _unitAreaKey = GlobalKey();
   final _roomsCountKey = GlobalKey();
@@ -218,8 +219,9 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
   late final TextEditingController _notes;
   String _ownershipType = 'صك إلكتروني';
   String _propertyType = 'عمارة';
-  String _usage = 'سكن عوائل';
+  String _usage = 'سكني';
   String _unitType = 'شقة';
+  String _residentialCategory = '';
   String _furnishingStatus = 'غير مؤثثة';
   bool _maidRoom = false;
   bool _kitchen = true;
@@ -241,6 +243,8 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
   final List<_UnitIdentity> _batch = [];
 
   bool get _editingUnit => widget.parent != null;
+  bool get _requiresResidentialCategory =>
+      _editingUnit && ['شقة', 'استديو', 'دور', 'فيلا'].contains(_unitType);
   bool get _isBuilding => _propertyType == 'عمارة' || _propertyType == 'برج';
   bool get _separateBuilding =>
       !_editingUnit && _isBuilding && _rentalMode == 'units';
@@ -310,8 +314,12 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
     _notes = TextEditingController(text: data?.notes ?? '');
     _ownershipType = _prefer(data?.ownershipDocumentType, 'صك إلكتروني');
     _propertyType = _prefer(data?.propertyType, existing?.type ?? 'عمارة');
-    _usage = _prefer(data?.propertyUsage, existing?.usage ?? 'سكن عوائل');
+    _usage = _prefer(data?.propertyUsage, existing?.usage ?? 'سكني');
+    if (_usage == 'سكن عوائل' || _usage == 'سكن أفراد') {
+      _usage = 'سكني';
+    }
     _unitType = _prefer(data?.unitType, firstUnit?.type ?? 'شقة');
+    _residentialCategory = data?.residentialCategory ?? '';
     _furnishingStatus = _prefer(data?.furnishingStatus, 'غير مؤثثة');
     _maidRoom = data?.maidRoom ?? false;
     _kitchen = data?.kitchen ?? true;
@@ -651,10 +659,10 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                                     label: 'الاستخدام',
                                     value: _usage,
                                     items: const <String>[
-                                      'سكن عوائل',
-                                      'سكن أفراد',
+                                      'سكني',
+                                      'تجاري',
+                                      'سكني تجاري',
                                       'سكن جماعي',
-                                      'تجاري'
                                     ],
                                     icon: Icons.category_outlined,
                                     onChanged: (value) => setState(
@@ -774,6 +782,26 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                             const SizedBox(height: 10),
                             FieldGrid(
                               children: <Widget>[
+                                if (_requiresResidentialCategory)
+                                  AppDropdownField(
+                                    key: _residentialCategoryKey,
+                                    label: 'الفئة السكنية',
+                                    value: _residentialCategory,
+                                    hint: 'اختر أفراد أو عوائل',
+                                    items: const ['أفراد', 'عوائل'],
+                                    required: true,
+                                    icon: Icons.people_outline,
+                                    validator: (value) =>
+                                        ['أفراد', 'عوائل'].contains(value)
+                                            ? null
+                                            : 'اختر الفئة السكنية',
+                                    onChanged: (value) => setState(() =>
+                                        _residentialCategory = value ?? ''),
+                                  ),
+                                if (_requiresResidentialCategory && _multiple)
+                                  const InfoBanner(
+                                      text:
+                                          'تنطبق الفئة المختارة على الوحدات المضافة في هذه العملية، ويمكن تعديل كل وحدة لاحقًا.'),
                                 if (!_multiple)
                                   AppTextField(
                                     key: _unitNameKey,
@@ -1258,6 +1286,11 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       ..unitNumber = _unitNumber.text.trim()
       ..unitName = _unitName.text.trim()
       ..unitType = _unitType
+      ..residentialCategory = _requiresResidentialCategory
+          ? _residentialCategory
+          : (!_editingUnit
+              ? widget.existing?.data?.residentialCategory ?? ''
+              : '')
       ..floor = ContractCalculationEngine.normalizeDigits(_floor.text.trim())
       ..area = _unitArea.text.trim()
       ..roomsCount = _roomsCount.text.trim()
@@ -1448,6 +1481,10 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
             _positiveInt(_unitsPerFloor.text, min: 1, max: 200) == null,
       ),
       MapEntry(_unitNumberKey, _unitNumber.text.trim().isEmpty),
+      MapEntry(
+          _residentialCategoryKey,
+          _requiresResidentialCategory &&
+              !['أفراد', 'عوائل'].contains(_residentialCategory)),
       MapEntry(_unitNameKey, _unitName.text.trim().isEmpty),
       MapEntry(
         _floorKey,
@@ -1963,6 +2000,8 @@ class _UnitDetailsScreen extends StatelessWidget {
       'رقم الوحدة': unit.number,
       'اسم الوحدة': unit.name,
       'نوع الوحدة': unit.type,
+      if (['شقة', 'استديو', 'دور', 'فيلا'].contains(unit.type))
+        'الفئة السكنية': data.residentialCategory,
       'رقم الدور': unit.floor,
       'المساحة': '${data.area} م²',
       'عدد الغرف': data.roomsCount,
@@ -3580,67 +3619,20 @@ class _LegalScreenState extends State<LegalScreen> {
   }
 }
 
-class _AccountDeletionConfirmationDialog extends StatefulWidget {
+class _AccountDeletionConfirmationDialog extends StatelessWidget {
   const _AccountDeletionConfirmationDialog();
 
   @override
-  State<_AccountDeletionConfirmationDialog> createState() =>
-      _AccountDeletionConfirmationDialogState();
-}
-
-class _AccountDeletionConfirmationDialogState
-    extends State<_AccountDeletionConfirmationDialog> {
-  final TextEditingController _controller = TextEditingController();
-  bool _canDelete = false;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('حذف الحساب نهائيًا'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            const Text(
-              kEjarzDemoMode
-                  ? 'سيُحذف حساب التجربة الحالي وكل العقود والعقارات والمرفقات والبيانات التجريبية المرتبطة به. يمكنك بدء تجربة جديدة بعد تسجيل الدخول مرة أخرى.'
-                  : 'سيُحذف حسابك وملفك الشخصي وعقودك وعقاراتك ومرفقاتك وإشعاراتك وطلبات الدعم وبيانات الدفع المرتبطة بالحساب. لا يمكن التراجع عن هذا الإجراء.',
-            ),
-            const SizedBox(height: 14),
-            const Text('للتأكيد اكتب كلمة: حذف'),
-            const SizedBox(height: 7),
-            TextField(
-              controller: _controller,
-              autofocus: true,
-              textInputAction: TextInputAction.done,
-              decoration: const InputDecoration(hintText: 'حذف'),
-              onChanged: (value) {
-                setState(() => _canDelete = value.trim() == 'حذف');
-              },
-            ),
-          ],
-        ),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('إلغاء'),
-        ),
-        FilledButton(
-          onPressed: _canDelete ? () => Navigator.of(context).pop(true) : null,
-          style: FilledButton.styleFrom(backgroundColor: AppColors.red),
-          child: const Text('حذف نهائي'),
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => const AccountConfirmationDialog(
+        title: 'حذف الحساب نهائيًا',
+        message: kEjarzDemoMode
+            ? 'سيُحذف حساب التجربة الحالي وكل العقود والعقارات والمرفقات والبيانات التجريبية المرتبطة به. يمكنك بدء تجربة جديدة بعد تسجيل الدخول مرة أخرى.'
+            : 'سيُحذف حسابك وملفك الشخصي وعقودك وعقاراتك ومرفقاتك وإشعاراتك وطلبات الدعم وبيانات الدفع المرتبطة بالحساب. لا يمكن التراجع عن هذا الإجراء.',
+        confirmLabel: 'حذف نهائي',
+        icon: Icons.delete_forever_rounded,
+        confirmationWord: 'حذف',
+        destructive: true,
+      );
 }
 
 class _LegalLinkTile extends StatelessWidget {

@@ -101,7 +101,11 @@ void main() {
     addTearDown(controller.dispose);
     final building = await controller.saveProperty(buildingData());
     expect(building.units, isEmpty);
-    final units = List.generate(5, (i) => newUnit('${i + 1}'));
+    final units = List.generate(
+        5,
+        (i) => UnitRecord.fromData(
+            PropertyData.copyOf(newUnit('${i + 1}').data!)
+              ..residentialCategory = i.isEven ? 'عوائل' : 'أفراد'));
     final saved = await controller.saveProperty(building.data!,
         existing: building, unitEdits: units);
     expect(saved.units.length, 5);
@@ -146,6 +150,15 @@ void main() {
     expect(restored.first.data!.privateParking, isTrue);
     expect(restored.first.data!.notes, 'مدخل مستقل');
     expect(restored.first.data!.area, '120.5');
+    expect(restored.first.data!.residentialCategory, 'عوائل');
+    expect(restored[1].data!.residentialCategory, 'أفراد');
+    final draft = ContractDraft()..property = restored.first.detailsFor(edited);
+    expect(ContractDraft.copyOf(draft).property.residentialCategory, 'عوائل');
+    expect(
+        FirebaseRepository.draftFromMap(FirebaseRepository.draftToMap(draft))!
+            .property
+            .residentialCategory,
+        'عوائل');
     expect(restored.first.data!.hallsCount, '2');
     expect(restored.first.data!.bathroomsCount, '2');
     expect(restored.first.detailsFor(edited).ownershipDocumentNumber,

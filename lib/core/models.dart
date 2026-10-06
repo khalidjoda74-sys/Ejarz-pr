@@ -217,6 +217,7 @@ class PropertyData {
   String unitNumber;
   String unitName;
   String unitType;
+  String residentialCategory;
   String floor;
   String area;
   String roomsCount;
@@ -286,6 +287,7 @@ class PropertyData {
     this.unitNumber = '',
     this.unitName = '',
     this.unitType = 'شقة',
+    this.residentialCategory = '',
     this.floor = '',
     this.area = '',
     this.roomsCount = '',
@@ -349,6 +351,7 @@ class PropertyData {
         unitNumber: source.unitNumber,
         unitName: source.unitName,
         unitType: source.unitType,
+        residentialCategory: source.residentialCategory,
         floor: source.floor,
         area: source.area,
         roomsCount: source.roomsCount,
@@ -681,6 +684,7 @@ class ContractDraft {
         unitNumber: source.property.unitNumber,
         unitName: source.property.unitName,
         unitType: source.property.unitType,
+        residentialCategory: source.property.residentialCategory,
         floor: source.property.floor,
         area: source.property.area,
         roomsCount: source.property.roomsCount,
@@ -1102,6 +1106,7 @@ class MissingRequirement {
   final String fieldPath;
   final bool required;
   final bool resolved;
+  final String reviewNote;
 
   const MissingRequirement({
     required this.id,
@@ -1112,6 +1117,7 @@ class MissingRequirement {
     this.fieldPath = '',
     this.required = true,
     this.resolved = false,
+    this.reviewNote = '',
   });
 }
 

@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import '../widgets/load_more_records.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/app_controller.dart';
-import '../core/app_telemetry.dart';
 import '../core/firebase_repository.dart';
 import '../core/firebase_bootstrap.dart';
 import '../core/demo_config.dart';
@@ -49,7 +47,6 @@ Future<void> openSupportContact(BuildContext context, String kind) async {
     if (context.mounted) showAppSnackBar(context, 'تعذر فتح تطبيق التواصل.');
   }
 }
-
 class SavedPartiesScreen extends StatelessWidget {
   const SavedPartiesScreen({super.key});
   @override
@@ -364,7 +361,6 @@ class CustomerInvoicesScreen extends StatelessWidget {
         ]));
   }
 }
-
 class SupportConversation extends StatefulWidget {
   final String ticketId;
   const SupportConversation({super.key, required this.ticketId});
@@ -489,188 +485,6 @@ class _SupportConversationState extends State<SupportConversation> {
                   }
                 }),
           ],
-        ]));
-  }
-}
-
-class ServicePaymentScreen extends StatefulWidget {
-  final ContractRecord contract;
-  const ServicePaymentScreen({super.key, required this.contract});
-  @override
-  State<ServicePaymentScreen> createState() => _ServicePaymentState();
-}
-
-class _ServicePaymentState extends State<ServicePaymentScreen> {
-  final reference = TextEditingController();
-  bool busy = false, submitted = false;
-  String? neoleapPaymentId;
-  String? neoleapCheckoutUrl;
-  @override
-  void initState() {
-    super.initState();
-    AppTelemetry.record('checkout_start', 'contract_details');
-    _restorePaymentAttempt();
-  }
-
-  Future<void> _restorePaymentAttempt() async {
-    try {
-      final response = await FirebaseFunctions.instanceFor(region: 'us-central1')
-          .httpsCallable('getContractPaymentAttempt')
-          .call({'contractId': widget.contract.id});
-      final data = Map<String, dynamic>.from(response.data as Map);
-      if (!mounted || data['paymentId'] is! String ||
-          !['pending', 'initializing', 'initUncertain'].contains(data['status'])) {
-        return;
-      }
-      setState(() {
-        neoleapPaymentId = data['paymentId'] as String;
-        neoleapCheckoutUrl = data['checkoutUrl'] as String?;
-      });
-    } catch (_) {
-      // The create call will still show the server's actionable error.
-    }
-  }
-
-  @override
-  void dispose() {
-    reference.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    AppScope.of(context);
-    final p = AppRuntime.payments;
-    return Scaffold(
-        appBar: AppBar(title: const Text('رسوم خدمة العقد')),
-        body: ListView(padding: const EdgeInsets.all(22), children: [
-          Text('${widget.contract.totalFees.toStringAsFixed(2)} ر.س',
-              style: Theme.of(context).textTheme.headlineMedium),
-          Text('الطلب: ${widget.contract.requestNumber}'),
-          const SizedBox(height: 20),
-          const InfoBanner(
-              text: 'يُفتح الدفع الآمن في صفحة البنك. بعد العودة إلى التطبيق اضغط التحقق من حالة الدفع؛ لا يُعتمد السداد قبل تأكيده من البنك.'),
-          const SizedBox(height: 14),
-          PrimaryButton(
-              label: neoleapPaymentId == null ? 'الدفع الإلكتروني' : 'تحقق من حالة الدفع',
-              loading: busy,
-              onPressed: () async {
-                setState(() => busy = true);
-                try {
-                  if (neoleapPaymentId == null) {
-                    final response = await FirebaseFunctions.instanceFor(region: 'us-central1')
-                        .httpsCallable('createPaymentAttempt')
-                        .call({'contractId': widget.contract.id, 'method': 'neoleap'});
-                    final data = Map<String, dynamic>.from(response.data as Map);
-                    final paymentId = data['paymentId'] as String?;
-                    final checkoutUrl = data['checkoutUrl'] as String?;
-                    if (paymentId == null || checkoutUrl == null) {
-                      throw StateError('تعذر إنشاء صفحة الدفع.');
-                    }
-                    if (mounted) {
-                      setState(() {
-                        neoleapPaymentId = paymentId;
-                        neoleapCheckoutUrl = checkoutUrl;
-                      });
-                    }
-                    if (!await launchUrl(Uri.parse(checkoutUrl), mode: LaunchMode.externalApplication)) {
-                      throw StateError('تعذر فتح صفحة الدفع.');
-                    }
-                  } else {
-                    final response = await FirebaseFunctions.instanceFor(region: 'us-central1')
-                        .httpsCallable('checkNeoleapPayment')
-                        .call({'paymentId': neoleapPaymentId});
-                    final data = Map<String, dynamic>.from(response.data as Map);
-                    if (context.mounted) {
-                      if (data['status'] == 'paid') {
-                        final updated = await FirebaseRepository().fetchContract(widget.contract.id);
-                        if (!context.mounted) return;
-                        if (updated != null) {
-                          Navigator.of(context).pop(updated);
-                          return;
-                        }
-                        showAppSnackBar(context, 'تم تأكيد الدفع من البنك.');
-                      } else if (data['status'] == 'failed') {
-                        setState(() {
-                          neoleapPaymentId = null;
-                          neoleapCheckoutUrl = null;
-                        });
-                        showAppSnackBar(context, 'لم تكتمل العملية. يمكنك إعادة محاولة الدفع.');
-                      } else {
-                        showAppSnackBar(context, 'لم يؤكد البنك اكتمال الدفع بعد. يمكنك التحقق لاحقًا.');
-                      }
-                    }
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    showAppSnackBar(context, e is FirebaseFunctionsException
-                        ? e.message ?? 'تعذر تنفيذ عملية الدفع'
-                        : 'تعذر فتح صفحة الدفع أو التحقق منها.');
-                  }
-                } finally {
-                  if (mounted) setState(() => busy = false);
-                }
-              }),
-          if (neoleapCheckoutUrl != null) ...[
-            const SizedBox(height: 8),
-            TextButton(
-                onPressed: () async {
-                  final url = neoleapCheckoutUrl;
-                  if (url != null) await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-                },
-                child: const Text('إعادة فتح صفحة البنك')),
-          ],
-          if (p['manualTransferEnabled'] == true) ...[
-            const SizedBox(height: 18),
-            const SectionTitle(title: 'تحويل بنكي'),
-            SelectableText(
-                'البنك: ${p['bankName']}\nالمستفيد: ${p['bankAccountName']}\nIBAN: ${p['bankIban']}'),
-            const SizedBox(height: 14),
-            if (submitted)
-              const InfoBanner(
-                  text:
-                      'سُجل طلب مراجعة التحويل. يظل الدفع معلقًا حتى تعتمد المالية المبلغ والمرجع.')
-            else ...[
-              AppTextField(
-                  hint: '', label: 'مرجع التحويل', controller: reference),
-              const SizedBox(height: 14),
-              PrimaryButton(
-                  label: 'أرسلت التحويل — طلب مراجعة',
-                  loading: busy,
-                  onPressed: () async {
-                    if (reference.text.trim().isEmpty) {
-                      showAppSnackBar(context, 'أدخل مرجع التحويل.');
-                      return;
-                    }
-                    setState(() => busy = true);
-                    try {
-                      await FirebaseFunctions.instanceFor(region: 'us-central1')
-                          .httpsCallable('createPaymentAttempt')
-                          .call({
-                        'contractId': widget.contract.id,
-                        'method': 'bankTransfer',
-                        'reference': reference.text.trim()
-                      });
-                      if (mounted) setState(() => submitted = true);
-                    } catch (e) {
-                      if (context.mounted) {
-                        showAppSnackBar(
-                            context,
-                            e is FirebaseFunctionsException
-                                ? e.message ?? 'تعذر تسجيل التحويل'
-                                : 'تعذر تسجيل التحويل');
-                      }
-                    } finally {
-                      if (mounted) setState(() => busy = false);
-                    }
-                  })
-            ]
-          ] else
-            const Padding(
-                padding: EdgeInsets.only(top: 16),
-                child: InfoBanner(
-                    text:
-                        'وسائل التحصيل غير مهيأة حاليًا. تواصل مع الدعم قبل إرسال أي مبلغ.')),
         ]));
   }
 }
