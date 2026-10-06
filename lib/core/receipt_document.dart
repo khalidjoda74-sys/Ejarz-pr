@@ -144,20 +144,34 @@ Future<Uint8List> receiptPdf(Map<String, dynamic> invoice) async {
 Future<void> downloadReceipt(Map<String, dynamic> invoice,
     {bool Function()? isCurrentAccount}) async {
   final bytes = await receiptPdf(invoice);
-  if (isCurrentAccount != null && !isCurrentAccount()) return;
+  await downloadReceiptPdf(bytes, receiptFileName(invoice),
+      isCurrentAccount: isCurrentAccount);
+}
+
+String receiptFileName(Map<String, dynamic> invoice) {
   final number = _text(invoice['invoiceNumber'], 'service-fees')
       .replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
+  return 'aqdak-receipt-$number.pdf';
+}
+
+Future<void> downloadReceiptPdf(Uint8List bytes, String fileName,
+    {bool Function()? isCurrentAccount}) async {
+  if (isCurrentAccount != null && !isCurrentAccount()) return;
+  if (kIsWeb) {
+    await XFile.fromData(bytes, mimeType: 'application/pdf', name: fileName)
+        .saveTo(fileName);
+    return;
+  }
+  final desktop = defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.linux ||
+      defaultTargetPlatform == TargetPlatform.macOS;
   final path = await FilePicker.platform.saveFile(
       dialogTitle: 'تنزيل إيصال PDF',
-      fileName: 'aqdak-receipt-$number.pdf',
+      fileName: fileName,
       type: FileType.custom,
       allowedExtensions: ['pdf'],
-      bytes: bytes);
-  if (!kIsWeb &&
-      path != null &&
-      (defaultTargetPlatform == TargetPlatform.windows ||
-          defaultTargetPlatform == TargetPlatform.linux ||
-          defaultTargetPlatform == TargetPlatform.macOS)) {
+      bytes: desktop ? null : bytes);
+  if (desktop && path != null) {
     if (isCurrentAccount != null && !isCurrentAccount()) return;
     await XFile.fromData(bytes, mimeType: 'application/pdf').saveTo(path);
   }

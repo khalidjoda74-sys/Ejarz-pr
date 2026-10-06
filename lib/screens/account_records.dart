@@ -10,6 +10,9 @@ import '../core/demo_config.dart';
 import '../core/models.dart';
 import '../core/runtime_config.dart';
 import '../core/receipt_document.dart';
+import '../core/receipt_share_native.dart'
+    if (dart.library.js_interop) '../core/receipt_share_web.dart';
+import '../widgets/receipt_actions_dialog.dart';
 import '../widgets/common.dart';
 import '../widgets/service_unavailable.dart';
 
@@ -368,12 +371,24 @@ class _InvoiceReceiptCardState extends State<_InvoiceReceiptCard> {
     try {
       final details = await controller.invoiceReceiptDetails(widget.invoice);
       if (!mounted || !controller.isCurrentAccount(generation)) return;
-      await downloadReceipt(details,
+      final bytes = await receiptPdf(details);
+      if (!mounted || !controller.isCurrentAccount(generation)) return;
+      final fileName = receiptFileName(details);
+      final share = prepareReceiptShare(bytes, fileName);
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ReceiptActionsDialog(
+          bytes: bytes,
+          fileName: fileName,
+          share: share,
           isCurrentAccount: () =>
-              mounted && controller.isCurrentAccount(generation));
+              mounted && controller.isCurrentAccount(generation),
+        ),
+      );
     } catch (_) {
       if (mounted && controller.isCurrentAccount(generation)) {
-        showAppSnackBar(context, 'تعذر تنزيل المستند. حاول مرة أخرى.');
+        showAppSnackBar(context, 'تعذر تجهيز المستند. حاول مرة أخرى.');
       }
     } finally {
       if (mounted) setState(() => _downloading = false);
@@ -413,9 +428,8 @@ class _InvoiceReceiptCardState extends State<_InvoiceReceiptCard> {
                   const Text('مستند تجريبي لا يثبت تحصيلًا.'),
                 const SizedBox(height: 12),
                 SecondaryButton(
-                    label:
-                        _downloading ? 'جاري تجهيز PDF...' : 'تنزيل إيصال PDF',
-                    icon: Icons.download_outlined,
+                    label: _downloading ? 'جاري تجهيز PDF...' : 'ملف PDF',
+                    icon: Icons.picture_as_pdf_outlined,
                     onPressed: _downloading ? null : _download),
               ]));
         },

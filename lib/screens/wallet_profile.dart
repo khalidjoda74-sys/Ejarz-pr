@@ -254,6 +254,17 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
   bool get _multiple =>
       _editingUnit && widget.unit == null && _batch.length > 1;
   int get _unitLimit => (widget.parent?.remainingUnits ?? 1).clamp(0, 50);
+  int get _unitFloors =>
+      _positiveInt(_floors.text, min: 1, max: 200) ?? widget.parent!.floors;
+  int get _minimumUnitFloors {
+    var minimum = widget.parent!.floors.clamp(1, 200);
+    for (final unit in widget.parent!.units) {
+      final floor = int.tryParse(
+          ContractCalculationEngine.normalizeDigits(unit.floor.trim()));
+      if (floor != null && floor >= minimum) minimum = floor + 1;
+    }
+    return minimum;
+  }
 
   @override
   void initState() {
@@ -506,8 +517,25 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                             AppPageHeader(
                                 title: widget.parent!.title,
                                 subtitle:
-                                    'مسجل ${widget.parent!.units.length} من ${widget.parent!.totalUnits} وحدة • ${widget.parent!.floors} أدوار',
+                                    'مسجل ${widget.parent!.units.length} من ${widget.parent!.totalUnits} وحدة • $_unitFloors أدوار',
                                 icon: Icons.apartment_outlined),
+                            const SizedBox(height: 12),
+                            AppTextField(
+                                key: _floorsKey,
+                                label: 'عدد أدوار العمارة',
+                                hint: 'يشمل الدور الأرضي',
+                                controller: _floors,
+                                required: true,
+                                keyboardType: TextInputType.number,
+                                icon: Icons.layers_outlined,
+                                onChanged: (_) => setState(() {}),
+                                validator: (v) => _integerValidator(v,
+                                    min: _minimumUnitFloors, max: 200)),
+                            const SizedBox(height: 8),
+                            InfoBanner(
+                                text:
+                                    'سعة العمارة ${widget.parent!.totalUnits} وحدة لا تحدد عدد أدوارها. '
+                                    'صحح عدد الأدوار الفعلي هنا عند الحاجة؛ يُحفظ مع الوحدات. الأرضي رقمه 0.'),
                             const SizedBox(height: 12),
                             if (_copyingUnit) ...<Widget>[
                               InfoBanner(
@@ -821,7 +849,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                                   const InfoBanner(
                                       text:
                                           'تنطبق الفئة المختارة على الوحدات المضافة في هذه العملية، ويمكن تعديل كل وحدة لاحقًا.'),
-                                if (!_multiple)
+                                if (!_multiple && !_copyingUnit)
                                   AppTextField(
                                     key: _unitNameKey,
                                     label: 'اسم الوحدة',
@@ -843,9 +871,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                                     icon: Icons.layers_outlined,
                                     required: true,
                                     validator: _editingUnit
-                                        ? (v) => _integerValidator(v,
-                                            min: 0,
-                                            max: widget.parent!.floors - 1)
+                                        ? _unitFloorValidator
                                         : _requiredValidator,
                                   ),
                                 AppDropdownField(
@@ -1169,11 +1195,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
   }
 
   String _newUnitName(String number) {
-    final source = widget.template;
-    if (source != null && source.name != '${source.type} ${source.number}') {
-      return source.name;
-    }
-    return '$_unitType $number';
+    return widget.template?.name ?? '$_unitType $number';
   }
 
   String? _unitNumberValidator(String? value, {_UnitIdentity? identity}) {
@@ -1235,9 +1257,18 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
     });
   }
 
-  String get _unitFloorHint => widget.parent!.floors == 1
+  String get _unitFloorHint => _unitFloors == 1
       ? '0 للأرضي (العمارة من دور واحد)'
-      : 'من 0 للأرضي إلى ${widget.parent!.floors - 1}';
+      : 'من 0 للأرضي إلى ${_unitFloors - 1}';
+
+  String? _unitFloorValidator(String? value) {
+    if (_unitFloors == 1 &&
+        _positiveInt(value ?? '', min: 0, max: 0) == null &&
+        _positiveInt(value ?? '', min: 1) != null) {
+      return 'العمارة مسجلة بدور أرضي فقط؛ صحح عدد أدوار العمارة';
+    }
+    return _integerValidator(value, min: 0, max: _unitFloors - 1);
+  }
 
   Widget _identityCard(_UnitIdentity identity, int index) => Padding(
         padding: const EdgeInsets.only(bottom: 12),
@@ -1257,13 +1288,14 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                     validator: (value) =>
                         _unitNumberValidator(value, identity: identity),
                     icon: Icons.tag_outlined),
-                AppTextField(
-                    label: 'اسم الوحدة',
-                    hint: 'اسم واضح للوحدة',
-                    controller: identity.name,
-                    required: true,
-                    validator: _requiredValidator,
-                    icon: Icons.home_outlined),
+                if (!_copyingUnit)
+                  AppTextField(
+                      label: 'اسم الوحدة',
+                      hint: 'اسم واضح للوحدة',
+                      controller: identity.name,
+                      required: true,
+                      validator: _requiredValidator,
+                      icon: Icons.home_outlined),
                 AppTextField(
                     label: 'رقم الدور',
                     hint: _unitFloorHint,
@@ -1271,8 +1303,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                     required: true,
                     keyboardType: TextInputType.number,
                     icon: Icons.layers_outlined,
-                    validator: (v) => _integerValidator(v,
-                        min: 0, max: widget.parent!.floors - 1)),
+                    validator: _unitFloorValidator),
                 AppTextField(
                     label: 'عداد الكهرباء (اختياري)',
                     hint: 'إن وجد',
@@ -1393,7 +1424,9 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
         final current = controller.properties
             .firstWhere((p) => p.id == parent.id, orElse: () => parent);
         propertyData = PropertyData.copyOf(current.data ?? data)
-          ..rentalMode = 'units';
+          ..rentalMode = 'units'
+          ..floorsCount =
+              '${_unitFloors < current.floors ? current.floors : _unitFloors}';
         final status = widget.unit?.status ?? 'متاحة';
         unitEdits = _multiple
             ? _batch.map((identity) {
@@ -1531,7 +1564,10 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
           _cityKey, _city.text.trim().isEmpty || _district.text.trim().isEmpty),
       MapEntry(_districtKey, _district.text.trim().isEmpty),
       MapEntry(
-          _floorsKey, _positiveInt(_floors.text, min: 1, max: 200) == null),
+          _floorsKey,
+          _positiveInt(_floors.text,
+                  min: _editingUnit ? _minimumUnitFloors : 1, max: 200) ==
+              null),
       MapEntry(
         _totalUnitsKey,
         _positiveInt(_totalUnits.text, min: 1, max: 9999) == null,
@@ -1550,9 +1586,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       MapEntry(
         _floorKey,
         _editingUnit
-            ? _positiveInt(_floor.text,
-                    min: 0, max: widget.parent!.floors - 1) ==
-                null
+            ? _positiveInt(_floor.text, min: 0, max: _unitFloors - 1) == null
             : _floor.text.trim().isEmpty,
       ),
       MapEntry(_unitAreaKey, _positiveNumber(_unitArea.text) == null),

@@ -104,6 +104,7 @@ void main() {
     final controller = AppController();
     addTearDown(controller.dispose);
     final sourceData = PropertyData.copyOf(newUnit('١').data!)
+      ..unitName = 'الوحدة الشمالية'
       ..residentialCategory = 'عوائل'
       ..electricityMeter = '7001'
       ..waterMeter = '8001'
@@ -130,13 +131,14 @@ void main() {
         .controller
         .text;
     expect(shown('رقم الوحدة'), '3');
+    expect(field('اسم الوحدة'), findsNothing);
     expect(shown('مساحة الوحدة (م²)'), '120.5');
     expect(shown('رقم عداد الكهرباء'), sourceData.electricityMeter);
     await fill(tester, 'عدد النسخ', '2');
     expect(shown('رقم الوحدة', 0), '3');
     expect(shown('رقم الوحدة', 1), '5');
     await fill(tester, 'رقم الوحدة', '7');
-    await fill(tester, 'اسم الوحدة', 'نسخة الاختبار');
+    expect(field('اسم الوحدة'), findsNothing);
     await fill(tester, 'رقم الدور', '2');
     await fill(tester, 'عداد الكهرباء (اختياري)', '999');
     await fill(tester, 'عدد النسخ', '1');
@@ -170,6 +172,8 @@ void main() {
     expect(firstCopy.isAvailable, isTrue);
     expect(secondCopy.isAvailable, isTrue);
     expect(firstCopy.floor, '2');
+    expect(firstCopy.name, source.name);
+    expect(secondCopy.name, source.name);
     expect(firstCopy.data!.electricityMeter, '999');
     for (final unit in [firstCopy, secondCopy]) {
       expect(unit.data!.roomsCount, sourceData.roomsCount);
@@ -182,8 +186,10 @@ void main() {
     expect(source.data!.electricityMeter, sourceData.electricityMeter);
     expect(source.floor, '1');
     expect(source.status, 'مؤجرة');
-    await tester.ensureVisible(find.text('نسخة الاختبار • شقة • 2'));
-    await tester.tap(find.text('نسخة الاختبار • شقة • 2'));
+    final firstCopyLabel = find.text(
+        'رقم ${firstCopy.number} • ${firstCopy.area.replaceAll(' م²', '')} م²');
+    await tester.ensureVisible(firstCopyLabel);
+    await tester.tap(firstCopyLabel);
     await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
@@ -191,10 +197,15 @@ void main() {
     await tester.tap(find.text('تعديل بيانات الوحدة'));
     await tester.pumpAndSettle();
     await fill(tester, 'عدد الغرف', '6');
+    await fill(tester, 'اسم الوحدة', 'الوحدة الشمالية المعدلة');
     tester.testTextInput.hide();
     await tester.tap(find.text('حفظ الوحدة'));
     await tester.pumpAndSettle();
     final updated = controller.properties.single;
+    expect(updated.units.firstWhere((unit) => unit.number == '7').name,
+        'الوحدة الشمالية المعدلة');
+    expect(updated.units.firstWhere((unit) => unit.number == '3').name,
+        source.name);
     expect(
         updated.units.firstWhere((unit) => unit.number == '7').data!.roomsCount,
         '6');
@@ -253,6 +264,7 @@ void main() {
     expect(controller.properties.single.units.map((unit) => unit.number),
         ['1', '2']);
     expect(controller.properties.single.units.last.floor, '0');
+    expect(controller.properties.single.units.last.name, source.name);
     expect(controller.properties.single.units.last.data!.notes,
         'ملاحظة مستقلة للنسخة');
     expect(source.data!.notes, 'مدخل مستقل');
@@ -263,6 +275,66 @@ void main() {
                 of: copy, matching: find.byType(OutlinedButton)))
             .onPressed,
         isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('90-unit building can correct floors while copying units',
+      (tester) async {
+    final controller = AppController();
+    addTearDown(controller.dispose);
+    final source = UnitRecord.fromData(PropertyData.copyOf(newUnit('1').data!)
+      ..floor = '0'
+      ..residentialCategory = 'عوائل');
+    controller.properties.clear();
+    controller.properties.add(managedPropertyRecord(
+        buildingData()
+          ..totalUnits = '90'
+          ..floorsCount = '1',
+        'ninety-unit-building',
+        [source]));
+    await mount(tester, controller,
+        PropertiesScreen(onMenu: () {}, onNotifications: () {}));
+    await tester.tap(find.text('عمارة الاختبار').first);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('شقة 1 • شقة • 0'));
+    await tester.tap(find.text('شقة 1 • شقة • 0'));
+    await tester.pumpAndSettle();
+    final copy = find.byKey(const ValueKey('copy-unit-1'));
+    await tester.ensureVisible(copy);
+    await tester
+        .tap(find.descendant(of: copy, matching: find.byType(OutlinedButton)));
+    await tester.pumpAndSettle();
+    await fill(tester, 'رقم الدور', '4');
+    expect(find.text('العمارة مسجلة بدور أرضي فقط؛ صحح عدد أدوار العمارة'),
+        findsOneWidget);
+    expect(find.text('أدخل عددًا صحيحًا من 0 إلى 0'), findsNothing);
+    await fill(tester, 'عدد أدوار العمارة', '٥');
+    await fill(tester, 'عدد النسخ', '2');
+    expect(controller.properties.single.floors, 1);
+    final floors = field('رقم الدور');
+    await tester.ensureVisible(floors.at(1));
+    await tester.enterText(floors.at(1), '5');
+    await tester.pumpAndSettle();
+    tester.testTextInput.hide();
+    await tester.tap(find.text('إضافة 2 وحدات'));
+    await tester.pumpAndSettle();
+    expect(find.text('أدخل عددًا صحيحًا من 0 إلى 4'), findsWidgets);
+    expect(controller.properties.single.units.length, 1);
+    await tester.ensureVisible(floors.at(1));
+    await tester.enterText(floors.at(1), '2');
+    await tester.pumpAndSettle();
+    tester.testTextInput.hide();
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('إضافة 2 وحدات'));
+    await tester.pumpAndSettle();
+    final saved = controller.properties.single;
+    expect(saved.floors, 5);
+    expect(saved.data!.floorsCount, '5');
+    expect(saved.totalUnits, 90);
+    expect(saved.units.map((unit) => unit.floor), ['0', '4', '2']);
+    expect(saved.units.map((unit) => unit.number), ['1', '2', '3']);
+    expect(source.floor, '0');
     expect(tester.takeException(), isNull);
   });
 
