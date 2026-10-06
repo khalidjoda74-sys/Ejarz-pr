@@ -43,6 +43,16 @@ UnitRecord newUnit(String number, {String rooms = '3'}) =>
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('automatic unit numbers skip normalized existing and pending numbers',
+      () {
+    final used = ['١', '02', '4', 'A-1'];
+    expect(nextAvailableUnitNumber(used), '3');
+    used.add('۳');
+    expect(nextAvailableUnitNumber(used), '5');
+    used.add('005');
+    expect(nextAvailableUnitNumber(used), '6');
+    expect(nextAvailableUnitNumber([]), '1');
+  });
   test('prices reflect contract type, all years and fractional duration', () {
     final draft = ContractDraft();
     expect(draft.totalPayable, 299);

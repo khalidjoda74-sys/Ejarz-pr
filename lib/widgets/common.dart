@@ -1242,7 +1242,7 @@ class ContractListCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  'رقم الطلب: ${contract.requestNumber}',
+                  'رقم الطلب: \u2066${contract.requestNumber}\u2069',
                   style: TextStyle(
                     color: context.ejarzTheme.muted,
                     fontSize: context.sp(10.5),

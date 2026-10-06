@@ -1603,7 +1603,9 @@ class FirebaseRepository {
         type == ContractType.commercial ? 'طلب عقد تجاري' : 'طلب عقد سكني';
     return ContractRecord(
       id: id,
-      requestNumber: (data['requestNumber'] as String?) ?? id,
+      requestNumber: (data['requestNumber'] as String?) ??
+          (data['orderNumber'] as String?) ??
+          id,
       requestKind: (data['requestKind'] as String?) ?? '',
       renewalRequest: _readableStringMap(data['renewalRequest']),
       uid: (data['uid'] as String?) ?? '',

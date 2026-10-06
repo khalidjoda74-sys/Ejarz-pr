@@ -274,6 +274,7 @@ class _SummaryCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   contract.requestNumber,
+                  textDirection: TextDirection.ltr,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

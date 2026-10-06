@@ -84,7 +84,7 @@ void main() {
       }
       expect(find.text('قراءة عداد الغاز'), findsNothing);
       expect(
-          find.byKey(const ValueKey('review-open-lessor_id')), findsOneWidget);
+          find.byKey(const ValueKey('review-open-ownership')), findsOneWidget);
       Future<void> capture(String suffix) async {
         await tester.runAsync(() async {
           final image = await (boundary.currentContext!.findRenderObject()
@@ -103,7 +103,7 @@ void main() {
       await tester.pumpAndSettle();
       await capture('party-bank');
       await tester
-          .ensureVisible(find.byKey(const ValueKey('review-open-lessor_id')));
+          .ensureVisible(find.byKey(const ValueKey('review-open-ownership')));
       await tester.pumpAndSettle();
       await capture('attachments');
       expect(FirebaseRepository.draftToMap(draft), before);
@@ -162,10 +162,10 @@ void main() {
     expect(
         tester
             .widget<TextButton>(
-                find.byKey(const ValueKey('review-open-lessor_id')))
+                find.byKey(const ValueKey('review-open-ownership')))
             .onPressed,
         isNull);
-    expect(find.byKey(const ValueKey('review-open-tenant_id')), findsNothing);
+    expect(find.byKey(const ValueKey('review-open-authorization')), findsNothing);
     expect(find.text('لم يتم رفع الملف المطلوب'), findsOneWidget);
     await tester.tap(find.text('ملخص العقد'));
     await tester.pumpAndSettle();

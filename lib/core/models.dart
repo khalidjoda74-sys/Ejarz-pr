@@ -630,8 +630,6 @@ class ContractDraft {
         paymentMethod = PaymentMethod.mada,
         installments = <InstallmentData>[],
         attachments = <AttachmentData>[
-          AttachmentData(keyName: 'lessor_id', title: 'هوية المؤجر'),
-          AttachmentData(keyName: 'tenant_id', title: 'هوية المستأجر'),
           AttachmentData(keyName: 'ownership', title: 'وثيقة الملكية'),
           AttachmentData(
             keyName: 'authorization',

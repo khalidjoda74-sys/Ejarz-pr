@@ -20,6 +20,16 @@ String normalizedUnitNumber(String value) {
   return int.tryParse(result)?.toString() ?? result;
 }
 
+/// Finds an unused numeric identifier, including numbers in the pending batch.
+String nextAvailableUnitNumber(Iterable<String> numbers) {
+  final used = numbers.map(normalizedUnitNumber).toSet();
+  var number = 1;
+  while (used.contains('$number')) {
+    number++;
+  }
+  return '$number';
+}
+
 List<UnitRecord> mergePropertyUnits({
   required List<UnitRecord> current,
   required List<UnitRecord> additions,

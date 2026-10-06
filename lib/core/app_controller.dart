@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'firebase_bootstrap.dart';
 import 'demo_config.dart';
 import 'firebase_repository.dart';
+import 'receipt_document.dart';
 import 'draft_sync_policy.dart';
 import 'renewal_request.dart';
 import 'paged_feed.dart';
@@ -85,6 +86,67 @@ class AppController extends ChangeNotifier {
   final List<Map<String, dynamic>> savedParties = [];
   final List<Map<String, dynamic>> paymentRecords = [];
   final List<Map<String, dynamic>> invoices = [];
+
+  Map<String, dynamic>? _receiptContract(String id) {
+    for (final contract in contracts) {
+      if (contract.id == id) {
+        return {
+          'requestNumber': contract.requestNumber,
+          'paymentProviderReference': contract.paymentReference,
+          'paidAt': contract.paidAt,
+        };
+      }
+    }
+    return null;
+  }
+
+  String requestNumberForRecord(Map<String, dynamic> record) =>
+      receiptRequestNumber(record,
+          contract: _receiptContract('${record['contractId'] ?? ''}'));
+
+  Future<Map<String, dynamic>> invoiceReceiptDetails(
+      Map<String, dynamic> invoice) async {
+    final generation = accountGeneration;
+    final contractId = '${invoice['contractId'] ?? ''}';
+    final paymentId = '${invoice['paymentId'] ?? ''}';
+    var contract = _receiptContract(contractId);
+    Map<String, dynamic>? payment;
+    for (final record in paymentRecords) {
+      if (record['id'] == paymentId) payment = record;
+    }
+    final repository = _repository;
+    final uid = _sessionUid;
+    if (repository != null && uid != null) {
+      if (invoice['uid'] != uid) {
+        throw StateError('المستند غير متاح لهذا الحساب');
+      }
+      Future<Map<String, dynamic>?> read(String collection, String id) async {
+        if (id.isEmpty) return null;
+        final snapshot =
+            await repository.firestore.collection(collection).doc(id).get();
+        final data = snapshot.data();
+        if (!isCurrentAccount(generation)) throw StateError('تغير الحساب');
+        if (data != null && data['uid'] != uid) {
+          throw StateError('المستند غير متاح');
+        }
+        return data;
+      }
+
+      // Older invoices lack the public references. Fetch even when their
+      // request falls outside the currently loaded, paginated request list.
+      if ('${invoice['requestNumber'] ?? ''}'.trim().isEmpty ||
+          '${invoice['customerName'] ?? ''}'.trim().isEmpty) {
+        contract = await read('contracts', contractId) ?? contract;
+      }
+      if ('${invoice['providerReference'] ?? ''}'.trim().isEmpty &&
+          payment == null) {
+        payment = await read('payments', paymentId);
+      }
+    }
+    if (!isCurrentAccount(generation)) throw StateError('تغير الحساب');
+    return receiptDetails(invoice, contract: contract, payment: payment);
+  }
+
   String recordsError = '';
   final Map<String, PagedFeed> _feeds = {};
   Map<String, dynamic> customerMetrics = {};
@@ -2677,7 +2739,9 @@ class AppController extends ChangeNotifier {
     final now = DateTime.now();
     final serial = contracts.length + 124;
     final id = 'EJ-${now.year}-${serial.toString().padLeft(5, '0')}';
-    final request = 'REQ-${now.year}-${serial.toString().padLeft(5, '0')}';
+    final request = pendingSync
+        ? 'بانتظار المزامنة'
+        : 'REQ-${now.year}-${serial.toString().padLeft(5, '0')}';
     final date =
         '${now.year}/${now.month.toString().padLeft(2, '0')}/${now.day.toString().padLeft(2, '0')}';
 
@@ -2851,7 +2915,9 @@ class AppController extends ChangeNotifier {
     final id =
         existing?.id ?? 'DR-${now.year}-${serial.toString().padLeft(5, '0')}';
     final request = existing?.requestNumber ??
-        'DRAFT-${now.year}-${serial.toString().padLeft(5, '0')}';
+        (pendingSync
+            ? 'بانتظار المزامنة'
+            : 'DRAFT-${now.year}-${serial.toString().padLeft(5, '0')}');
     final currentDate =
         '${now.year}/${now.month.toString().padLeft(2, '0')}/${now.day.toString().padLeft(2, '0')}';
     final date = existing?.date ?? currentDate;

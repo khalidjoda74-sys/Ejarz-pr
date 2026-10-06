@@ -47,6 +47,7 @@ Future<void> openSupportContact(BuildContext context, String kind) async {
     if (context.mounted) showAppSnackBar(context, 'تعذر فتح تطبيق التواصل.');
   }
 }
+
 class SavedPartiesScreen extends StatelessWidget {
   const SavedPartiesScreen({super.key});
   @override
@@ -311,7 +312,7 @@ class AccountWallet extends StatelessWidget {
                     title: Text(
                         '${_amount(p['amount'])} ر.س · ${_state(p['status'])}'),
                     subtitle: Text(
-                        '${p['isDemo'] == true ? 'تجريبي · ' : ''}${p['contractId']}\n${_date(p['createdAt'])}')))),
+                        '${p['isDemo'] == true ? 'تجريبي · ' : ''}رقم الطلب: \u2066${c.requestNumberForRecord(p)}\u2069\n${_date(p['createdAt'])}')))),
       const LoadMoreRecords('payments'),
     ]));
   }
@@ -328,39 +329,99 @@ class CustomerInvoicesScreen extends StatelessWidget {
           if (c.invoices.isEmpty)
             const InfoBanner(text: 'لا توجد فواتير مرتبطة بحسابك بعد.'),
           for (final invoice in c.invoices)
-            Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: AppCard(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                      Text('${invoice['invoiceNumber'] ?? invoice['id']}',
-                          style: Theme.of(context).textTheme.titleMedium),
-                      Text(
-                          '${_amount(invoice['amount'])} ر.س · ${_state(invoice['status'])}'),
-                      Text('الطلب: ${invoice['contractId']}'),
-                      Text(_date(invoice['createdAt'])),
-                      if (invoice['isDemo'] == true)
-                        const Text('مستند تجريبي لا يثبت تحصيلًا.'),
-                      const SizedBox(height: 12),
-                      SecondaryButton(
-                          label: 'تنزيل إيصال HTML قابل للطباعة',
-                          icon: Icons.download_outlined,
-                          onPressed: () async {
-                            try {
-                              await downloadReceipt(invoice);
-                            } catch (_) {
-                              if (context.mounted) {
-                                showAppSnackBar(context,
-                                    'تعذر تنزيل المستند. حاول مرة أخرى.');
-                              }
-                            }
-                          }),
-                    ]))),
+            _InvoiceReceiptCard(key: ValueKey(invoice['id']), invoice: invoice),
           const LoadMoreRecords('invoices'),
         ]));
   }
 }
+
+class _InvoiceReceiptCard extends StatefulWidget {
+  final Map<String, dynamic> invoice;
+  const _InvoiceReceiptCard({super.key, required this.invoice});
+  @override
+  State<_InvoiceReceiptCard> createState() => _InvoiceReceiptCardState();
+}
+
+class _InvoiceReceiptCardState extends State<_InvoiceReceiptCard> {
+  Future<Map<String, dynamic>>? _details;
+  bool _downloading = false;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _details ??= AppScope.of(context).invoiceReceiptDetails(widget.invoice);
+  }
+
+  @override
+  void didUpdateWidget(covariant _InvoiceReceiptCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.invoice, widget.invoice)) {
+      _details = AppScope.of(context, listen: false)
+          .invoiceReceiptDetails(widget.invoice);
+    }
+  }
+
+  Future<void> _download() async {
+    if (_downloading) return;
+    final controller = AppScope.of(context, listen: false);
+    final generation = controller.accountGeneration;
+    setState(() => _downloading = true);
+    try {
+      final details = await controller.invoiceReceiptDetails(widget.invoice);
+      if (!mounted || !controller.isCurrentAccount(generation)) return;
+      await downloadReceipt(details,
+          isCurrentAccount: () =>
+              mounted && controller.isCurrentAccount(generation));
+    } catch (_) {
+      if (mounted && controller.isCurrentAccount(generation)) {
+        showAppSnackBar(context, 'تعذر تنزيل المستند. حاول مرة أخرى.');
+      }
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: FutureBuilder<Map<String, dynamic>>(
+        future: _details,
+        builder: (context, snapshot) {
+          final invoice = snapshot.data ?? widget.invoice;
+          final number = AppScope.of(context).requestNumberForRecord(invoice);
+          return AppCard(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text('${invoice['invoiceNumber'] ?? 'رقم المستند غير متاح'}',
+                    textDirection: TextDirection.ltr,
+                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                    '${_amount(invoice['amount'])} ر.س · ${_state(invoice['status'])}'),
+                Row(children: [
+                  const Text('رقم الطلب: '),
+                  Flexible(
+                      child: Text(number, textDirection: TextDirection.ltr))
+                ]),
+                if (invoice['providerReference'] != null) ...[
+                  const SizedBox(height: 4),
+                  const Text('مرجع عملية الدفع'),
+                  Text('${invoice['providerReference']}',
+                      textDirection: TextDirection.ltr),
+                ],
+                Text(_date(invoice['createdAt'])),
+                if (invoice['isDemo'] == true)
+                  const Text('مستند تجريبي لا يثبت تحصيلًا.'),
+                const SizedBox(height: 12),
+                SecondaryButton(
+                    label:
+                        _downloading ? 'جاري تجهيز PDF...' : 'تنزيل إيصال PDF',
+                    icon: Icons.download_outlined,
+                    onPressed: _downloading ? null : _download),
+              ]));
+        },
+      ));
+}
+
 class SupportConversation extends StatefulWidget {
   final String ticketId;
   const SupportConversation({super.key, required this.ticketId});

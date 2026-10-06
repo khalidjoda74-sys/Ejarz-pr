@@ -98,6 +98,196 @@ Future<void> choose(WidgetTester tester, String label, String value) async {
 }
 
 void main() {
+  testWidgets(
+      'copy units preserves details, reserves numbers and edits independently',
+      (tester) async {
+    final controller = AppController();
+    addTearDown(controller.dispose);
+    final sourceData = PropertyData.copyOf(newUnit('١').data!)
+      ..residentialCategory = 'عوائل'
+      ..electricityMeter = '7001'
+      ..waterMeter = '8001'
+      ..gasMeter = '9001'
+      ..kitchenCount = '2'
+      ..acCentralCount = '3';
+    final source = UnitRecord.fromData(sourceData, status: 'مؤجرة');
+    final building = managedPropertyRecord(
+        buildingData(), 'copy-building', [source, newUnit('02'), newUnit('4')]);
+    controller.properties.clear();
+    controller.properties.add(building);
+    await mount(tester, controller,
+        PropertiesScreen(onMenu: () {}, onNotifications: () {}));
+    await tester.tap(find.text('عمارة الاختبار').first);
+    await tester.pumpAndSettle();
+    final copy = find.byKey(const ValueKey('copy-unit-١'));
+    await tester.ensureVisible(copy);
+    await tester
+        .tap(find.descendant(of: copy, matching: find.byType(OutlinedButton)));
+    await tester.pumpAndSettle();
+    String shown(String label, [int index = 0]) => tester
+        .widget<EditableText>(find.descendant(
+            of: field(label).at(index), matching: find.byType(EditableText)))
+        .controller
+        .text;
+    expect(shown('رقم الوحدة'), '3');
+    expect(shown('مساحة الوحدة (م²)'), '120.5');
+    expect(shown('رقم عداد الكهرباء'), sourceData.electricityMeter);
+    await fill(tester, 'عدد النسخ', '2');
+    expect(shown('رقم الوحدة', 0), '3');
+    expect(shown('رقم الوحدة', 1), '5');
+    await fill(tester, 'رقم الوحدة', '7');
+    await fill(tester, 'اسم الوحدة', 'نسخة الاختبار');
+    await fill(tester, 'رقم الدور', '2');
+    await fill(tester, 'عداد الكهرباء (اختياري)', '999');
+    await fill(tester, 'عدد النسخ', '1');
+    expect(shown('رقم الوحدة'), '7');
+    expect(shown('رقم الدور'), '2');
+    expect(shown('رقم عداد الكهرباء'), '999');
+    await fill(tester, 'عدد النسخ', '2');
+    expect(shown('رقم الوحدة', 0), '7');
+    expect(shown('رقم الوحدة', 1), '3');
+    final secondNumber = field('رقم الوحدة').at(1);
+    await tester.ensureVisible(secondNumber);
+    await tester.enterText(secondNumber, '٧');
+    await tester.pumpAndSettle();
+    tester.testTextInput.hide();
+    await tester.tap(find.text('إضافة 2 وحدات'));
+    await tester.pumpAndSettle();
+    expect(controller.properties.single.units.length, 3);
+    expect(find.text('رقم الوحدة مستخدم؛ اختر رقمًا آخر'), findsWidgets);
+    await tester.ensureVisible(secondNumber);
+    await tester.enterText(secondNumber, '3');
+    await tester.pumpAndSettle();
+    tester.testTextInput.hide();
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('إضافة 2 وحدات'));
+    await tester.pumpAndSettle();
+    final saved = controller.properties.single;
+    expect(saved.units.map((unit) => unit.number), ['١', '02', '4', '7', '3']);
+    final firstCopy = saved.units.firstWhere((unit) => unit.number == '7');
+    final secondCopy = saved.units.firstWhere((unit) => unit.number == '3');
+    expect(firstCopy.isAvailable, isTrue);
+    expect(secondCopy.isAvailable, isTrue);
+    expect(firstCopy.floor, '2');
+    expect(firstCopy.data!.electricityMeter, '999');
+    for (final unit in [firstCopy, secondCopy]) {
+      expect(unit.data!.roomsCount, sourceData.roomsCount);
+      expect(unit.data!.kitchenCount, '2');
+      expect(unit.data!.acCentralCount, '3');
+      expect(unit.data!.notes, sourceData.notes);
+      expect(unit.data!.furnishingStatus, sourceData.furnishingStatus);
+      expect(unit.data!.residentialCategory, 'عوائل');
+    }
+    expect(source.data!.electricityMeter, sourceData.electricityMeter);
+    expect(source.floor, '1');
+    expect(source.status, 'مؤجرة');
+    await tester.ensureVisible(find.text('نسخة الاختبار • شقة • 2'));
+    await tester.tap(find.text('نسخة الاختبار • شقة • 2'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('تعديل بيانات الوحدة'));
+    await tester.tap(find.text('تعديل بيانات الوحدة'));
+    await tester.pumpAndSettle();
+    await fill(tester, 'عدد الغرف', '6');
+    tester.testTextInput.hide();
+    await tester.tap(find.text('حفظ الوحدة'));
+    await tester.pumpAndSettle();
+    final updated = controller.properties.single;
+    expect(
+        updated.units.firstWhere((unit) => unit.number == '7').data!.roomsCount,
+        '6');
+    expect(
+        updated.units.firstWhere((unit) => unit.number == '3').data!.roomsCount,
+        sourceData.roomsCount);
+    expect(updated.units.first.data!.roomsCount, sourceData.roomsCount);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('single copy can be cancelled and respects remaining capacity',
+      (tester) async {
+    final controller = AppController();
+    addTearDown(controller.dispose);
+    final source = UnitRecord.fromData(
+        PropertyData.copyOf(newUnit('1').data!)..residentialCategory = 'عوائل');
+    controller.properties.clear();
+    controller.properties.add(managedPropertyRecord(
+        buildingData()..totalUnits = '2', 'single-copy', [source]));
+    await mount(tester, controller,
+        PropertiesScreen(onMenu: () {}, onNotifications: () {}));
+    await tester.tap(find.text('عمارة الاختبار').first);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('شقة 1 • شقة • 1'));
+    await tester.tap(find.text('شقة 1 • شقة • 1'));
+    await tester.pumpAndSettle();
+    Future<void> openCopy() async {
+      final copy = find.byKey(const ValueKey('copy-unit-1'));
+      await tester.ensureVisible(copy);
+      await tester.tap(
+          find.descendant(of: copy, matching: find.byType(OutlinedButton)));
+      await tester.pumpAndSettle();
+    }
+
+    await openCopy();
+    await fill(tester, 'عدد الغرف', '8');
+    tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+    await tester.pumpAndSettle();
+    expect(controller.properties.single.units.length, 1);
+    expect(source.data!.roomsCount, '3');
+    await openCopy();
+    await fill(tester, 'عدد النسخ', '2');
+    tester.testTextInput.hide();
+    await tester.tap(find.text('إضافة الوحدة'));
+    await tester.pumpAndSettle();
+    expect(controller.properties.single.units.length, 1);
+    expect(find.text('أدخل عددًا صحيحًا من 1 إلى 1'), findsOneWidget);
+    await fill(tester, 'عدد النسخ', '1');
+    await fill(tester, 'رقم الدور', '0');
+    await fill(tester, 'ملاحظات على الوحدة', 'ملاحظة مستقلة للنسخة');
+    tester.testTextInput.hide();
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('إضافة الوحدة'));
+    await tester.pumpAndSettle();
+    expect(controller.properties.single.units.map((unit) => unit.number),
+        ['1', '2']);
+    expect(controller.properties.single.units.last.floor, '0');
+    expect(controller.properties.single.units.last.data!.notes,
+        'ملاحظة مستقلة للنسخة');
+    expect(source.data!.notes, 'مدخل مستقل');
+    final copy = find.byKey(const ValueKey('copy-unit-1'));
+    expect(
+        tester
+            .widget<OutlinedButton>(find.descendant(
+                of: copy, matching: find.byType(OutlinedButton)))
+            .onPressed,
+        isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('copy is disabled when the building has reached its capacity',
+      (tester) async {
+    final controller = AppController();
+    addTearDown(controller.dispose);
+    controller.properties.clear();
+    controller.properties.add(managedPropertyRecord(
+        buildingData()..totalUnits = '1', 'full-building', [newUnit('1')]));
+    await mount(tester, controller,
+        PropertiesScreen(onMenu: () {}, onNotifications: () {}));
+    await tester.tap(find.text('عمارة الاختبار').first);
+    await tester.pumpAndSettle();
+    final copy = find.byKey(const ValueKey('copy-unit-1'));
+    expect(
+        tester
+            .widget<OutlinedButton>(find.descendant(
+                of: copy, matching: find.byType(OutlinedButton)))
+            .onPressed,
+        isNull);
+    expect(controller.properties.single.units.length, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final size in [const Size(360, 640), const Size(412, 915)]) {
     testWidgets(
         'building plus five units fits iOS ${size.width}x${size.height}',

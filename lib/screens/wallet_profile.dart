@@ -161,8 +161,10 @@ class _PropertyEditorScreen extends StatefulWidget {
   final PropertyRecord? existing;
   final PropertyRecord? parent;
   final UnitRecord? unit;
+  final UnitRecord? template;
 
-  const _PropertyEditorScreen({this.existing, this.parent, this.unit});
+  const _PropertyEditorScreen(
+      {this.existing, this.parent, this.unit, this.template});
 
   @override
   State<_PropertyEditorScreen> createState() => _PropertyEditorScreenState();
@@ -243,6 +245,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
   final List<_UnitIdentity> _batch = [];
 
   bool get _editingUnit => widget.parent != null;
+  bool get _copyingUnit => widget.template != null;
   bool get _requiresResidentialCategory =>
       _editingUnit && ['شقة', 'استديو', 'دور', 'فيلا'].contains(_unitType);
   bool get _isBuilding => _propertyType == 'عمارة' || _propertyType == 'برج';
@@ -258,7 +261,9 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
     final existing = widget.parent ?? widget.existing;
     final data = widget.parent == null
         ? existing?.data
-        : (widget.unit ?? UnitRecord.fromData(PropertyData()))
+        : (widget.unit ??
+                widget.template ??
+                UnitRecord.fromData(PropertyData()))
             .detailsFor(widget.parent!);
     final firstUnit =
         existing?.units.isNotEmpty == true ? existing!.units.first : null;
@@ -336,16 +341,17 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
     _acCentralCount = data?.acCentralCount ?? (_acCentral ? '1' : '0');
     _privateParking = data?.privateParking ?? false;
     _rentalMode = existing?.managesUnits == true ? 'units' : 'whole';
-    if (widget.unit == null && widget.existing == null) {
+    if (widget.unit == null && widget.existing == null && !_copyingUnit) {
       _kitchenCount = _storageCount = _majlisCount = '0';
       _acWindowCount = _acSplitCount = _acCentralCount = '0';
       _kitchen = _storage = _majlis = false;
       _acWindow = _acSplit = _acCentral = false;
     }
     if (_editingUnit && widget.unit == null) {
-      _unitNumber.text = _nextUnitNumber(1);
-      _unitName.text = '$_unitType ${_unitNumber.text}';
-      _floor.text = '0';
+      _unitNumber.text = nextAvailableUnitNumber(
+          widget.parent!.units.map((unit) => unit.number));
+      _unitName.text = _newUnitName(_unitNumber.text);
+      if (!_copyingUnit) _floor.text = '0';
     }
   }
 
@@ -393,7 +399,11 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: Text(_editingUnit
-            ? (widget.unit == null ? 'إضافة وحدات' : 'تعديل الوحدة')
+            ? (_copyingUnit
+                ? 'نسخ الوحدة'
+                : widget.unit == null
+                    ? 'إضافة وحدات'
+                    : 'تعديل الوحدة')
             : widget.existing == null
                 ? 'إضافة عقار'
                 : 'تعديل العقار'),
@@ -499,9 +509,18 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                                     'مسجل ${widget.parent!.units.length} من ${widget.parent!.totalUnits} وحدة • ${widget.parent!.floors} أدوار',
                                 icon: Icons.apartment_outlined),
                             const SizedBox(height: 12),
+                            if (_copyingUnit) ...<Widget>[
+                              InfoBanner(
+                                  text:
+                                      'نسخ بيانات «${widget.template!.name}». '
+                                      'أرقام النسخ تُقترح تلقائيًا دون تكرار. راجع الأدوار والعدادات وعدّل أي بيانات قبل الحفظ؛ يمكنك تعديل كل نسخة لاحقًا بشكل مستقل.'),
+                              const SizedBox(height: 12),
+                            ],
                             if (widget.unit == null) ...<Widget>[
                               AppTextField(
-                                  label: 'عدد الوحدات المراد إضافتها',
+                                  label: _copyingUnit
+                                      ? 'عدد النسخ'
+                                      : 'عدد الوحدات المراد إضافتها',
                                   hint: 'مثال: 5',
                                   controller: _batchCount,
                                   keyboardType: TextInputType.number,
@@ -753,7 +772,7 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                                       controller: _unitNumber,
                                       icon: Icons.tag_outlined,
                                       required: true,
-                                      validator: _requiredValidator,
+                                      validator: _unitNumberValidator,
                                     ),
                                   ),
                                 const SizedBox(width: 8),
@@ -1149,25 +1168,66 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
     );
   }
 
-  String _nextUnitNumber(int ordinal) {
-    final used = (widget.parent?.units ?? <UnitRecord>[])
-        .map((u) => normalizedUnitNumber(u.number))
-        .toSet();
-    var number = 1;
-    var remaining = ordinal;
-    while (true) {
-      if (!used.contains('$number') && --remaining == 0) return '$number';
-      number++;
+  String _newUnitName(String number) {
+    final source = widget.template;
+    if (source != null && source.name != '${source.type} ${source.number}') {
+      return source.name;
     }
+    return '$_unitType $number';
+  }
+
+  String? _unitNumberValidator(String? value, {_UnitIdentity? identity}) {
+    if (_requiredValidator(value) != null) return 'هذا الحقل مطلوب';
+    final number = normalizedUnitNumber(value!);
+    if (widget.parent?.units.any((unit) =>
+                unit.number != widget.unit?.number &&
+                normalizedUnitNumber(unit.number) == number) ==
+            true ||
+        (identity != null &&
+            _batch.any((other) =>
+                !identical(other, identity) &&
+                normalizedUnitNumber(other.number.text) == number))) {
+      return 'رقم الوحدة مستخدم؛ اختر رقمًا آخر';
+    }
+    return null;
   }
 
   void _updateBatch(String value) {
-    final count = int.tryParse(value);
+    final count =
+        int.tryParse(ContractCalculationEngine.normalizeDigits(value));
     if (count == null || count < 1 || count > _unitLimit) return;
+    if (count == 1 && !_multiple) return;
     setState(() {
+      if (!_multiple && count > 1) {
+        for (final identity in _batch) {
+          identity.dispose();
+        }
+        _batch.clear();
+        _batch.add(_UnitIdentity(number: _unitNumber.text, name: _unitName.text)
+          ..floor.text = _floor.text
+          ..electricity.text = _electricityMeter.text
+          ..water.text = _waterMeter.text
+          ..gas.text = _gasMeter.text);
+      }
       while (_batch.length < count) {
-        final number = _nextUnitNumber(_batch.length + 1);
-        _batch.add(_UnitIdentity(number: number, name: '$_unitType $number'));
+        final number = nextAvailableUnitNumber([
+          ...widget.parent!.units.map((unit) => unit.number),
+          ..._batch.map((identity) => identity.number.text),
+        ]);
+        _batch.add(_UnitIdentity(number: number, name: _newUnitName(number))
+          ..floor.text = _floor.text
+          ..electricity.text = _copyingUnit ? _electricityMeter.text : ''
+          ..water.text = _copyingUnit ? _waterMeter.text : ''
+          ..gas.text = _copyingUnit ? _gasMeter.text : '');
+      }
+      if (count == 1 && _batch.isNotEmpty) {
+        final first = _batch.first;
+        _unitNumber.text = first.number.text;
+        _unitName.text = first.name.text;
+        _floor.text = first.floor.text;
+        _electricityMeter.text = first.electricity.text;
+        _waterMeter.text = first.water.text;
+        _gasMeter.text = first.gas.text;
       }
       while (_batch.length > count) {
         _batch.removeLast().dispose();
@@ -1194,7 +1254,8 @@ class _PropertyEditorScreenState extends State<_PropertyEditorScreen> {
                     hint: 'رقم فريد داخل العمارة',
                     controller: identity.number,
                     required: true,
-                    validator: _requiredValidator,
+                    validator: (value) =>
+                        _unitNumberValidator(value, identity: identity),
                     icon: Icons.tag_outlined),
                 AppTextField(
                     label: 'اسم الوحدة',
@@ -1738,6 +1799,8 @@ class _PropertyDetailsScreen extends StatelessWidget {
                               if (unit.data != null)
                                 Text(
                                     '${unit.data!.roomsCount} غرف • ${unit.data!.hallsCount} صالات • ${unit.data!.bathroomsCount} دورات مياه'),
+                              const SizedBox(height: 10),
+                              _copyUnitButton(context, property, unit),
                             ])),
                   ),
               ],
@@ -1976,6 +2039,22 @@ class _PropertyDetailsScreen extends StatelessWidget {
   String _yesNo(bool value) => value ? 'نعم' : 'لا';
 }
 
+Widget _copyUnitButton(
+    BuildContext context, PropertyRecord property, UnitRecord unit) {
+  return SizedBox(
+    key: ValueKey('copy-unit-${unit.number}'),
+    child: SecondaryButton(
+      label: 'نسخ الوحدة',
+      icon: Icons.copy_outlined,
+      onPressed: property.managesUnits && property.remainingUnits > 0
+          ? () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) =>
+                  _PropertyEditorScreen(parent: property, template: unit)))
+          : null,
+    ),
+  );
+}
+
 class _UnitDetailsScreen extends StatelessWidget {
   final String propertyId;
   final UnitRecord initialUnit;
@@ -2044,6 +2123,8 @@ class _UnitDetailsScreen extends StatelessWidget {
                               : entry.value)
                   ])),
                   const SizedBox(height: 16),
+                  _copyUnitButton(context, property, unit),
+                  const SizedBox(height: 10),
                   SecondaryButton(
                       label: 'تعديل بيانات الوحدة',
                       icon: Icons.edit_outlined,

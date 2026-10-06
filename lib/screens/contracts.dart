@@ -2265,6 +2265,7 @@ class _ContractHero extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       contract.requestNumber,
+                      textDirection: TextDirection.ltr,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
